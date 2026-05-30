@@ -45,7 +45,12 @@ export default function AuthPage() {
         setLoading(true); setError('');
         try {
             await login(formData.email, formData.password);
-            navigate('/dashboard');
+            const user = useAuthStore.getState().user;
+            if (user?.is_staff) {
+                navigate('/admin');
+            } else {
+                navigate('/dashboard');
+            }
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Invalid credentials');
         } finally {
