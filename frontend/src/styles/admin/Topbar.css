@@ -1,0 +1,146 @@
+.topbar {
+    height: 70px;
+    background-color: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 var(--spacing-xl);
+    z-index: 10;
+}
+
+.topbar-left {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+
+.menu-toggle-btn {
+    color: var(--color-text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 40px;
+    width: 40px;
+    border-radius: var(--radius-md);
+    transition: var(--transition-fast);
+}
+
+.menu-toggle-btn:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    color: var(--color-text-main);
+}
+
+.search-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background-color: var(--color-bg-main);
+    border-radius: 9999px;
+    padding: 0.5rem 1rem;
+    width: 300px;
+    transition: var(--transition-normal);
+    border: 1px solid transparent;
+}
+
+.search-container:focus-within {
+    background-color: #ffffff;
+    border: 1px solid var(--color-primary-light);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.search-icon {
+    color: var(--color-text-muted);
+    margin-right: var(--spacing-sm);
+}
+
+.search-input {
+    border: none;
+    background: transparent;
+    outline: none;
+    font-size: 0.95rem;
+    width: 100%;
+    color: var(--color-text-main);
+}
+
+.topbar-right {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-lg);
+}
+
+.notification-btn {
+    position: relative;
+    color: var(--color-text-muted);
+    height: 40px;
+    width: 40px;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition-fast);
+}
+
+.notification-btn:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    color: var(--color-text-main);
+}
+
+.notification-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background-color: var(--color-danger);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 700;
+    height: 16px;
+    min-width: 16px;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #ffffff;
+}
+
+.admin-profile {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    cursor: pointer;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: 9999px;
+    transition: var(--transition-fast);
+}
+
+.admin-profile:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+.admin-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.admin-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--color-text-main);
+}
+
+.admin-role {
+    font-size: 0.75rem;
+    color: var(--color-accent);
+    font-weight: 500;
+}
+
+.admin-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 9999px;
+    border: 2px solid #ffffff;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
