@@ -566,26 +566,15 @@ export default function AddQuestion() {
                                 <label className="text-xs font-bold text-slate-500">Question Marks</label>
                                 <input type="number" className="form-input mt-1 w-full" placeholder="e.g. 5" value={form.marks} onChange={e => set('marks', e.target.value)} />
                             </div>
-                            <div className="form-group span-3">
+                            <div className="form-group span-7">
                                 <label className="text-xs font-bold text-slate-500">Metadata Source</label>
                                 <select className="form-input mt-1 w-full" value={form.source} onChange={e => set('source', e.target.value)}>
                                     {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                             </div>
-                            <div className="form-group span-4">
-                                <label className="text-xs font-bold text-slate-500">Attempt</label>
-                                <div className="tabs-group mt-1">
-                                    {ATTEMPTS.map(a => (
-                                        <div key={a}
-                                            className={`tab-item ${form.attempt === a ? 'active' : ''}`}
-                                            onClick={() => set('attempt', a)}>
-                                            {a}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
                         </div>
 
+                        {/* Row 2: Year, Section, Q No */}
                         <div className="settings-grid">
                             <div className="form-group span-2">
                                 <label className="text-xs font-bold text-slate-500">Year</label>
@@ -593,14 +582,33 @@ export default function AddQuestion() {
                                     {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
                                 </select>
                             </div>
-                            <div className="form-group span-2">
-                                <label className="text-xs font-bold text-slate-500">Sec & No</label>
-                                <div className="flex gap-1 mt-1">
-                                    <input className="form-input w-1/2" placeholder="Sec" value={form.section} onChange={e => set('section', e.target.value)} />
-                                    <input className="form-input w-1/2" placeholder="QNo" value={form.q_no} onChange={e => set('q_no', e.target.value)} />
-                                </div>
+                            <div className="form-group span-3">
+                                <label className="text-xs font-bold text-slate-500">Section</label>
+                                <input className="form-input mt-1 w-full" placeholder="e.g. A" value={form.section} onChange={e => set('section', e.target.value)} />
                             </div>
-                            <div className="form-group span-4">
+                            <div className="form-group span-3">
+                                <label className="text-xs font-bold text-slate-500">Question No.</label>
+                                <input className="form-input mt-1 w-full" placeholder="e.g. 1a" value={form.q_no} onChange={e => set('q_no', e.target.value)} />
+                            </div>
+                        </div>
+
+                        {/* Row 3: Attempt — full width for all tabs */}
+                        <div className="form-group">
+                            <label className="text-xs font-bold text-slate-500">Attempt</label>
+                            <div className="tabs-group mt-1">
+                                {ATTEMPTS.map(a => (
+                                    <div key={a}
+                                        className={`tab-item ${form.attempt === a ? 'active' : ''}`}
+                                        onClick={() => set('attempt', a)}>
+                                        {a}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Row 4: Difficulty + Tags */}
+                        <div className="settings-grid">
+                            <div className="form-group span-5">
                                 <label className="text-xs font-bold text-slate-500">Difficulty</label>
                                 <div className="diff-pills mt-1">
                                     {DIFFICULTIES.map(d => (
@@ -612,11 +620,12 @@ export default function AddQuestion() {
                                     ))}
                                 </div>
                             </div>
-                            <div className="form-group span-4">
+                            <div className="form-group span-7">
                                 <label className="text-xs font-bold text-slate-500">Tags</label>
-                                <input className="form-input mt-1 w-full" placeholder="e.g. AS-15, Inventory" value={form.tags} onChange={e => set('tags', e.target.value)} />
+                                <input className="form-input mt-1 w-full" placeholder="e.g. AS-15, Inventory, Depreciation" value={form.tags} onChange={e => set('tags', e.target.value)} />
                             </div>
                         </div>
+
                     </div>
 
                     {/* Section 1: Question Card (with sub-questions relocated inside) */}
