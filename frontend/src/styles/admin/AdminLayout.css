@@ -13,10 +13,32 @@
     flex-direction: column;
     overflow: hidden;
     position: relative;
+    min-width: 0;
 }
 
 .admin-content {
     flex: 1;
     overflow-y: auto;
     padding: var(--spacing-xl);
+}
+
+/* ── Sidebar overlay (mobile backdrop) ── */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+    z-index: 99;
+}
+
+/* ── Mobile breakpoint ── */
+@media (max-width: 768px) {
+    .sidebar-overlay {
+        display: block;
+    }
+
+    .admin-content {
+        padding: 1rem;
+    }
 }
