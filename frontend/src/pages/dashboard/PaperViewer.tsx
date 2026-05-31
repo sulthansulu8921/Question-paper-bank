@@ -1,11 +1,22 @@
 import { ArrowLeft, Download, MessageCircle, Video } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import QuestionTable from '@/components/dashboard/QuestionTable';
+
+const SUBJECT_LOOKUP: Record<string, { name: string, code: string }> = {
+    '1': { name: 'Advanced Accounting', code: 'PAPER 1' },
+    '2': { name: 'Corporate and Other Laws', code: 'PAPER 2' },
+    '3': { name: 'Taxation', code: 'PAPER 3' },
+    '4': { name: 'Cost and Management Accounting', code: 'PAPER 4' },
+    '5': { name: 'Auditing and Ethics', code: 'PAPER 5' },
+    '6': { name: 'Financial Management & Strategic Management', code: 'PAPER 6' },
+};
 
 export default function PaperViewer() {
     const navigate = useNavigate();
-
-    // Viewer logic is now self-contained within QuestionTable
+    const { id } = useParams<{ id: string }>();
+    
+    const subjectInfo = id ? SUBJECT_LOOKUP[id] : null;
+    const subjectName = subjectInfo ? subjectInfo.name : 'Unknown Subject';
 
     return (
         <div className="flex flex-col bg-[#F8FAFC] min-h-screen font-sans -m-8 relative">
@@ -23,7 +34,7 @@ export default function PaperViewer() {
             {/* Subject Detail Bar (Deep Blue Bar) */}
             <div className="bg-[#1E2B63] px-10 py-3 flex items-center justify-between shrink-0">
                 <h2 className="text-sm font-black text-white tracking-wider uppercase">
-                    Subject : Advanced Financial Management
+                    Subject : {subjectName}
                 </h2>
                 <div className="flex items-center gap-4">
                     <button className="p-1 px-3 bg-white/10 hover:bg-white/20 rounded text-white transition-all">

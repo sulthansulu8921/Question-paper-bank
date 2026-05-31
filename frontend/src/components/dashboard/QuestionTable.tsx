@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Eye, Home, Search, Star, X } from 'lucide-react';
 import QuestionModal from './QuestionModal';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useParams } from 'react-router-dom';
 import api from '@/api/axios';
 
 interface Question {
@@ -26,6 +26,7 @@ export default function QuestionTable({
     defaultFilter?: 'subjective' | 'mcq' | 'important' | 'saved';
     hideTabs?: boolean;
 }) {
+    const { id: routeSubjectId } = useParams<{ id: string }>();
     const [activeRowId, setActiveRowId] = useState<number | null>(null);
     const [filter, setFilter] = useState<'subjective' | 'mcq' | 'important' | 'saved'>(defaultFilter);
     const [searchParams] = useSearchParams();
@@ -80,7 +81,12 @@ export default function QuestionTable({
     const [isViewerOpen, setIsViewerOpen] = useState(false);
 
     const filteredQuestions = useMemo(() => {
-        return questions.filter((q: Question) => {
+        return questions.filter((q: any) => {
+            // Filter by subject ID from the route parameter if present
+            if (routeSubjectId && String(q.subject) !== String(routeSubjectId)) {
+                return false;
+            }
+
             const isBookmarkedRow = isBookmarked(q.id);
             const isStarred = q.is_important || isBookmarkedRow;
 
@@ -95,7 +101,7 @@ export default function QuestionTable({
                 (q.q_no || '').toLowerCase().includes(searchStr);
             return matchesType && matchesSearch;
         });
-    }, [questions, bookmarks, filter, searchQuery]);
+    }, [questions, bookmarks, filter, searchQuery, routeSubjectId]);
 
     const handleRowClick = (q: Question) => {
         setActiveRowId(q.id);

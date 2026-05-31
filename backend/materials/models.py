@@ -127,6 +127,42 @@ class SubjectiveQuestion(models.Model):
     def __str__(self):
         return f"{self.source} | {self.attempt} {self.year} | Q{self.q_no}"
 
+    def save(self, *args, **kwargs):
+        # Auto-resolve legacy Subject and Topic based on ICAI Topic
+        if self.icai_topic_id:
+            try:
+                from courses.models import Subject, Topic
+                paper_name = self.icai_topic.chapter.paper.name.lower()
+                chapter_name = self.icai_topic.chapter.name
+
+                subj = None
+                if "advanced accounting" in paper_name or "accounting" in paper_name:
+                    subj = Subject.objects.filter(id=1).first()
+                elif "corporate and other laws" in paper_name or "business laws" in paper_name:
+                    subj = Subject.objects.filter(id=2).first()
+                elif "taxation" in paper_name or "tax" in paper_name:
+                    subj = Subject.objects.filter(id=3).first()
+                elif "cost" in paper_name or "management accounting" in paper_name:
+                    subj = Subject.objects.filter(id=4).first()
+                elif "auditing" in paper_name:
+                    subj = Subject.objects.filter(id=5).first()
+                elif "financial management" in paper_name or "strategic management" in paper_name:
+                    subj = Subject.objects.filter(id=6).first()
+
+                if subj:
+                    self.subject = subj
+                    # Automatically find or create a Topic matching the ICAI Chapter name under this Subject
+                    topic, _ = Topic.objects.get_or_create(
+                        subject=subj,
+                        name=chapter_name
+                    )
+                    self.topic = topic
+            except Exception as e:
+                # Fail-safe print to avoid interrupting DB saves
+                print("Error auto-resolving legacy subject/topic in save():", e)
+
+        super().save(*args, **kwargs)
+
     @property
     def icai_path(self):
         if not self.icai_topic_id:
