@@ -48,7 +48,7 @@ class ContactMessage(models.Model):
 
 class SiteSettings(models.Model):
     """Singleton model for editable site-wide settings."""
-    contact_email = models.EmailField(default='support@studypartner.in')
+    contact_email = models.EmailField(default='qubook.helpline@gmail.com')
     contact_phone = models.CharField(max_length=20, blank=True)
     whatsapp_number = models.CharField(max_length=20, blank=True)
     office_address = models.TextField(blank=True)
