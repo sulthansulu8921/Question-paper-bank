@@ -55,8 +55,7 @@ export default function PortalHomePage() {
             {/* WHITE GLASS NAVBAR */}
             <nav className="w-full h-20 bg-white/70 backdrop-blur-xl flex items-center justify-between px-6 md:px-12 fixed top-0 z-[100] border-b border-slate-200/50 shadow-sm transition-all">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-tr from-[#4F46E5] to-[#7C3AED] rounded-xl flex items-center justify-center text-white font-black shadow-lg shadow-indigo-500/20 group cursor-pointer hover:rotate-12 transition-transform">SP</div>
-                    <span className="text-xl font-black tracking-tighter text-[#0F172A]">Study Partner</span>
+                    <img src="/logo.png" alt="Qubook Logo" className="h-9 object-contain" />
                 </div>
 
                 <div className="hidden lg:flex items-center gap-10">
@@ -179,8 +178,7 @@ export default function PortalHomePage() {
                 <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-16">
                     <div className="space-y-6">
                         <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 bg-gradient-to-tr from-[#4F46E5] to-[#7C3AED] rounded-lg flex items-center justify-center text-white text-xs font-black shadow-md shadow-indigo-500/20">SP</div>
-                            <span className="text-xl font-black tracking-tight text-[#0F172A]">Study Partner</span>
+                            <img src="/logo.png" alt="Qubook Logo" className="h-9 object-contain" />
                         </div>
                         <p className="text-slate-500 text-sm font-medium leading-relaxed">Trusted professional exam preparation platform featuring premium suggested answers and structured learning.</p>
                         <div className="flex gap-3 pt-2">

@@ -26,8 +26,7 @@ export default function Sidebar() {
         <aside className="w-72 bg-white border-r border-gray-100 h-screen flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-50">
             <div className="h-20 flex items-center px-8 border-b border-gray-50">
                 <Link to="/" className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white text-xs font-black shadow-lg shadow-primary/30">SP</div>
-                    <span className="text-lg font-black tracking-tighter text-gray-900">Study Partner</span>
+                    <img src="/logo.png" alt="Qubook Logo" className="h-9 object-contain" />
                 </Link>
             </div>
 

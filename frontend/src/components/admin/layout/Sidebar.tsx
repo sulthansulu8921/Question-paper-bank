@@ -46,9 +46,8 @@ const Sidebar = ({ open = false, onNavigate }: SidebarProps) => {
 
     return (
         <aside className={`sidebar ${open ? 'open' : ''}`}>
-            <div className="sidebar-header">
-                <div className="logo-icon">Q</div>
-                <h2 className="logo-text">QBank Pro</h2>
+            <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff', borderRadius: '8px', margin: '12px 16px', height: '50px', padding: '4px' }}>
+                <img src="/logo.png" alt="Qubook Logo" className="h-8 object-contain" />
             </div>
 
             <nav className="sidebar-nav">
