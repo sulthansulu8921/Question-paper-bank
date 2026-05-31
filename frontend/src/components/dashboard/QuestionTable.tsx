@@ -187,62 +187,62 @@ export default function QuestionTable({
 
             {/* Sub Navigation Bar */}
             {!hideTabs && (
-                <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100/50">
-                    <div className="flex items-center gap-2">
-                        <button className="w-10 h-10 flex items-center justify-center bg-[#5C6BC0] text-white rounded-lg shadow-sm">
+                <div className="flex flex-col md:flex-row items-center justify-between px-6 py-3 bg-white dark:bg-slate-900 border-b border-slate-100/50 dark:border-slate-800 gap-4">
+                    <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 scrollbar-hide shrink-0">
+                        <button className="w-10 h-10 shrink-0 flex items-center justify-center bg-[#5C6BC0] dark:bg-indigo-900 text-white rounded-lg shadow-sm">
                             <Home size={18} />
                         </button>
                         <button
                             onClick={() => setFilter('subjective')}
-                            className={`px-8 py-2.5 text-xs font-black rounded-lg transition-all border ${filter === 'subjective' ? 'bg-indigo-50 text-indigo-700 border-indigo-100 shadow-inner' : 'bg-[#5C6BC0] text-white border-transparent shadow-sm'}`}
+                            className={`px-6 md:px-8 py-2.5 text-xs font-black rounded-lg transition-all border shrink-0 ${filter === 'subjective' ? 'bg-indigo-50 dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border-indigo-100 dark:border-slate-700 shadow-inner' : 'bg-[#5C6BC0] dark:bg-slate-800 text-white dark:text-slate-300 border-transparent shadow-sm hover:bg-[#4A59B0] dark:hover:bg-slate-700'}`}
                         >
                             Subjective
                         </button>
                         <button
                             onClick={() => setFilter('mcq')}
-                            className={`px-8 py-2.5 text-xs font-black rounded-lg transition-all border ${filter === 'mcq' ? 'bg-indigo-50 text-indigo-700 border-indigo-100 shadow-inner' : 'bg-[#5C6BC0] text-white border-transparent shadow-sm'}`}
+                            className={`px-6 md:px-8 py-2.5 text-xs font-black rounded-lg transition-all border shrink-0 ${filter === 'mcq' ? 'bg-indigo-50 dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border-indigo-100 dark:border-slate-700 shadow-inner' : 'bg-[#5C6BC0] dark:bg-slate-800 text-white dark:text-slate-300 border-transparent shadow-sm hover:bg-[#4A59B0] dark:hover:bg-slate-700'}`}
                         >
                             MCQs
                         </button>
                         <button
                             onClick={() => setFilter('important')}
-                            className={`px-8 py-2.5 text-xs font-black rounded-lg transition-all border ${filter === 'important' ? 'bg-indigo-50 text-indigo-700 border-indigo-100 shadow-inner' : 'bg-[#5C6BC0] text-white border-transparent shadow-sm'}`}
+                            className={`px-6 md:px-8 py-2.5 text-xs font-black rounded-lg transition-all border shrink-0 ${filter === 'important' ? 'bg-indigo-50 dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border-indigo-100 dark:border-slate-700 shadow-inner' : 'bg-[#5C6BC0] dark:bg-slate-800 text-white dark:text-slate-300 border-transparent shadow-sm hover:bg-[#4A59B0] dark:hover:bg-slate-700'}`}
                         >
                             Important
                         </button>
                     </div>
 
-                    <button className="px-8 py-2.5 bg-[#5C6BC0] text-white text-xs font-black rounded-lg uppercase tracking-widest shadow-md hover:bg-[#4A59B0] transition-all">
+                    <button className="w-full md:w-auto px-8 py-2.5 bg-[#5C6BC0] dark:bg-indigo-600 text-white text-xs font-black rounded-lg uppercase tracking-widest shadow-md hover:bg-[#4A59B0] dark:hover:bg-indigo-500 transition-all shrink-0">
                         QUICK CONCEPTS
                     </button>
                 </div>
             )}
 
             {/* Main Table */}
-            <div className="overflow-x-auto overflow-y-hidden">
+            <div className="overflow-x-auto overflow-y-hidden custom-scrollbar">
                 <table className="w-full text-left border-collapse min-w-[1000px]">
                     <thead>
-                        <tr className="bg-[#7986CB] text-white border-b border-white/10">
-                            <th className="px-4 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20 w-16 text-center">S.N.</th>
-                            <th className="px-6 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20">TOPIC</th>
-                            <th className="px-6 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20">SOURCE</th>
-                            <th className="px-6 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20">YEAR</th>
-                            <th className="px-6 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20">Q NO</th>
-                            <th className="px-8 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20">MARKS</th>
+                        <tr className="bg-[#7986CB] dark:bg-slate-800 text-white border-b border-white/10 dark:border-slate-700/50">
+                            <th className="px-4 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20 dark:border-slate-700 w-16 text-center">S.N.</th>
+                            <th className="px-6 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20 dark:border-slate-700">TOPIC</th>
+                            <th className="px-6 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20 dark:border-slate-700">SOURCE</th>
+                            <th className="px-6 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20 dark:border-slate-700">YEAR</th>
+                            <th className="px-6 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20 dark:border-slate-700">Q NO</th>
+                            <th className="px-8 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20 dark:border-slate-700">MARKS</th>
                             <th className="px-8 py-4 text-[11px] font-black uppercase tracking-widest text-center">STATUS</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                         {isLoading && (
                             <tr>
-                                <td colSpan={7} className="px-6 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+                                <td colSpan={7} className="px-6 py-8 text-center text-slate-400 dark:text-slate-500 font-bold text-xs uppercase tracking-widest">
                                     Loading Questions...
                                 </td>
                             </tr>
                         )}
                         {!isLoading && filteredQuestions.length === 0 && (
                             <tr>
-                                <td colSpan={7} className="px-6 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+                                <td colSpan={7} className="px-6 py-8 text-center text-slate-400 dark:text-slate-500 font-bold text-xs uppercase tracking-widest">
                                     No questions found for this category.
                                 </td>
                             </tr>
@@ -256,14 +256,14 @@ export default function QuestionTable({
                                 <tr
                                     key={q.id}
                                     onClick={() => handleRowClick(q)}
-                                    className={`group cursor-pointer transition-colors ${isActive ? 'bg-[#1E2B63] text-white' : 'hover:bg-slate-50'}`}
+                                    className={`group cursor-pointer transition-colors ${isActive ? 'bg-[#1E2B63] dark:bg-indigo-900/40 text-white' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:text-slate-300'}`}
                                 >
-                                    <td className={`px-4 py-5 text-xs font-bold text-center border-r border-slate-100 ${isActive ? 'border-white/10' : ''}`}>{idx + 1}</td>
-                                    <td className={`px-6 py-5 text-xs font-black border-r border-slate-100 ${isActive ? 'border-white/10' : ''}`}>{q.topic_name}</td>
-                                    <td className={`px-6 py-5 text-[11px] font-bold border-r border-slate-100 ${isActive ? 'border-white/10' : ''}`}>{q.source}</td>
-                                    <td className={`px-6 py-5 text-[11px] font-bold border-r border-slate-100 ${isActive ? 'border-white/10' : ''}`}>{q.year}</td>
-                                    <td className={`px-6 py-5 text-[11px] font-black border-r border-slate-100 ${isActive ? 'border-white/10' : ''}`}>{q.q_no}</td>
-                                    <td className={`px-8 py-5 text-xs font-black border-r border-slate-100 ${isActive ? 'border-white/10' : ''}`}>{q.marks}</td>
+                                    <td className={`px-4 py-5 text-xs font-bold text-center border-r border-slate-100 dark:border-slate-800 ${isActive ? 'border-white/10 dark:border-indigo-800' : ''}`}>{idx + 1}</td>
+                                    <td className={`px-6 py-5 text-xs font-black border-r border-slate-100 dark:border-slate-800 ${isActive ? 'border-white/10 dark:border-indigo-800' : ''}`}>{q.topic_name}</td>
+                                    <td className={`px-6 py-5 text-[11px] font-bold border-r border-slate-100 dark:border-slate-800 ${isActive ? 'border-white/10 dark:border-indigo-800' : ''}`}>{q.source}</td>
+                                    <td className={`px-6 py-5 text-[11px] font-bold border-r border-slate-100 dark:border-slate-800 ${isActive ? 'border-white/10 dark:border-indigo-800' : ''}`}>{q.year}</td>
+                                    <td className={`px-6 py-5 text-[11px] font-black border-r border-slate-100 dark:border-slate-800 ${isActive ? 'border-white/10 dark:border-indigo-800' : ''}`}>{q.q_no}</td>
+                                    <td className={`px-8 py-5 text-xs font-black border-r border-slate-100 dark:border-slate-800 ${isActive ? 'border-white/10 dark:border-indigo-800' : ''}`}>{q.marks}</td>
                                     <td className="px-8 py-5 text-center flex items-center justify-center gap-3">
                                         {isSavedOrImportant && (
                                             <button

@@ -187,10 +187,10 @@ export default function QuestionModal({
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 30 }}
                     transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                    className={`relative w-full ${isSplitView ? 'max-w-[98vw]' : 'max-w-5xl'} bg-white rounded-[32px] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col max-h-[96vh] transition-all duration-700 ease-in-out border border-white/20`}
+                    className={`relative w-full ${isSplitView ? 'max-w-[98vw]' : 'max-w-5xl'} bg-white dark:bg-slate-900 rounded-[32px] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col max-h-[96vh] transition-colors duration-500 ease-in-out border border-white/20 dark:border-slate-800`}
                 >
                     {/* Top Bar - Unified Professional Design */}
-                    <div className="flex items-center justify-between px-8 py-5 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100 shrink-0">
+                    <div className="flex items-center justify-between px-4 md:px-8 py-5 bg-gradient-to-r from-slate-50 to-white dark:from-slate-800 dark:to-slate-900 border-b border-slate-100 dark:border-slate-700 shrink-0">
                         <div className="flex items-center gap-6">
                             {/* Layout Toggle */}
                             <button
@@ -203,12 +203,12 @@ export default function QuestionModal({
 
                             {/* Tab System - Glassmorphism style */}
                             {!isSplitView && (
-                                <div className="flex bg-slate-100/50 p-1.5 rounded-2xl border border-slate-200/50">
+                                <div className="flex flex-wrap md:flex-nowrap bg-slate-100/50 dark:bg-slate-800/50 p-1.5 rounded-2xl border border-slate-200/50 dark:border-slate-700/50">
                                     {(['both', 'question', 'answer'] as const).map((t) => (
                                         <button
                                             key={t}
                                             onClick={() => setTab(t)}
-                                            className={`px-10 py-3 rounded-[14px] text-[11px] font-black uppercase transition-all duration-300 tracking-[0.2em] ${tab === t ? 'bg-white text-[#3F51B5] shadow-[0_8px_16px_rgba(0,0,0,0.08)]' : 'text-slate-400 hover:text-slate-600'}`}
+                                            className={`px-4 md:px-10 py-2 md:py-3 rounded-[14px] text-[10px] md:text-[11px] font-black uppercase transition-all duration-300 tracking-[0.2em] ${tab === t ? 'bg-white dark:bg-slate-700 text-[#3F51B5] dark:text-blue-400 shadow-[0_8px_16px_rgba(0,0,0,0.08)]' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
                                         >
                                             {t}
                                         </button>
@@ -276,7 +276,7 @@ export default function QuestionModal({
                     </AnimatePresence>
 
                     {/* Main Workspace */}
-                    <div className={`flex-1 overflow-y-auto p-8 custom-scrollbar ${isSplitView ? 'grid grid-cols-2 gap-10 divide-x divide-slate-100' : 'max-w-4xl mx-auto w-full'}`}>
+                    <div className={`flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar ${isSplitView ? 'flex flex-col lg:grid lg:grid-cols-2 gap-10 divide-y lg:divide-y-0 lg:divide-x divide-slate-100 dark:divide-slate-800' : 'max-w-4xl mx-auto w-full'}`}>
                         
                         {/* Question Column */}
                         {(isSplitView || tab === 'both' || tab === 'question') && (
@@ -287,17 +287,17 @@ export default function QuestionModal({
                                 className="space-y-6"
                             >
                                 <div className="space-y-2">
-                                    <div className="inline-flex items-center gap-3 px-3 py-1 bg-slate-950 text-white text-[9px] font-black rounded-full uppercase tracking-wider">
+                                    <div className="inline-flex items-center gap-3 px-3 py-1 bg-slate-950 dark:bg-slate-100 text-white dark:text-slate-900 text-[9px] font-black rounded-full uppercase tracking-wider">
                                         {question.question_type} Question
                                     </div>
-                                    <h2 className="text-2xl font-black text-[#1A237E] tracking-tight leading-tight">
+                                    <h2 className="text-xl md:text-2xl font-black text-[#1A237E] dark:text-blue-300 tracking-tight leading-tight">
                                         Question {question.q_no || `ID #${question.id}`}
-                                        <span className="ml-3 text-lg text-slate-400 font-bold">(Marks: {question.marks || '1'})</span>
+                                        <span className="ml-3 text-base md:text-lg text-slate-400 dark:text-slate-500 font-bold">(Marks: {question.marks || '1'})</span>
                                     </h2>
                                 </div>
 
                                 {/* Main Text */}
-                                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 text-sm font-semibold text-slate-700 leading-relaxed white-space-pre-wrap">
+                                <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 rounded-2xl p-4 md:p-5 text-sm font-semibold text-slate-700 dark:text-slate-200 leading-relaxed white-space-pre-wrap">
                                     {question.question_text || 'No question text provided.'}
                                 </div>
 
