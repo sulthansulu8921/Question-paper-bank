@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from materials.views import (
     QuestionPaperViewSet, AnswerPaperViewSet, NotesViewSet, 
     VideoViewSet, MCQViewSet, BookmarkViewSet, SubjectiveQuestionViewSet, FeedbackViewSet,
-    AdminDashboardStatsView
+    AdminDashboardStatsView, ExportQuestionsExcelView, ImportQuestionsExcelView,
 )
 
 router = DefaultRouter()
@@ -19,4 +19,6 @@ router.register(r'feedback', FeedbackViewSet, basename='feedback')
 urlpatterns = [
     path('', include(router.urls)),
     path('dashboard-stats/', AdminDashboardStatsView.as_view(), name='dashboard-stats'),
+    path('questions/export-excel/', ExportQuestionsExcelView.as_view(), name='export-excel'),
+    path('questions/import-excel/', ImportQuestionsExcelView.as_view(), name='import-excel'),
 ]
