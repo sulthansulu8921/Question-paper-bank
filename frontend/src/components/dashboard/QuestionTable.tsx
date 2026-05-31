@@ -15,6 +15,7 @@ interface Question {
     q_no: string;
     marks: number;
     is_important: boolean;
+    question_type?: string;
 }
 
 export default function QuestionTable({
@@ -93,7 +94,8 @@ export default function QuestionTable({
             let matchesType = true;
             if (filter === 'important') matchesType = isStarred;
             if (filter === 'saved') matchesType = isBookmarkedRow;
-            if (filter === 'mcq') matchesType = false;
+            if (filter === 'mcq') matchesType = q.question_type === 'MCQ';
+            if (filter === 'subjective') matchesType = q.question_type !== 'MCQ';
 
             const searchStr = searchQuery.toLowerCase();
             const matchesSearch = (q.topic_name || '').toLowerCase().includes(searchStr) ||
