@@ -2,7 +2,7 @@ import { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/api/axios';
 import {
-    Search, Download, Plus, Edit, Trash2,
+    Search, Plus, Edit, Trash2,
     SortAsc, SortDesc, Filter, Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
