@@ -44,9 +44,8 @@ export default function LoginPage() {
                     <div className="absolute top-20 right-20 w-80 h-80 bg-white/5 rounded-full blur-3xl" />
 
                     <div className="relative z-10 space-y-2">
-                        <Link to="/" className="flex items-center gap-2 mb-16">
-                            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white text-xs font-black shadow-lg">SP</div>
-                            <span className="text-xl font-black tracking-tighter">Study Partner</span>
+                        <Link to="/" className="flex items-center gap-2 mb-16 hover:scale-105 transition-transform duration-300">
+                            <img src="/logo.png" alt="Qubook Logo" className="h-10 object-contain" style={{ filter: 'drop-shadow(0 0 10px rgba(255, 255, 255, 0.8))' }} />
                         </Link>
                         <h2 className="text-4xl md:text-5xl font-black tracking-tight leading-tight">Elevate your <br /> Exam Preparation</h2>
                         <p className="text-white/60 font-medium text-lg pt-4 max-w-sm">Join 50,000+ students already mastering their professional syllabus.</p>

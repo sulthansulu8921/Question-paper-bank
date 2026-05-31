@@ -21,8 +21,9 @@ export default function LandingPage() {
             {/* TOP NAVBAR */}
             <nav className="w-full h-20 flex items-center justify-between px-6 md:px-12 glass fixed top-0 z-[100] border-b border-white/20 transition-all">
                 <div className="flex items-center gap-2">
-                    <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white font-black shadow-lg shadow-primary/30">SP</div>
-                    <Link to="/" className="text-xl font-black tracking-tight text-gray-900 hidden sm:block">Study Partner</Link>
+                    <Link to="/" className="flex items-center gap-2 hover:scale-105 transition-transform duration-300">
+                        <img src="/logo.png" alt="Qubook Logo" className="h-10 object-contain" />
+                    </Link>
                 </div>
 
                 <div className="hidden lg:flex items-center gap-8">
@@ -213,7 +214,7 @@ export default function LandingPage() {
                             <h5 className="font-bold mb-8 uppercase tracking-widest text-xs text-primary">Support</h5>
                             <ul className="flex flex-col gap-5 text-white/50 text-sm">
                                 <li className="flex items-center gap-2">Mumbai, Maharashtra, India</li>
-                                <li className="flex items-center gap-2">support@studypartner.in</li>
+                                <li className="flex items-center gap-2">qubook.helpline@gmail.com</li>
                                 <li className="flex items-center gap-2">+91 98765 43210</li>
                             </ul>
                         </div>

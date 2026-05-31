@@ -46,8 +46,8 @@ const Sidebar = ({ open = false, onNavigate }: SidebarProps) => {
 
     return (
         <aside className={`sidebar ${open ? 'open' : ''}`}>
-            <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff', borderRadius: '8px', margin: '12px 16px', height: '50px', padding: '4px' }}>
-                <img src="/logo.png" alt="Qubook Logo" className="h-8 object-contain" />
+            <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60px', padding: '0 1rem' }}>
+                <img src="/logo.png" alt="Qubook Logo" className="h-10 object-contain" style={{ filter: 'drop-shadow(0 0 10px rgba(255, 255, 255, 0.75))', transition: 'all 0.3s ease' }} />
             </div>
 
             <nav className="sidebar-nav">

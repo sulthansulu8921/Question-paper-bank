@@ -40,8 +40,9 @@ export default function AboutPage() {
             {/* TOP NAVBAR */}
             <nav className="w-full h-20 flex items-center justify-between px-6 md:px-12 glass fixed top-0 z-[100] border-b border-white/20 transition-all">
                 <div className="flex items-center gap-2">
-                    <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white font-black shadow-lg shadow-primary/30">SP</div>
-                    <Link to="/" className="text-xl font-black tracking-tight text-gray-900 hidden sm:block">Study Partner</Link>
+                    <Link to="/" className="flex items-center gap-2 hover:scale-105 transition-transform duration-300">
+                        <img src="/logo.png" alt="Qubook Logo" className="h-10 object-contain" />
+                    </Link>
                 </div>
 
                 <div className="hidden lg:flex items-center gap-8">

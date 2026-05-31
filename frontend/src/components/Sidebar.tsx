@@ -25,8 +25,8 @@ export default function Sidebar() {
     return (
         <aside className="w-72 bg-white border-r border-gray-100 h-screen flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-50">
             <div className="h-20 flex items-center px-8 border-b border-gray-50">
-                <Link to="/" className="flex items-center gap-2">
-                    <img src="/logo.png" alt="Qubook Logo" className="h-9 object-contain" />
+                <Link to="/" className="flex items-center gap-2 hover:scale-105 transition-transform duration-300">
+                    <img src="/logo.png" alt="Qubook Logo" className="h-10 object-contain" />
                 </Link>
             </div>
 

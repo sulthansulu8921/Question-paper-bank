@@ -109,9 +109,8 @@ export default function AuthPage() {
                     <div className="absolute inset-0 bg-primary/20 mix-blend-overlay" />
 
                     <div className="relative z-10">
-                        <Link to="/" className="flex items-center gap-2 mb-16 group">
-                            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white text-xs font-black group-hover:rotate-12 transition-transform shadow-lg shadow-primary/20">SP</div>
-                            <span className="text-xl font-black tracking-tight text-white">Study Partner</span>
+                        <Link to="/" className="flex items-center gap-2 mb-16 group hover:scale-105 transition-transform duration-300">
+                            <img src="/logo.png" alt="Qubook Logo" className="h-10 object-contain" style={{ filter: 'drop-shadow(0 0 10px rgba(255, 255, 255, 0.8))' }} />
                         </Link>
 
                         <div className="space-y-4">
