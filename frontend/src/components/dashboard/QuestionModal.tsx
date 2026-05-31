@@ -454,9 +454,17 @@ export default function QuestionModal({
                                 {question.question_type !== 'MIXED' ? (
                                     <div className="space-y-6">
                                         <div className="bg-emerald-50/50 border border-emerald-100 rounded-[24px] p-6 text-sm font-semibold text-slate-600 italic white-space-pre-wrap leading-relaxed">
-                                            {question.correct_answer || 'No suggested answer or key is entered.'}
+                                            {question.question_type === 'MCQ' && question.options && question.options.some((o: any) => o.is_correct) && (
+                                                <div className="mb-4 pb-4 border-b border-emerald-200/60 not-italic">
+                                                    <span className="text-emerald-700 font-black uppercase tracking-wider block mb-1 text-xs">Correct Option</span>
+                                                    <div className="text-emerald-900 font-bold text-lg">
+                                                        {String.fromCharCode(65 + question.options.findIndex((o: any) => o.is_correct))} - {question.options.find((o: any) => o.is_correct)?.text}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {question.correct_answer || (question.question_type === 'MCQ' ? 'No additional explanation provided.' : 'No suggested answer or key is entered.')}
                                         </div>
-                                        <DynamicTable tableJson={question.answer_table_data} title="Answer Details Table" />
+                                        {question.answer_table_data && <DynamicTable tableJson={question.answer_table_data} title="Answer Details Table" />}
                                     </div>
                                 ) : (
                                     <div className="p-6 border-2 border-dashed border-slate-100 rounded-3xl text-center text-xs font-bold text-slate-400 italic">
