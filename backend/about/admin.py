@@ -1,5 +1,5 @@
 from django.contrib import admin
-from about.models import TeamMember, GalleryImage, ContactMessage, SiteSettings
+from about.models import TeamMember, GalleryImage, ContactMessage, SiteSettings, NewsletterSubscription
 
 @admin.register(TeamMember)
 class TeamMemberAdmin(admin.ModelAdmin):
@@ -24,3 +24,8 @@ class ContactMessageAdmin(admin.ModelAdmin):
 class SiteSettingsAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         return not SiteSettings.objects.exists()
+
+@admin.register(NewsletterSubscription)
+class NewsletterSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ['email', 'subscribed_at']
+    search_fields = ['email']

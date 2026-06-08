@@ -1,36 +1,116 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Mail, Lock, User, Phone, Loader2, ArrowRight, CheckCircle, ShieldCheck, Zap, Laptop } from 'lucide-react';
+import { Mail, Lock, User, Phone, Loader2, ArrowRight, CheckCircle, ShieldCheck, Zap, Laptop, Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
+import Logo from '@/components/Logo';
+import api from '@/api/axios';
 
 export default function AuthPage() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const activeTabParams = searchParams.get('tab') === 'login' ? 'login' : 'register';
-    const [tab, setTab] = useState<'login' | 'register'>(activeTabParams);
+    const [tab, setTab] = useState<'login' | 'register' | 'forgot'>(activeTabParams);
 
     // Auth Store
     const login = useAuthStore((state) => state.login);
     const register = useAuthStore((state) => state.register);
+    const googleLogin = useAuthStore((state) => state.googleLogin);
 
     // Form States
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [formData, setFormData] = useState({
         full_name: '',
         email: '',
         mobile: '',
         password: '',
         confirm_password: '',
+        otp: '',
         remember_me: false
     });
 
+    const [sendingOtp, setSendingOtp] = useState(false);
+    const [otpSentMsg, setOtpSentMsg] = useState('');
+
     const selectedCourse = searchParams.get('course');
+
+    const handleGoogleCredentialResponse = async (response: any) => {
+        setLoading(true);
+        setError('');
+        try {
+            await googleLogin(response.credential);
+            const user = useAuthStore.getState().user;
+            if (user?.is_staff) {
+                navigate('/admin');
+            } else {
+                navigate('/dashboard');
+            }
+        } catch (err: any) {
+            setError(err.response?.data?.error || 'Google Authentication failed.');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
         setTab(activeTabParams);
     }, [activeTabParams]);
+
+    useEffect(() => {
+        let intervalId: any;
+
+        const initializeGoogleSignIn = () => {
+            const googleObj = (window as any).google;
+            if (googleObj) {
+                if (intervalId) clearInterval(intervalId);
+                
+                try {
+                    googleObj.accounts.id.initialize({
+                        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID || '1008719970978-hb24n2dstb40o45q4feep2gpkrc25143.apps.googleusercontent.com',
+                        callback: handleGoogleCredentialResponse,
+                    });
+                    
+                    const renderBtn = () => {
+                        const btnId = tab === 'login' ? 'google-signin-button-login' : 'google-signin-button-register';
+                        const btnEl = document.getElementById(btnId);
+                        if (btnEl) {
+                            btnEl.innerHTML = ''; // Clear previous button instance
+                            // Strict width check (must be between 200 and 400px)
+                            const width = btnEl.clientWidth >= 200 && btnEl.clientWidth <= 400 ? btnEl.clientWidth : 320;
+                            googleObj.accounts.id.renderButton(
+                                btnEl,
+                                { theme: 'outline', size: 'large', width: width, text: tab === 'register' ? 'signup_with' : 'signin_with' }
+                            );
+                        }
+                    };
+
+                    // Add a micro-delay to let the DOM element mount
+                    setTimeout(renderBtn, 150);
+                } catch (e) {
+                    console.error("Google accounts.id initialize error:", e);
+                }
+            }
+        };
+
+        const googleObj = (window as any).google;
+        if (googleObj) {
+            initializeGoogleSignIn();
+        } else {
+            // Poll for window.google to handle lazy-load / async-defer scripts
+            intervalId = setInterval(() => {
+                if ((window as any).google) {
+                    initializeGoogleSignIn();
+                }
+            }, 100);
+        }
+
+        return () => {
+            if (intervalId) clearInterval(intervalId);
+        };
+    }, [tab]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value, type, checked } = e.target;
@@ -38,6 +118,82 @@ export default function AuthPage() {
             ...prev,
             [name]: type === 'checkbox' ? checked : value
         }));
+    };
+
+    const handleSendRegisterOtp = async () => {
+        if (!formData.email.trim()) {
+            setError('Email is required to send OTP.');
+            return;
+        }
+        setSendingOtp(true);
+        setError('');
+        setOtpSentMsg('');
+        try {
+            const res = await api.post('/auth/register/request-otp/', { email: formData.email });
+            setOtpSentMsg(res.data.message || 'OTP sent successfully.');
+        } catch (err: any) {
+            setError(err.response?.data?.error || 'Failed to send OTP. Please check your email.');
+        } finally {
+            setSendingOtp(false);
+        }
+    };
+
+    const handleSendForgotPasswordOtp = async () => {
+        if (!formData.email.trim()) {
+            setError('Email is required to send OTP.');
+            return;
+        }
+        setSendingOtp(true);
+        setError('');
+        setOtpSentMsg('');
+        try {
+            const res = await api.post('/auth/forgot-password/request-otp/', { email: formData.email });
+            setOtpSentMsg(res.data.message || 'OTP sent successfully.');
+        } catch (err: any) {
+            setError(err.response?.data?.error || 'Failed to send OTP. Please check your email.');
+        } finally {
+            setSendingOtp(false);
+        }
+    };
+
+    const handleForgotPasswordReset = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true); setError('');
+        setOtpSentMsg('');
+
+        if (formData.password !== formData.confirm_password) {
+            setError('Passwords do not match');
+            setLoading(false); return;
+        }
+
+        if (!formData.otp.trim()) {
+            setError('Please enter the OTP verification code.');
+            setLoading(false); return;
+        }
+
+        try {
+            const res = await api.post('/auth/forgot-password/reset/', {
+                email: formData.email,
+                otp: formData.otp,
+                password: formData.password
+            });
+            setOtpSentMsg(res.data.message || 'Password reset successful!');
+            setTimeout(() => {
+                setTab('login');
+                setOtpSentMsg('');
+                setError('');
+            }, 3000);
+            setFormData(prev => ({
+                ...prev,
+                password: '',
+                confirm_password: '',
+                otp: ''
+            }));
+        } catch (err: any) {
+            setError(err.response?.data?.error || 'Failed to reset password.');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleLogin = async (e: React.FormEvent) => {
@@ -67,8 +223,13 @@ export default function AuthPage() {
             setLoading(false); return;
         }
 
+        if (!formData.otp.trim()) {
+            setError('Please enter the OTP verification code.');
+            setLoading(false); return;
+        }
+
         try {
-            await register(formData.full_name, formData.mobile, formData.email, formData.password);
+            await register(formData.full_name, formData.mobile, formData.email, formData.password, formData.otp);
             navigate('/dashboard');
         } catch (err: any) {
             console.error('Registration Error:', err);
@@ -110,21 +271,21 @@ export default function AuthPage() {
 
                     <div className="relative z-10">
                         <Link to="/" className="flex items-center gap-2 mb-16 group hover:scale-105 transition-transform duration-300">
-                            <img src="/logo.png" alt="Qubook Logo" className="h-10 object-contain" style={{ filter: 'drop-shadow(0 0 10px rgba(255, 255, 255, 0.8))' }} />
+                            <Logo theme="dark" className="h-10 object-contain" />
                         </Link>
 
                         <div className="space-y-4">
-                            <h2 className="text-4xl font-black leading-tight">Master your <span className="text-primary italic">goals.</span></h2>
-                            <p className="text-white/50 font-medium text-lg max-w-sm">Join India's most trusted portal for professional exam preparation.</p>
+                            <h2 className="text-4xl font-black leading-tight">Master your <span className="text-primary italic">CA exams.</span></h2>
+                            <p className="text-white/50 font-medium text-lg max-w-sm">Join India's premium portal for CA Foundation, Intermediate, and Final preparation.</p>
                         </div>
                     </div>
 
                     <div className="relative z-10 space-y-6">
                         {[
-                            { icon: CheckCircle, text: "Verified solutions by industry experts", color: "text-primary" },
-                            { icon: Zap, text: "Split-screen paper & answer viewer", color: "text-accent" },
-                            { icon: ShieldCheck, text: "Secure enterprise-grade PDF delivery", color: "text-success" },
-                            { icon: Laptop, text: "Seamless mobile & desktop transition", color: "text-white" }
+                            { icon: CheckCircle, text: "Verified suggested answers by top CA faculties", color: "text-primary" },
+                            { icon: Zap, text: "Split-screen question paper & answer key viewer", color: "text-accent" },
+                            { icon: ShieldCheck, text: "Topic-wise previous year questions (PYQs)", color: "text-success" },
+                            { icon: Laptop, text: "Model Test Papers & Revision Test Papers (MTP/RTP)", color: "text-white" }
                         ].map((item, i) => (
                             <div key={i} className="flex items-center gap-4">
                                 <item.icon size={20} className={item.color} />
@@ -134,7 +295,7 @@ export default function AuthPage() {
                     </div>
 
                     <div className="relative z-10 pt-12 border-t border-white/10 mt-12 flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-white/30">
-                        <span>© 2024 Portal</span>
+                        <span>© 2026 qubook.in</span>
                         <span>v3.0 Premium</span>
                     </div>
                 </div>
@@ -144,13 +305,13 @@ export default function AuthPage() {
                     {/* TABS */}
                     <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-12 w-fit mx-auto md:mx-0">
                         <button
-                            onClick={() => setTab('login')}
+                            onClick={() => { setTab('login'); setError(''); setOtpSentMsg(''); }}
                             className={`px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'login' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
                         >
                             Login
                         </button>
                         <button
-                            onClick={() => setTab('register')}
+                            onClick={() => { setTab('register'); setError(''); setOtpSentMsg(''); }}
                             className={`px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'register' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
                         >
                             Register
@@ -159,10 +320,14 @@ export default function AuthPage() {
 
                     <div className="mb-10 text-center md:text-left">
                         <h1 className="text-4xl font-black text-slate-900 tracking-tight">
-                            {tab === 'login' ? 'Welcome Back' : 'Create Account'}
+                            {tab === 'login' ? 'Welcome Back' : tab === 'register' ? 'Create Account' : 'Reset Password'}
                         </h1>
                         <p className="text-slate-400 font-bold text-xs mt-3 uppercase tracking-widest">
-                            {tab === 'login' ? 'Sign in to access your dashboard' : 'Join thousands of successful students'}
+                            {tab === 'login' 
+                                ? 'Sign in to access your dashboard' 
+                                : tab === 'register' 
+                                    ? 'Join thousands of successful students' 
+                                    : 'Verify your email to recover your account'}
                         </p>
                     </div>
 
@@ -176,7 +341,7 @@ export default function AuthPage() {
                     )}
 
                     <AnimatePresence mode="wait">
-                        {tab === 'login' ? (
+                        {tab === 'login' && (
                             <motion.form
                                 key="login"
                                 initial={{ opacity: 0, x: 20 }}
@@ -202,11 +367,18 @@ export default function AuthPage() {
                                 <div className="space-y-1.5">
                                     <div className="flex justify-between items-center px-1">
                                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Password</label>
-                                        <button type="button" className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">Forgot?</button>
+                                        <button type="button" onClick={() => { setTab('forgot'); setError(''); setOtpSentMsg(''); }} className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">Forgot?</button>
                                     </div>
                                     <div className="relative group">
                                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-primary transition-colors" size={18} />
-                                        <input type="password" name="password" required value={formData.password} onChange={handleInputChange} placeholder="••••••••" className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4 pl-12 pr-6 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all" />
+                                        <input type={showPassword ? "text" : "password"} name="password" required value={formData.password} onChange={handleInputChange} placeholder="••••••••" className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4 pl-12 pr-12 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all" />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPassword(!showPassword)}
+                                            className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                                        >
+                                            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                        </button>
                                     </div>
                                 </div>
 
@@ -219,11 +391,20 @@ export default function AuthPage() {
                                     {loading ? <Loader2 size={24} className="animate-spin" /> : <><ArrowRight size={18} /> Sign In</>}
                                 </button>
 
-                                <div className="pt-6 text-center">
-                                    <button type="button" className="text-[10px] font-black text-gray-400 uppercase tracking-widest hover:text-primary transition-colors">Login with OTP Instead?</button>
+                                <div className="relative my-6 flex items-center justify-center">
+                                    <div className="absolute inset-0 flex items-center">
+                                        <div className="w-full border-t border-slate-100"></div>
+                                    </div>
+                                    <span className="relative bg-white px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Or continue with</span>
+                                </div>
+
+                                <div className="flex justify-center">
+                                    <div id="google-signin-button-login" className="w-full"></div>
                                 </div>
                             </motion.form>
-                        ) : (
+                        )}
+
+                        {tab === 'register' && (
                             <motion.form
                                 key="register"
                                 initial={{ opacity: 0, x: 20 }}
@@ -246,19 +427,40 @@ export default function AuthPage() {
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Email ID</label>
-                                        <div className="relative group">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Email ID</label>
+                                    <div className="flex gap-2">
+                                        <div className="relative group flex-1">
                                             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-primary transition-colors" size={18} />
                                             <input type="email" name="email" required value={formData.email} onChange={handleInputChange} placeholder="john@email.com" className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-12 pr-6 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/20 transition-all" />
                                         </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleSendRegisterOtp}
+                                            disabled={sendingOtp}
+                                            className="px-4 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-black uppercase tracking-wider rounded-2xl border border-primary/20 transition-all disabled:opacity-50 min-w-[100px]"
+                                        >
+                                            {sendingOtp ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Get OTP'}
+                                        </button>
                                     </div>
+                                    {otpSentMsg && (
+                                        <p className="text-[10px] font-bold text-emerald-600 mt-1 pl-1">✓ {otpSentMsg}</p>
+                                    )}
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Mobile Number</label>
                                         <div className="relative group">
                                             <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-primary transition-colors" size={18} />
                                             <input type="tel" name="mobile" required value={formData.mobile} onChange={handleInputChange} placeholder="+91 00000 00000" className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-12 pr-6 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/20 transition-all" />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">OTP Code</label>
+                                        <div className="relative group">
+                                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-primary transition-colors" size={18} />
+                                            <input name="otp" required value={formData.otp} onChange={handleInputChange} placeholder="6-digit OTP" className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-12 pr-6 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/20 transition-all" />
                                         </div>
                                     </div>
                                 </div>
@@ -268,14 +470,28 @@ export default function AuthPage() {
                                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Password</label>
                                         <div className="relative group">
                                             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-primary transition-colors" size={18} />
-                                            <input type="password" name="password" required value={formData.password} onChange={handleInputChange} placeholder="••••••••" className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-12 pr-6 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/20 transition-all" />
+                                            <input type={showPassword ? "text" : "password"} name="password" required value={formData.password} onChange={handleInputChange} placeholder="••••••••" className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-12 pr-10 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/20 transition-all" />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowPassword(!showPassword)}
+                                                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                                            >
+                                                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                            </button>
                                         </div>
                                     </div>
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Confirm</label>
                                         <div className="relative group">
                                             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-primary transition-colors" size={18} />
-                                            <input type="password" name="confirm_password" required value={formData.confirm_password} onChange={handleInputChange} placeholder="••••••••" className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-12 pr-6 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/20 transition-all" />
+                                            <input type={showConfirmPassword ? "text" : "password"} name="confirm_password" required value={formData.confirm_password} onChange={handleInputChange} placeholder="••••••••" className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-12 pr-10 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/20 transition-all" />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                                            >
+                                                {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -283,6 +499,104 @@ export default function AuthPage() {
                                 <button type="submit" disabled={loading} className="w-full bg-primary text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-primary/30 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-70 mt-4">
                                     {loading ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={18} /> Register Now</>}
                                 </button>
+
+                                <div className="relative my-6 flex items-center justify-center">
+                                    <div className="absolute inset-0 flex items-center">
+                                        <div className="w-full border-t border-slate-100"></div>
+                                    </div>
+                                    <span className="relative bg-white px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Or continue with</span>
+                                </div>
+
+                                <div className="flex justify-center">
+                                    <div id="google-signin-button-register" className="w-full"></div>
+                                </div>
+                            </motion.form>
+                        )}
+
+                        {tab === 'forgot' && (
+                            <motion.form
+                                key="forgot"
+                                initial={{ opacity: 0, x: 20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -20 }}
+                                onSubmit={handleForgotPasswordReset}
+                                className="space-y-5"
+                            >
+                                {error && (
+                                    <div className="p-4 bg-red-50 border border-red-200 text-red-600 text-xs font-bold rounded-xl text-center shadow-sm">
+                                        {error}
+                                    </div>
+                                )}
+                                {otpSentMsg && (
+                                    <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-600 text-xs font-bold rounded-xl text-center shadow-sm">
+                                        {otpSentMsg}
+                                    </div>
+                                )}
+
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Email ID</label>
+                                    <div className="flex gap-2">
+                                        <div className="relative group flex-1">
+                                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-primary transition-colors" size={18} />
+                                            <input type="email" name="email" required value={formData.email} onChange={handleInputChange} placeholder="john@email.com" className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-12 pr-6 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/20 transition-all" />
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleSendForgotPasswordOtp}
+                                            disabled={sendingOtp}
+                                            className="px-4 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-black uppercase tracking-wider rounded-2xl border border-primary/20 transition-all disabled:opacity-50 min-w-[100px]"
+                                        >
+                                            {sendingOtp ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Get OTP'}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">OTP Code</label>
+                                    <div className="relative group">
+                                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-primary transition-colors" size={18} />
+                                        <input name="otp" required value={formData.otp} onChange={handleInputChange} placeholder="6-digit OTP code" className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-12 pr-6 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/20 transition-all" />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">New Password</label>
+                                        <div className="relative group">
+                                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-primary transition-colors" size={18} />
+                                            <input type={showPassword ? "text" : "password"} name="password" required value={formData.password} onChange={handleInputChange} placeholder="••••••••" className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-12 pr-10 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/20 transition-all" />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowPassword(!showPassword)}
+                                                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                                            >
+                                                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Confirm Password</label>
+                                        <div className="relative group">
+                                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-primary transition-colors" size={18} />
+                                            <input type={showConfirmPassword ? "text" : "password"} name="confirm_password" required value={formData.confirm_password} onChange={handleInputChange} placeholder="••••••••" className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-12 pr-10 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/20 transition-all" />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                                            >
+                                                {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button type="submit" disabled={loading} className="w-full bg-primary text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-primary/30 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-70 mt-4">
+                                    {loading ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={18} /> Reset Password</>}
+                                </button>
+
+                                <div className="pt-4 text-center">
+                                    <button type="button" onClick={() => { setTab('login'); setError(''); setOtpSentMsg(''); }} className="text-[10px] font-black text-gray-400 uppercase tracking-widest hover:text-primary transition-colors">Back to Login</button>
+                                </div>
                             </motion.form>
                         )}
                     </AnimatePresence>

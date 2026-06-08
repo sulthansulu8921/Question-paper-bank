@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { UploadCloud, X, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import api from '@/api/axios';
 
 interface FileUploadZoneProps {
     onFileUploaded: (url: string) => void;
@@ -34,13 +35,19 @@ export default function FileUploadZone({
         setError(null);
         setIsUploading(true);
 
-        // Mocking Upload logic - In production replace with AWS S3 / Cloudinary SDK
-        setTimeout(() => {
-            const fakeUrl = URL.createObjectURL(file);
-            setFileUrl(fakeUrl);
-            onFileUploaded(fakeUrl); // Replace this with actual S3 URL after upload
+        try {
+            const fd = new FormData();
+            fd.append('file', file);
+            const res = await api.post('/materials/upload-file/', fd, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            setFileUrl(res.data.url);
+            onFileUploaded(res.data.url);
+        } catch (err: any) {
+            setError(err?.response?.data?.error || 'Failed to upload file.');
+        } finally {
             setIsUploading(false);
-        }, 1500);
+        }
 
     }, [maxSizeMB, onFileUploaded]);
 

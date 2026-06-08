@@ -204,6 +204,8 @@ export default function AdminQuestionBank() {
                         <span>{importing ? 'Importing...' : 'Import Excel'}</span>
                     </button>
 
+
+
                     <Link to="/admin/questions/new" className="primary-btn flex-center gap-sm"><Plus size={18} /><span>Add New</span></Link>
                 </div>
             </div>
@@ -268,7 +270,13 @@ export default function AdminQuestionBank() {
                                     <td>{q.attempt}</td>
                                     <td>{q.year}</td>
                                     <td>{q.section}</td>
-                                    <td>{q.q_no}</td>
+                                    <td>
+                                        {q.q_no?.startsWith('CS') ? (
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-150 text-indigo-700 border border-indigo-200">
+                                                CS-{q.q_no.replace('CS', '')}
+                                            </span>
+                                        ) : q.q_no}
+                                    </td>
                                     <td>{q.question_type}</td>
                                     <td>{q.marks}M</td>
                                     <td>
@@ -295,6 +303,8 @@ export default function AdminQuestionBank() {
                     </table>
                 </div>
             </div>
+
+
         </div>
     );
 }

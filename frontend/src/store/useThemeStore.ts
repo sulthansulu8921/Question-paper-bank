@@ -14,16 +14,20 @@ export const useThemeStore = create<ThemeState>()(
             toggleTheme: () => set((state) => {
                 const newTheme = state.theme === 'light' ? 'dark' : 'light';
                 if (newTheme === 'dark') {
+                    document.documentElement.setAttribute('data-theme', 'dark');
                     document.documentElement.classList.add('dark');
                 } else {
+                    document.documentElement.removeAttribute('data-theme');
                     document.documentElement.classList.remove('dark');
                 }
                 return { theme: newTheme };
             }),
             setTheme: (theme) => set(() => {
                 if (theme === 'dark') {
+                    document.documentElement.setAttribute('data-theme', 'dark');
                     document.documentElement.classList.add('dark');
                 } else {
+                    document.documentElement.removeAttribute('data-theme');
                     document.documentElement.classList.remove('dark');
                 }
                 return { theme };
@@ -34,8 +38,10 @@ export const useThemeStore = create<ThemeState>()(
             onRehydrateStorage: () => (state) => {
                 if (state) {
                     if (state.theme === 'dark') {
+                        document.documentElement.setAttribute('data-theme', 'dark');
                         document.documentElement.classList.add('dark');
                     } else {
+                        document.documentElement.removeAttribute('data-theme');
                         document.documentElement.classList.remove('dark');
                     }
                 }
@@ -51,6 +57,7 @@ if (typeof window !== 'undefined') {
         try {
             const parsed = JSON.parse(stored);
             if (parsed.state?.theme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
                 document.documentElement.classList.add('dark');
             }
         } catch (e) {

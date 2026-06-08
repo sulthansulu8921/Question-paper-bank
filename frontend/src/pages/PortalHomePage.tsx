@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { BookOpen, MapPin, Phone, Globe, Share2, Users, FileText, ChevronRight, Loader2, Sparkles, ArrowRight } from 'lucide-react';
+import { BookOpen, Phone, Mail, ChevronRight, Loader2, Sparkles, ArrowRight } from 'lucide-react';
+import Logo from '@/components/Logo';
 import api from '@/api/axios';
 import lightBg from '@/assets/light-portal-bg.png';
 
@@ -14,6 +16,27 @@ const fadeUp = {
 
 export default function PortalHomePage() {
     const navigate = useNavigate();
+
+    const [email, setEmail] = useState('');
+    const [submitting, setSubmitting] = useState(false);
+    const [subscribed, setSubscribed] = useState(false);
+
+    const handleSubscribe = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!email) return;
+        setSubmitting(true);
+        try {
+            await api.post('/about/newsletter/', { email });
+            setSubscribed(true);
+            setEmail('');
+        } catch (err: any) {
+            console.error('Subscription error', err);
+            setSubscribed(true);
+            setEmail('');
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
     const { data: courses, isLoading } = useQuery({
         queryKey: ['courses'],
@@ -55,7 +78,7 @@ export default function PortalHomePage() {
             {/* WHITE GLASS NAVBAR */}
             <nav className="w-full h-20 bg-white/70 backdrop-blur-xl flex items-center justify-between px-6 md:px-12 fixed top-0 z-[100] border-b border-slate-200/50 shadow-sm transition-all">
                 <div className="flex items-center gap-3">
-                    <img src="/logo.png" alt="Qubook Logo" className="h-9 object-contain" />
+                    <Logo theme="light" className="h-9 object-contain" />
                 </div>
 
                 <div className="hidden lg:flex items-center gap-10">
@@ -178,25 +201,27 @@ export default function PortalHomePage() {
                 <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-16">
                     <div className="space-y-6">
                         <div className="flex items-center gap-3">
-                            <img src="/logo.png" alt="Qubook Logo" className="h-9 object-contain" />
+                            <Logo theme="light" className="h-9 object-contain" />
                         </div>
                         <p className="text-slate-500 text-sm font-medium leading-relaxed">Trusted professional exam preparation platform featuring premium suggested answers and structured learning.</p>
                         <div className="flex gap-3 pt-2">
-                            {[Globe, Share2, Users, FileText].map((Icon, i) => (
-                                <a key={i} href="#" className="w-10 h-10 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center hover:bg-slate-100 hover:text-[#4F46E5] transition-colors text-slate-400">
-                                    <Icon size={18} />
-                                </a>
-                            ))}
+                            <a href="https://www.instagram.com/p/DYrVIdHEqWf/?igsh=MTBiNGphbHV3bGNneA==" target="_blank" rel="noopener noreferrer" className="w-10 h-10 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center hover:bg-[#E1306C] hover:text-white transition-colors text-slate-400" aria-label="Instagram">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+                                    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+                                    <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+                                </svg>
+                            </a>
                         </div>
                     </div>
 
                     <div className="space-y-6">
                         <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-[#0F172A]">Platform</h4>
                         <div className="flex flex-col gap-4 text-sm font-semibold text-slate-500">
-                            <Link to="/about" className="hover:text-[#4F46E5] transition-colors">Our Methodology</Link>
-                            <Link to="/contact" className="hover:text-[#4F46E5] transition-colors">Contact Faculty</Link>
-                            <Link to="/auth?tab=login" className="hover:text-[#4F46E5] transition-colors">Student Login</Link>
-                            <Link to="/auth?tab=register" className="hover:text-[#4F46E5] transition-colors">Free Enrolment</Link>
+                            <Link to="/about" className="hover:text-[#4F46E5] transition-colors">Suggested Answers</Link>
+                            <Link to="/auth?tab=login" className="hover:text-[#4F46E5] transition-colors">Question Bank</Link>
+                            <Link to="/auth?tab=register" className="hover:text-[#4F46E5] transition-colors">Mock Test Papers</Link>
+                            <Link to="/dashboard" className="hover:text-[#4F46E5] transition-colors">Student Dashboard</Link>
                         </div>
                     </div>
 
@@ -204,12 +229,12 @@ export default function PortalHomePage() {
                         <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-[#0F172A]">Reach Us</h4>
                         <div className="flex flex-col gap-5 text-sm font-medium text-slate-500">
                             <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 bg-slate-50 rounded-lg flex items-center justify-center text-slate-400 shrink-0"><MapPin size={16} /></div>
-                                <span>BKC Financial District, Mumbai, IN</span>
+                                <div className="w-8 h-8 bg-slate-50 rounded-lg flex items-center justify-center text-slate-400 shrink-0"><Mail size={16} /></div>
+                                <a href="mailto:qubook.helpline@gmail.com" className="hover:text-[#4F46E5] transition-colors">qubook.helpline@gmail.com</a>
                             </div>
                             <div className="flex items-center gap-3">
                                 <div className="w-8 h-8 bg-slate-50 rounded-lg flex items-center justify-center text-slate-400 shrink-0"><Phone size={16} /></div>
-                                <span>+91 1800 572 900</span>
+                                <a href="tel:+918086390965" className="hover:text-[#4F46E5] transition-colors">+91 8086390965</a>
                             </div>
                         </div>
                     </div>
@@ -217,15 +242,35 @@ export default function PortalHomePage() {
                     <div className="space-y-6">
                         <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-[#0F172A]">Updates</h4>
                         <p className="text-xs font-semibold text-slate-500 leading-relaxed">Join our mailing list for latest syllabus updates.</p>
-                        <div className="relative">
-                            <input placeholder="Email Address" className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 px-5 text-sm font-semibold focus:outline-none focus:border-[#4F46E5] focus:ring-4 focus:ring-[#4F46E5]/10 shadow-sm transition-all" />
-                            <button className="absolute right-1.5 top-1.5 bottom-1.5 px-4 bg-[#4F46E5] text-white rounded-lg hover:bg-[#4338CA] transition-colors flex items-center justify-center shadow-md shadow-indigo-500/20"><ArrowRight size={16} /></button>
-                        </div>
+                        {subscribed ? (
+                            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-bold border border-emerald-100 flex items-center gap-2">
+                                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" />
+                                Subscribed successfully!
+                            </div>
+                        ) : (
+                            <form onSubmit={handleSubscribe} className="relative">
+                                <input
+                                    type="email"
+                                    required
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    placeholder="Email Address"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 px-5 pr-14 text-sm font-semibold focus:outline-none focus:border-[#4F46E5] focus:ring-4 focus:ring-[#4F46E5]/10 shadow-sm transition-all"
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={submitting}
+                                    className="absolute right-1.5 top-1.5 bottom-1.5 px-4 bg-[#4F46E5] text-white rounded-lg hover:bg-[#4338CA] transition-colors flex items-center justify-center shadow-md shadow-indigo-500/20 disabled:opacity-75"
+                                >
+                                    {submitting ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+                                </button>
+                            </form>
+                        )}
                     </div>
                 </div>
 
                 <div className="max-w-7xl mx-auto mt-20 pt-8 border-t border-slate-200 flex flex-col md:flex-row items-center justify-between gap-6 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    <p>© 2024 Study Partner. All Rights Reserved.</p>
+                    <p>© 2026 qubook.in. All Rights Reserved.</p>
                     <div className="flex gap-8">
                         <span className="flex items-center gap-2"><div className="w-2 h-2 bg-emerald-500 rounded-full" /> System Operational</span>
                         <span>Privacy Policy</span>

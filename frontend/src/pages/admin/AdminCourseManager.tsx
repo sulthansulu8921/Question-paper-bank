@@ -4,6 +4,7 @@ import api from '@/api/axios';
 import { Plus, Edit, Trash2, BookOpen, Layers, Save, Search, Loader2 } from 'lucide-react';
 import FileUploadZone from '@/components/admin/FileUploadZone';
 import AdminModal from '@/components/admin/AdminModal';
+import AdminConfirmModal from '@/components/admin/AdminConfirmModal';
 import { useAdminToast, getApiErrorMessage } from '@/components/admin/useAdminToast';
 import '@/styles/admin/QuestionManagement.css';
 
@@ -16,6 +17,13 @@ export default function AdminCourseManager() {
     const [editId, setEditId] = useState<number | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [formData, setFormData] = useState(emptyForm);
+
+    const [confirmDelete, setConfirmDelete] = useState<{
+        open: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    }>({ open: false, title: '', message: '', onConfirm: () => {} });
 
     const { data: courses = [], isLoading } = useQuery({
         queryKey: ['admin-courses'],
@@ -197,9 +205,15 @@ export default function AdminCourseManager() {
                                             <button
                                                 type="button"
                                                 className="action-btn danger"
-                                                onClick={() => {
-                                                    if (window.confirm(`Delete course "${course.name}"?`)) deleteMutation.mutate(course.id);
-                                                }}
+                                                onClick={() => setConfirmDelete({
+                                                    open: true,
+                                                    title: 'Delete Course',
+                                                    message: `Are you sure you want to delete the course "${course.name}"? This action cannot be undone.`,
+                                                    onConfirm: () => {
+                                                        deleteMutation.mutate(course.id);
+                                                        setConfirmDelete(prev => ({ ...prev, open: false }));
+                                                    }
+                                                })}
                                             >
                                                 <Trash2 size={16} />
                                             </button>
@@ -266,6 +280,14 @@ export default function AdminCourseManager() {
                     />
                 </div>
             </AdminModal>
+
+            <AdminConfirmModal
+                open={confirmDelete.open}
+                onClose={() => setConfirmDelete(prev => ({ ...prev, open: false }))}
+                onConfirm={confirmDelete.onConfirm}
+                title={confirmDelete.title}
+                message={confirmDelete.message}
+            />
         </div>
     );
 }

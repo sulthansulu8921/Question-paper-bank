@@ -55,8 +55,8 @@ class ICAIPaperViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = ICAIPaper.objects.filter(is_active=True).select_related('level')
         level_id = self.request.query_params.get('level_id')
-        if level_id:
-            qs = qs.filter(level_id=level_id)
+        if level_id is not None:
+            qs = qs.filter(level_id=level_id) if level_id else qs.none()
         return qs.order_by('order')
 
 
@@ -69,10 +69,10 @@ class ICAIChapterViewSet(viewsets.ModelViewSet):
         qs = ICAIChapter.objects.filter(is_active=True).select_related('paper', 'paper__level')
         paper_id = self.request.query_params.get('paper_id')
         level_id = self.request.query_params.get('level_id')
-        if paper_id:
-            qs = qs.filter(paper_id=paper_id)
-        if level_id:
-            qs = qs.filter(paper__level_id=level_id)
+        if paper_id is not None:
+            qs = qs.filter(paper_id=paper_id) if paper_id else qs.none()
+        if level_id is not None:
+            qs = qs.filter(paper__level_id=level_id) if level_id else qs.none()
         return qs.prefetch_related('topics').order_by('order')
 
 
@@ -88,12 +88,12 @@ class ICAITopicViewSet(viewsets.ModelViewSet):
         chapter_id = self.request.query_params.get('chapter_id')
         paper_id = self.request.query_params.get('paper_id')
         level_id = self.request.query_params.get('level_id')
-        if chapter_id:
-            qs = qs.filter(chapter_id=chapter_id)
-        if paper_id:
-            qs = qs.filter(chapter__paper_id=paper_id)
-        if level_id:
-            qs = qs.filter(chapter__paper__level_id=level_id)
+        if chapter_id is not None:
+            qs = qs.filter(chapter_id=chapter_id) if chapter_id else qs.none()
+        if paper_id is not None:
+            qs = qs.filter(chapter__paper_id=paper_id) if paper_id else qs.none()
+        if level_id is not None:
+            qs = qs.filter(chapter__paper__level_id=level_id) if level_id else qs.none()
         return qs.order_by('order')
 
 

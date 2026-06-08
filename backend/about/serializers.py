@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from about.models import TeamMember, GalleryImage, ContactMessage, SiteSettings
+from about.models import TeamMember, GalleryImage, ContactMessage, SiteSettings, NewsletterSubscription
 
 class TeamMemberSerializer(serializers.ModelSerializer):
     class Meta:
@@ -20,3 +20,8 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = SiteSettings
         fields = '__all__'
+
+class NewsletterSubscriptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NewsletterSubscription
+        fields = ['id', 'email', 'subscribed_at']

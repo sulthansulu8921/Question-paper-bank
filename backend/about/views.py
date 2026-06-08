@@ -1,7 +1,7 @@
 from rest_framework import viewsets, generics, permissions
 from rest_framework.response import Response
-from about.models import TeamMember, GalleryImage, ContactMessage, SiteSettings
-from about.serializers import TeamMemberSerializer, GalleryImageSerializer, ContactMessageSerializer, SiteSettingsSerializer
+from about.models import TeamMember, GalleryImage, ContactMessage, SiteSettings, NewsletterSubscription
+from about.serializers import TeamMemberSerializer, GalleryImageSerializer, ContactMessageSerializer, SiteSettingsSerializer, NewsletterSubscriptionSerializer
 
 class TeamMemberViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = TeamMember.objects.filter(is_active=True)
@@ -26,3 +26,9 @@ class SiteSettingsView(generics.RetrieveAPIView):
     def get_object(self):
         obj, _ = SiteSettings.objects.get_or_create(pk=1)
         return obj
+
+
+class NewsletterSubscriptionCreateView(generics.CreateAPIView):
+    queryset = NewsletterSubscription.objects.all()
+    serializer_class = NewsletterSubscriptionSerializer
+    permission_classes = [permissions.AllowAny]

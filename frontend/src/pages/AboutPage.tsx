@@ -16,7 +16,7 @@ const features = [
 const stats = [
     { value: '50,000+', label: 'Registered Students' },
     { value: '10,000+', label: 'Question Papers' },
-    { value: '25+', label: 'Courses Supported' },
+    { value: '3 Major', label: 'CA Courses Supported' },
     { value: '4.9/5', label: 'Overall Rating' },
 ];
 
@@ -28,6 +28,8 @@ const fadeUp = {
 };
 
 interface TeamMember { id: number; name: string; role: string; image: string | null; description: string; social_links: Record<string, string>; }
+
+import Logo from '@/components/Logo';
 
 export default function AboutPage() {
     const { data: team } = useQuery<TeamMember[]>({
@@ -41,7 +43,7 @@ export default function AboutPage() {
             <nav className="w-full h-20 flex items-center justify-between px-6 md:px-12 glass fixed top-0 z-[100] border-b border-white/20 transition-all">
                 <div className="flex items-center gap-2">
                     <Link to="/" className="flex items-center gap-2 hover:scale-105 transition-transform duration-300">
-                        <img src="/logo.png" alt="Qubook Logo" className="h-10 object-contain" />
+                        <Logo theme="light" className="h-10 object-contain" />
                     </Link>
                 </div>
 
@@ -71,7 +73,7 @@ export default function AboutPage() {
                         <span className="gradient-text">Smart Learning Resources</span>
                     </h1>
                     <p className="text-lg md:text-xl text-gray-500 font-medium max-w-2xl mx-auto leading-relaxed">
-                        Study Partner is built to bridge the gap between hard work and success by providing premium previous year papers, verified answers, and strategic study tools in a single modern experience.
+                        qubook.in is built to bridge the gap between hard work and success by providing premium previous year papers, verified answers, and strategic study tools in a single modern experience.
                     </p>
                 </motion.div>
             </section>
@@ -126,7 +128,7 @@ export default function AboutPage() {
                     <motion.div {...fadeUp} transition={{ delay: 0.2 }} className="relative group">
                         <div className="absolute -inset-4 bg-primary/20 rounded-[3rem] blur-2xl group-hover:bg-primary/30 transition-all duration-700" />
                         <div className="relative rounded-[2.5rem] overflow-hidden shadow-2xl border border-white/50 aspect-video">
-                            <img src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?q=80&w=2071&auto=format&fit=crop" alt="The Study Partner Team" className="w-full h-full object-cover transform transition-transform duration-700 group-hover:scale-110" />
+                            <img src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?q=80&w=2071&auto=format&fit=crop" alt="The qubook.in Team" className="w-full h-full object-cover transform transition-transform duration-700 group-hover:scale-110" />
                         </div>
                     </motion.div>
                 </div>
@@ -203,7 +205,7 @@ export default function AboutPage() {
                 <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-[100px] -z-10" />
                 <motion.div {...fadeUp}>
                     <h2 className="text-4xl md:text-5xl font-black mb-6">Start Your Journey Today</h2>
-                    <p className="text-white/70 text-lg mb-10 max-w-xl mx-auto">Join thousands of students who have already transformed their preparation strategy with Study Partner.</p>
+                    <p className="text-white/70 text-lg mb-10 max-w-xl mx-auto">Join thousands of students who have already transformed their preparation strategy with qubook.in.</p>
                     <Link to="/login" className="px-12 py-5 bg-white text-primary rounded-2xl font-black text-lg hover:scale-105 active:scale-95 transition-all shadow-2xl flex items-center gap-3">
                         Start Learning Now <ArrowRight size={22} strokeWidth={3} />
                     </Link>

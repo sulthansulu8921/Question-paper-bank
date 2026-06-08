@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/api/axios';
-import { Plus, Edit, Trash2, Search, Loader2, Save, ExternalLink } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Loader2, Save, ExternalLink, Upload } from 'lucide-react';
 import AdminModal from '@/components/admin/AdminModal';
+import AdminConfirmModal from '@/components/admin/AdminConfirmModal';
 import FileUploadZone from '@/components/admin/FileUploadZone';
+import PDFUploadModal from '@/components/admin/PDFUploadModal';
 import { useAdminToast, getApiErrorMessage } from '@/components/admin/useAdminToast';
 import '@/styles/admin/QuestionManagement.css';
 
@@ -15,7 +17,14 @@ const AdminPaperManager = () => {
     const [modalMode, setModalMode] = useState<'add' | 'edit' | null>(null);
     const [editId, setEditId] = useState<number | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [confirmDelete, setConfirmDelete] = useState<{
+        open: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    }>({ open: false, title: '', message: '', onConfirm: () => {} });
     const [formData, setFormData] = useState(emptyForm);
+    const [showUploadPdf, setShowUploadPdf] = useState(false);
 
     const { data: papers = [], isLoading } = useQuery({
         queryKey: ['admin-papers'],
@@ -117,9 +126,15 @@ const AdminPaperManager = () => {
                     <h1 className="page-title">Model Test Papers</h1>
                     <p className="page-subtitle">Manage previous year question papers and mock tests.</p>
                 </div>
-                <button type="button" onClick={openAdd} className="primary-btn flex-center gap-sm">
-                    <Plus size={20} /> <span>Add Paper</span>
-                </button>
+                <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setShowUploadPdf(true)}
+                        className="flex items-center gap-1.5 px-4 py-2 border border-emerald-200 bg-emerald-50 text-emerald-700 rounded-lg font-semibold text-sm hover:bg-emerald-100 transition-colors">
+                        <Upload size={16} /> Upload PDF
+                    </button>
+                    <button type="button" onClick={openAdd} className="primary-btn flex-center gap-sm">
+                        <Plus size={20} /> <span>Add Paper</span>
+                    </button>
+                </div>
             </div>
 
             <div className="qm-table-card">
@@ -189,9 +204,15 @@ const AdminPaperManager = () => {
                                                 type="button"
                                                 className="action-btn danger"
                                                 title="Delete"
-                                                onClick={() => {
-                                                    if (window.confirm(`Delete "${item.title}"?`)) deleteMutation.mutate(item.id);
-                                                }}
+                                                onClick={() => setConfirmDelete({
+                                                    open: true,
+                                                    title: 'Delete Question Paper',
+                                                    message: `Are you sure you want to delete the question paper "${item.title}"? This action cannot be undone.`,
+                                                    onConfirm: () => {
+                                                        deleteMutation.mutate(item.id);
+                                                        setConfirmDelete(prev => ({ ...prev, open: false }));
+                                                    }
+                                                })}
                                             >
                                                 {deleteMutation.isPending && deleteMutation.variables === item.id ? (
                                                     <Loader2 size={16} className="animate-spin" />
@@ -284,6 +305,24 @@ const AdminPaperManager = () => {
                     />
                 </div>
             </AdminModal>
+
+            <AdminConfirmModal
+                open={confirmDelete.open}
+                onClose={() => setConfirmDelete(prev => ({ ...prev, open: false }))}
+                onConfirm={confirmDelete.onConfirm}
+                title={confirmDelete.title}
+                message={confirmDelete.message}
+            />
+
+            <PDFUploadModal
+                open={showUploadPdf}
+                onClose={() => setShowUploadPdf(false)}
+                onUploaded={() => {
+                    queryClient.invalidateQueries({ queryKey: ['admin-papers'] });
+                    show('PDF uploaded and paper record created!', 'success');
+                    setShowUploadPdf(false);
+                }}
+            />
         </div>
     );
 };

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, User, Loader2, CheckCircle, Zap } from 'lucide-react';
+import { Mail, Lock, User, Loader2, CheckCircle, Zap, Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 
 export default function RegisterPage() {
@@ -16,6 +16,8 @@ export default function RegisterPage() {
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -29,7 +31,7 @@ export default function RegisterPage() {
         }
 
         try {
-            await register(form.full_name, form.mobile, form.email, form.password);
+            await register(form.full_name, form.mobile, form.email, form.password, '');
             navigate('/dashboard');
         } catch (err: any) {
             setError(err.response?.data?.email?.[0] || err.response?.data?.detail || 'Registration failed');
@@ -55,8 +57,8 @@ export default function RegisterPage() {
 
                     <div className="relative z-10 space-y-2">
                         <Link to="/" className="flex items-center gap-2 mb-16">
-                            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-primary text-xs font-black">SP</div>
-                            <span className="text-xl font-black tracking-tighter">Study Partner</span>
+                            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-primary text-xs font-black">QB</div>
+                            <span className="text-xl font-black tracking-tighter">qubook.in</span>
                         </Link>
                         <h2 className="text-4xl md:text-5xl font-black tracking-tight leading-tight">Start your <br /> Success Story</h2>
                         <p className="text-white/80 font-medium text-lg pt-4 max-w-sm">Create an account to access the most comprehensive professional exam materials in India.</p>
@@ -140,12 +142,19 @@ export default function RegisterPage() {
                                 <div className="relative group">
                                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-primary transition-colors" size={18} />
                                     <input
-                                        type="password"
+                                        type={showPassword ? "text" : "password"}
                                         required
                                         value={form.password}
                                         onChange={(e) => setForm({ ...form, password: e.target.value })}
-                                        className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-12 pr-4 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all"
+                                        className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-12 pr-10 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all"
                                     />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                                    >
+                                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                    </button>
                                 </div>
                             </div>
                             <div className="space-y-1.5">
@@ -153,12 +162,19 @@ export default function RegisterPage() {
                                 <div className="relative group">
                                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-primary transition-colors" size={18} />
                                     <input
-                                        type="password"
+                                        type={showConfirmPassword ? "text" : "password"}
                                         required
                                         value={form.confirm_password}
                                         onChange={(e) => setForm({ ...form, confirm_password: e.target.value })}
-                                        className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-12 pr-4 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all"
+                                        className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-12 pr-10 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all"
                                     />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                                    >
+                                        {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                    </button>
                                 </div>
                             </div>
                         </div>

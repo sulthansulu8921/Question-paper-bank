@@ -1,11 +1,16 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, Bell, ChevronDown, User, Settings, LogOut, Sun, Moon } from 'lucide-react';
+import { Search, Bell, ChevronDown, User, Settings, LogOut, Sun, Moon, Menu } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
+import { useThemeStore } from '../store/useThemeStore';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useThemeStore } from '../store/useThemeStore';
+import Logo from '@/components/Logo';
 
-export default function Topbar() {
+interface TopbarProps {
+    onMenuClick?: () => void;
+}
+
+export default function Topbar({ onMenuClick }: TopbarProps) {
     const user = useAuthStore((state) => state.user);
     const logout = useAuthStore((state) => state.logout);
     const navigate = useNavigate();
@@ -43,36 +48,66 @@ export default function Topbar() {
         : 'US';
 
     return (
-        <header className="h-20 bg-white dark:bg-slate-900 border-b border-gray-50 dark:border-slate-800 flex items-center justify-between px-4 md:px-10 shrink-0 relative z-[60] transition-colors">
-            {/* SEARCH AREA */}
-            <div className="relative group max-w-md w-full hidden md:block">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 dark:text-slate-500 group-focus-within:text-primary transition-colors" size={18} />
-                <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyDown={handleSearch}
-                    placeholder="Quick search (Press Enter to search)..."
-                    className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3 pl-12 pr-6 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all"
-                />
+        <header className="h-20 bg-card border-b border-border flex items-center justify-between px-4 md:px-10 shrink-0 relative z-[60]">
+            {/* SEARCH / LOGO AREA */}
+            <div className="flex items-center gap-4 w-full max-w-md">
+                {onMenuClick && (
+                    <button
+                        onClick={onMenuClick}
+                        className="lg:hidden p-2 -ml-2 text-text-secondary hover:bg-bg-secondary rounded-xl transition-all"
+                    >
+                        <Menu size={24} />
+                    </button>
+                )}
+
+                <div className="lg:hidden flex items-center mr-2 shrink-0">
+                    <Logo className="h-8 object-contain" />
+                </div>
+
+                <div className="relative group w-full hidden md:block">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted group-focus-within:text-primary transition-colors" size={18} />
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyDown={handleSearch}
+                        placeholder="Quick search (Press Enter to search)..."
+                        className="w-full bg-bg border border-border rounded-2xl py-3 pl-12 pr-6 text-sm font-medium text-text-primary focus:outline-none focus:ring-4 focus:ring-primary/5 focus:bg-card focus:border-primary/20 transition-all"
+                    />
+                </div>
             </div>
 
             {/* ACTION CENTER */}
-            <div className="flex items-center gap-4 md:gap-8 ml-auto">
-                <div className="flex items-center gap-2">
+            <div className="flex items-center gap-6">
+                <div className="flex items-center gap-3">
+                    {/* Theme Toggle Button */}
                     <button
                         onClick={toggleTheme}
-                        className="w-11 h-11 flex items-center justify-center text-gray-400 dark:text-slate-400 hover:text-primary dark:hover:text-primary hover:bg-primary/5 dark:hover:bg-primary/10 rounded-xl transition-all"
+                        className={`relative w-16 h-8 rounded-full transition-colors duration-300 shadow-inner flex items-center px-1 ${theme === 'dark' ? 'bg-primary' : 'bg-gray-200'}`}
                     >
-                        {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+                        <motion.div
+                            initial={false}
+                            animate={{
+                                x: theme === 'dark' ? 32 : 0,
+                            }}
+                            transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                            className="w-6 h-6 bg-white rounded-full flex items-center justify-center shadow-sm"
+                        >
+                            {theme === 'dark' ? (
+                                <Moon size={14} className="text-primary" />
+                            ) : (
+                                <Sun size={14} className="text-amber-500" />
+                            )}
+                        </motion.div>
                     </button>
-                    <button className="w-11 h-11 flex items-center justify-center text-gray-400 dark:text-slate-400 hover:text-primary dark:hover:bg-primary/10 hover:bg-primary/5 rounded-xl transition-all relative">
+
+                    <button className="w-11 h-11 flex items-center justify-center text-text-secondary hover:text-primary hover:bg-primary/5 rounded-xl transition-all relative">
                         <Bell size={20} />
-                        <span className="absolute top-3 right-3 w-2 h-2 bg-danger rounded-full border-2 border-white dark:border-slate-900 ring-2 ring-danger/20 animate-pulse"></span>
+                        <span className="absolute top-3 right-3 w-2 h-2 bg-danger rounded-full border-2 border-[var(--bg-secondary)] ring-2 ring-danger/20 animate-pulse"></span>
                     </button>
                 </div>
 
-                <div className="h-8 w-[1px] bg-gray-100 dark:bg-slate-700" />
+                <div className="h-8 w-[1px] bg-gray-100" />
 
                 {/* PROFILE DROPDOWN */}
                 <div className="relative" ref={dropdownRef}>
@@ -81,11 +116,11 @@ export default function Topbar() {
                         className="flex items-center gap-4 group cursor-pointer"
                     >
                         <div className="text-right hidden md:block">
-                            <p className="text-sm font-black text-gray-900 leading-tight">{user?.full_name || 'Student User'}</p>
+                            <p className="text-sm font-black text-text-primary leading-tight">{user?.full_name || 'Student User'}</p>
                             <p className="text-[10px] font-black text-primary uppercase tracking-tighter mt-0.5">{user?.subscription_tier || 'Free Account'}</p>
                         </div>
                         <div className="relative">
-                            <div className="w-11 h-11 bg-gradient-to-tr from-primary to-accent rounded-[1rem] flex items-center justify-center shadow-lg shadow-primary/20 group-hover:scale-105 transition-transform duration-500 overflow-hidden">
+                            <div className="w-11 h-11 bg-gradient-to-tr from-primary to-accent rounded-[1rem] flex items-center justify-center shadow-lg shadow-primary/20 group-hover:scale-105 transition-transform duration-200 overflow-hidden">
                                 <div className="absolute inset-0 bg-white/10 mix-blend-overlay" />
                                 <span className="text-white text-sm font-black relative z-10">{initials}</span>
                             </div>
@@ -102,24 +137,24 @@ export default function Topbar() {
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
                                 transition={{ duration: 0.2 }}
-                                className="absolute right-0 top-full mt-4 w-64 bg-white dark:bg-slate-800 rounded-3xl shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-100 dark:border-slate-700 overflow-hidden"
+                                className="absolute right-0 top-full mt-4 w-64 bg-card rounded-3xl shadow-[0_20px_40px_-15px_rgba(0,0,0,0.2)] border border-border overflow-hidden z-50"
                             >
-                                <div className="p-4 border-b border-slate-50 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800">
-                                    <p className="text-sm font-black text-slate-900 dark:text-slate-100">{user?.full_name || 'Student User'}</p>
-                                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-1">{user?.email || 'student@example.com'}</p>
+                                <div className="p-4 border-b border-border bg-bg/50">
+                                    <p className="text-sm font-black text-text-primary">{user?.full_name || 'Student User'}</p>
+                                    <p className="text-xs font-bold text-text-muted mt-1">{user?.email || 'student@example.com'}</p>
                                 </div>
                                 <div className="p-2 space-y-1">
-                                    <button onClick={() => navigate('/dashboard/account')} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-primary dark:hover:text-primary hover:bg-primary/5 dark:hover:bg-primary/10 rounded-2xl transition-all">
+                                    <button onClick={() => navigate('/dashboard/account')} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-text-secondary hover:text-primary hover:bg-bg rounded-2xl transition-all">
                                         <User size={16} /> My Account
                                     </button>
-                                    <button onClick={() => navigate('/dashboard/settings')} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-primary dark:hover:text-primary hover:bg-primary/5 dark:hover:bg-primary/10 rounded-2xl transition-all">
+                                    <button onClick={() => navigate('/dashboard/settings')} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-text-secondary hover:text-primary hover:bg-bg rounded-2xl transition-all">
                                         <Settings size={16} /> Settings & Preferences
                                     </button>
                                 </div>
-                                <div className="p-2 border-t border-slate-50 dark:border-slate-700">
+                                <div className="p-2 border-t border-border">
                                     <button
                                         onClick={handleLogout}
-                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm font-black text-danger hover:bg-danger/5 dark:hover:bg-danger/10 rounded-2xl transition-all"
+                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm font-black text-danger hover:bg-danger/5 rounded-2xl transition-all"
                                     >
                                         <LogOut size={16} /> Sign Out securely
                                     </button>

@@ -112,25 +112,25 @@ ICAI_MASTER = [
                 'order': 2,
                 'chapters': [
                     'Preliminary',
-                    'Incorporation of Company',
-                    'Prospectus and Allotment',
+                    'Incorporation of Company and Matters Incidental Thereto',
+                    'Prospectus and Allotment of Securities',
                     'Share Capital and Debentures',
-                    'Acceptance of Deposits',
+                    'Acceptance of Deposits by Companies',
                     'Registration of Charges',
                     'Management and Administration',
                     'Declaration and Payment of Dividend',
                     'Accounts of Companies',
                     'Audit and Auditors',
                     'Companies Incorporated Outside India',
-                    'LLP Act 2008',
-                    'General Clauses Act',
+                    'The Limited Liability Partnership Act, 2008',
+                    'The General Clauses Act, 1897',
                     'Interpretation of Statutes',
-                    'FEMA 1999',
+                    'The Foreign Exchange Management Act, 1999',
                 ],
             },
             {
-                'name': 'Paper 3A - Direct Tax',
-                'code': 'P3A',
+                'name': 'Paper 3 - Taxation',
+                'code': 'P3',
                 'order': 3,
                 'chapters': [
                     'Basic Concepts',
@@ -144,13 +144,6 @@ ICAI_MASTER = [
                     'Deductions from Gross Total Income',
                     'Advance Tax',
                     'Income Tax Liability Computation',
-                ],
-            },
-            {
-                'name': 'Paper 3B - Goods and Service Tax',
-                'code': 'P3B',
-                'order': 4,
-                'chapters': [
                     'GST in India',
                     'Supply under GST',
                     'Charge of GST',
@@ -171,7 +164,7 @@ ICAI_MASTER = [
             {
                 'name': 'Paper 4 - Cost and Management Accounting',
                 'code': 'P4',
-                'order': 5,
+                'order': 4,
                 'chapters': [
                     'Introduction to Cost and Management Accounting',
                     'Material Cost',
@@ -193,7 +186,7 @@ ICAI_MASTER = [
             {
                 'name': 'Paper 5 - Auditing and Ethics',
                 'code': 'P5',
-                'order': 6,
+                'order': 5,
                 'chapters': [
                     'Nature and Scope of Audit',
                     'Audit Strategy',
@@ -209,9 +202,9 @@ ICAI_MASTER = [
                 ],
             },
             {
-                'name': 'Paper 6A - Financial Management',
-                'code': 'P6A',
-                'order': 7,
+                'name': 'Paper 6 - Financial Management and Strategic Management',
+                'code': 'P6',
+                'order': 6,
                 'chapters': [
                     'Scope and Objectives of FM',
                     'Types of Financing',
@@ -222,13 +215,6 @@ ICAI_MASTER = [
                     'Investment Decisions',
                     'Dividend Decisions',
                     'Management of Working Capital',
-                ],
-            },
-            {
-                'name': 'Paper 6B - Strategic Management',
-                'code': 'P6B',
-                'order': 8,
-                'chapters': [
                     'Introduction to Strategic Management',
                     'External Environment',
                     'Internal Environment',

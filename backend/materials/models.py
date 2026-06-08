@@ -68,6 +68,7 @@ class SubjectiveQuestion(models.Model):
         ('NORMAL', 'Normal Question'),
         ('MIXED', 'Mixed Question'),
         ('THEORY', 'Theory Question'),
+        ('CASE_SCENARIO', 'Case Scenario'),
     ]
     DIFFICULTY_CHOICES = [
         ('EASY', 'Easy'), ('MEDIUM', 'Medium'), ('HARD', 'Hard'),
@@ -103,13 +104,14 @@ class SubjectiveQuestion(models.Model):
     section = models.CharField(max_length=10, blank=True, null=True)
     q_no = models.CharField(max_length=20)
 
-    question_type = models.CharField(max_length=10, choices=QUESTION_TYPE_CHOICES, default='NORMAL')
+    question_type = models.CharField(max_length=15, choices=QUESTION_TYPE_CHOICES, default='NORMAL')
     marks = models.IntegerField(default=1)
     difficulty = models.CharField(max_length=20, choices=DIFFICULTY_CHOICES, default='MEDIUM')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ACTIVE')
     is_important = models.BooleanField(default=False)
 
     question_text = models.TextField(blank=True, default='')
+    case_scenario_passage = models.TextField(blank=True, default='')
     correct_answer = models.TextField(blank=True, null=True)
     table_data = models.TextField(blank=True, null=True)
     formula_data = models.TextField(blank=True, null=True)
@@ -122,7 +124,17 @@ class SubjectiveQuestion(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['topic__order', 'id']
+        indexes = [
+            models.Index(fields=['status'], name='question_status_idx'),
+            models.Index(fields=['difficulty'], name='question_difficulty_idx'),
+            models.Index(fields=['question_type'], name='question_type_idx'),
+            models.Index(fields=['icai_topic'], name='question_icai_topic_idx'),
+            models.Index(fields=['topic'], name='question_topic_idx'),
+            models.Index(fields=['subject'], name='question_subject_idx'),
+            models.Index(fields=['created_at'], name='question_created_at_idx'),
+        ]
+
 
     def __str__(self):
         return f"{self.source} | {self.attempt} {self.year} | Q{self.q_no}"
@@ -137,16 +149,19 @@ class SubjectiveQuestion(models.Model):
 
                 subj = None
                 if "advanced accounting" in paper_name or "accounting" in paper_name:
-                    subj = Subject.objects.filter(id=1).first()
+                    if "cost" in paper_name:
+                        subj = Subject.objects.filter(id=4).first()
+                    else:
+                        subj = Subject.objects.filter(id=1).first()
                 elif "corporate and other laws" in paper_name or "business laws" in paper_name:
                     subj = Subject.objects.filter(id=2).first()
-                elif "taxation" in paper_name or "tax" in paper_name:
+                elif "direct tax" in paper_name or "goods and service tax" in paper_name or "gst" in paper_name or "taxation" in paper_name:
                     subj = Subject.objects.filter(id=3).first()
                 elif "cost" in paper_name or "management accounting" in paper_name:
                     subj = Subject.objects.filter(id=4).first()
                 elif "auditing" in paper_name:
                     subj = Subject.objects.filter(id=5).first()
-                elif "financial management" in paper_name or "strategic management" in paper_name:
+                elif "financial management" in paper_name or "strategic management" in paper_name or "fm" in paper_name or "sm" in paper_name:
                     subj = Subject.objects.filter(id=6).first()
 
                 if subj:

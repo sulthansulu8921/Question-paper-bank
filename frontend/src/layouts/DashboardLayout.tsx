@@ -2,14 +2,42 @@ import { useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import { Outlet } from 'react-router-dom';
-import { Menu, X } from 'lucide-react';
+import { X, Phone, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuthStore } from '@/store/useAuthStore';
 
 export default function DashboardLayout() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const user = useAuthStore((state) => state.user);
+    const updateProfile = useAuthStore((state) => state.updateProfile);
+
+    // Mobile verification modal state
+    const [mobileInput, setMobileInput] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [modalError, setModalError] = useState('');
+
+    const showMobilePrompt = user && !user.mobile_number?.trim();
+
+    const handleMobileSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const cleaned = mobileInput.replace(/\s+/g, '');
+        if (cleaned.length < 10) {
+            setModalError('Please enter a valid 10-digit mobile number.');
+            return;
+        }
+        setIsSubmitting(true);
+        setModalError('');
+        try {
+            await updateProfile({ mobile_number: cleaned });
+        } catch (err: any) {
+            setModalError(err.response?.data?.error || 'Failed to save mobile number. Please try again.');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
     return (
-        <div className="flex bg-[#F8FAFC] min-h-screen text-dark font-sans relative overflow-hidden">
+        <div className="flex bg-bg min-h-screen text-text-primary font-sans relative overflow-hidden">
             {/* Desktop Sidebar */}
             <div className="hidden lg:block">
                 <Sidebar />
@@ -31,37 +59,24 @@ export default function DashboardLayout() {
                             animate={{ x: 0 }}
                             exit={{ x: '-100%' }}
                             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                            className="fixed top-0 left-0 h-full w-72 bg-white z-[70] lg:hidden"
+                            className="fixed top-0 left-0 h-full w-72 bg-sidebar z-[70] lg:hidden flex flex-col"
                         >
-                            <div className="absolute top-6 right-6 lg:hidden">
+                            <Sidebar />
+                            <div className="absolute top-4 right-4 z-[80] lg:hidden">
                                 <button
                                     onClick={() => setIsMobileMenuOpen(false)}
-                                    className="p-2 text-slate-400 hover:text-slate-900 transition-colors"
+                                    className="p-2 text-text-muted hover:text-text-primary hover:bg-bg rounded-xl transition-all"
                                 >
-                                    <X size={24} />
+                                    <X size={20} />
                                 </button>
                             </div>
-                            <Sidebar />
                         </motion.div>
                     </>
                 )}
             </AnimatePresence>
 
             <div className="flex-1 flex flex-col h-screen overflow-hidden">
-                {/* Mobile Menu Trigger Bar */}
-                <div className="lg:hidden h-16 bg-white border-b border-slate-100 flex items-center px-6 shrink-0 z-50">
-                    <button
-                        onClick={() => setIsMobileMenuOpen(true)}
-                        className="p-2 -ml-2 text-slate-600 hover:bg-slate-50 rounded-xl transition-all"
-                    >
-                        <Menu size={24} />
-                    </button>
-                    <div className="ml-4 flex items-center gap-2">
-                        <img src="/logo.png" alt="Qubook Logo" className="h-8 object-contain" />
-                    </div>
-                </div>
-
-                <Topbar />
+                <Topbar onMenuClick={() => setIsMobileMenuOpen(true)} />
 
                 <main className="flex-1 overflow-y-auto p-4 md:p-8 lg:p-10 scrollbar-hide">
                     <div className="max-w-[1600px] mx-auto min-h-full">
@@ -69,6 +84,68 @@ export default function DashboardLayout() {
                     </div>
                 </main>
             </div>
+
+            {/* Non-dismissible Mobile Number Modal */}
+            <AnimatePresence>
+                {showMobilePrompt && (
+                    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            className="bg-card border border-border rounded-[2.5rem] p-8 md:p-10 max-w-md w-full shadow-2xl relative overflow-hidden"
+                        >
+                            {/* Accent Glow */}
+                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-36 h-36 bg-primary/20 rounded-full blur-3xl -z-10" />
+
+                            <div className="text-center space-y-4">
+                                <div className="inline-flex p-4 bg-primary/10 text-primary rounded-3xl mx-auto animate-bounce">
+                                    <Phone size={32} />
+                                </div>
+                                <h2 className="text-2xl font-black text-text-primary tracking-tight">Complete Your Profile</h2>
+                                <p className="text-xs text-text-muted font-bold uppercase tracking-wider">Mobile Number Required</p>
+                                <p className="text-sm text-text-secondary leading-relaxed">
+                                    Please enter your mobile number to complete your registration. This is required for secure access and subscription features.
+                                </p>
+                            </div>
+
+                            <form onSubmit={handleMobileSubmit} className="mt-8 space-y-6">
+                                {modalError && (
+                                    <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-bold rounded-2xl text-center">
+                                        {modalError}
+                                    </div>
+                                )}
+
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black text-text-muted uppercase tracking-widest pl-1">Mobile Number</label>
+                                    <div className="relative group">
+                                        <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted group-focus-within:text-primary transition-colors" size={18} />
+                                        <input
+                                            type="tel"
+                                            required
+                                            value={mobileInput}
+                                            onChange={(e) => setMobileInput(e.target.value)}
+                                            placeholder="Enter 10-digit number"
+                                            className="w-full bg-bg border border-border rounded-2xl py-4 pl-12 pr-6 text-sm font-semibold text-text-primary focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/20 transition-all"
+                                        />
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    disabled={isSubmitting}
+                                    className="w-full bg-primary text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-primary/30 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-75"
+                                >
+                                    {isSubmitting ? (
+                                        <Loader2 size={20} className="animate-spin" />
+                                    ) : (
+                                        <>Save & Continue</>
+                                    )}
+                                </button>
+                            </form>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

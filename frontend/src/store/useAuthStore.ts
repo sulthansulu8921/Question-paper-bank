@@ -8,7 +8,8 @@ interface AuthState {
     setAuth: (user: any, token: string) => void;
     logout: () => void;
     login: (email: string, password: string) => Promise<void>;
-    register: (name: string, mobile: string, email: string, password: string) => Promise<void>;
+    register: (name: string, mobile: string, email: string, password: string, otp: string) => Promise<void>;
+    googleLogin: (credential: string) => Promise<void>;
     updateProfile: (data: any) => Promise<void>;
     hydrate: () => Promise<void>;
 }
@@ -35,7 +36,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         localStorage.setItem('token', access);
         set({ user: profileResponse.data, token: access, isHydrating: false });
     },
-    register: async (full_name, mobile, email, password) => {
+    googleLogin: async (credential: string) => {
+        const response = await api.post('/auth/google/', { token: credential });
+        const { access } = response.data;
+
+        // Fetch full profile info including settings
+        const profileResponse = await api.get('/auth/profile/', { headers: { Authorization: `Bearer ${access}` } });
+
+        localStorage.setItem('token', access);
+        set({ user: profileResponse.data, token: access, isHydrating: false });
+    },
+    register: async (full_name, mobile, email, password, otp) => {
         const parts = full_name.split(' ');
         const first_name = parts[0] || '';
         const last_name = parts.slice(1).join(' ') || '';
@@ -44,7 +55,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             last_name,
             mobile_number: mobile,
             email,
-            password
+            password,
+            otp
         });
         const { access } = response.data;
 

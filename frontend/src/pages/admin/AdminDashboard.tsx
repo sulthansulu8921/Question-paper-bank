@@ -1,14 +1,14 @@
 import {
     FileText,
-    BookOpen,
-    List,
-    AlignLeft,
     Users,
     Upload,
     ArrowUpRight,
     Loader2,
     Database,
-    Download
+    Download,
+    CreditCard,
+    ShieldAlert,
+    UserX
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -24,22 +24,72 @@ const AdminDashboard = () => {
         refetchInterval: 30000, // Refresh every 30 seconds for "real-time" feel
     });
 
+    const chartData = stats?.monthly_charts || [
+        { month: 'Jan', revenue: 45000, users: 30 },
+        { month: 'Feb', revenue: 58000, users: 45 },
+        { month: 'Mar', revenue: 72000, users: 50 },
+        { month: 'Apr', revenue: 98000, users: 75 },
+        { month: 'May', revenue: 120000, users: 110 },
+        { month: 'Jun', revenue: stats?.total_revenue ? Math.round(stats.total_revenue) : 154000, users: stats?.total_users || 140 }
+    ];
+
+    const maxRev = Math.max(...chartData.map((d: any) => d.revenue), 1000);
+    const maxUsers = Math.max(...chartData.map((d: any) => d.users), 10);
+
     const statCards = [
-        { title: 'Total Questions', value: stats?.total_questions || '0', icon: FileText, color: 'primary', trend: '+12%' },
-        { title: 'Total Subjects', value: stats?.total_subjects || '0', icon: BookOpen, color: 'accent', trend: '+3%' },
-        { title: 'MCQ Questions', value: stats?.mcq_questions || '0', icon: List, color: 'warning', trend: '+8%' },
-        { title: 'Theory Questions', value: stats?.theory_questions || '0', icon: AlignLeft, color: 'danger', trend: '+15%' },
-        { title: 'Total Users', value: stats?.total_users || '0', icon: Users, color: 'primary-light', trend: '+5%' },
-        { title: 'Uploaded Papers', value: stats?.total_uploads || '0', icon: Upload, color: 'success', trend: '+20%' },
+        { 
+            title: 'Total Revenue', 
+            value: stats?.total_revenue !== undefined ? `₹${parseFloat(stats.total_revenue).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '₹0', 
+            icon: CreditCard, 
+            color: 'success', 
+            trend: '+18%' 
+        },
+        { 
+            title: 'Active Subscriptions', 
+            value: stats?.active_subscriptions || '0', 
+            icon: ShieldAlert, 
+            color: 'primary', 
+            trend: '+4%' 
+        },
+        { 
+            title: 'Unpaid Students', 
+            value: stats?.unpaid_students || '0', 
+            icon: UserX, 
+            color: 'danger', 
+            trend: '+12%',
+            onClick: () => navigate('/admin/users')
+        },
+        { 
+            title: 'Total Questions', 
+            value: stats?.total_questions || '0', 
+            icon: FileText, 
+            color: 'accent', 
+            trend: '+12%' 
+        },
+        { 
+            title: 'Total Users', 
+            value: stats?.total_users || '0', 
+            icon: Users, 
+            color: 'primary-light', 
+            trend: '+5%' 
+        },
+        { 
+            title: 'Uploaded Papers', 
+            value: stats?.total_uploads || '0', 
+            icon: Upload, 
+            color: 'warning', 
+            trend: '+20%' 
+        },
     ];
 
     const exportReport = () => {
         const rows = [
             ['Metric', 'Value'],
+            ['Total Revenue (INR)', stats?.total_revenue ?? 0],
+            ['Active Subscriptions', stats?.active_subscriptions ?? 0],
+            ['Unpaid Students', stats?.unpaid_students ?? 0],
             ['Total Questions', stats?.total_questions ?? 0],
             ['Total Subjects', stats?.total_subjects ?? 0],
-            ['MCQ Questions', stats?.mcq_questions ?? 0],
-            ['Theory Questions', stats?.theory_questions ?? 0],
             ['Total Users', stats?.total_users ?? 0],
             ['Uploaded Papers', stats?.total_uploads ?? 0],
         ];
@@ -81,7 +131,11 @@ const AdminDashboard = () => {
                 {statCards.map((stat, idx) => {
                     const Icon = stat.icon;
                     return (
-                        <div key={idx} className="stat-card">
+                        <div 
+                            key={idx} 
+                            className={`stat-card ${stat.onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+                            onClick={stat.onClick}
+                        >
                             <div className="stat-card-header">
                                 <div className={`icon-wrapper bg-${stat.color}-light text-${stat.color}`}>
                                     {isLoading ? <Loader2 size={24} className="animate-spin" /> : <Icon size={24} />}
@@ -105,46 +159,78 @@ const AdminDashboard = () => {
             <div className="dashboard-content-grid">
                 <div className="charts-section card">
                     <div className="card-header">
-                        <h3 className="card-title">Performance & Uploads</h3>
-                        <button type="button" className="text-btn" onClick={() => navigate('/admin/analytics')}>
+                        <h3 className="card-title font-bold text-slate-800">Monthly Revenue & User Signups</h3>
+                        <button type="button" className="text-btn font-bold text-blue-600 hover:text-blue-800" onClick={() => navigate('/admin/analytics')}>
                             View Analytics
                         </button>
                     </div>
-                    <div className="chart-placeholder">
-                        <div className="bar-chart">
-                            <div className="bar" style={{ height: '60%' }}></div>
-                            <div className="bar" style={{ height: '80%' }}></div>
-                            <div className="bar" style={{ height: '40%' }}></div>
-                            <div className="bar" style={{ height: '90%' }}></div>
-                            <div className="bar" style={{ height: '50%' }}></div>
-                            <div className="bar" style={{ height: '75%' }}></div>
+                    
+                    <div className="chart-placeholder p-6">
+                        <div className="flex justify-between items-end h-48 w-full gap-4 pt-4 border-b border-slate-100">
+                            {chartData.map((d: any, i: number) => {
+                                const heightPercent = Math.min(100, (d.revenue / maxRev) * 100);
+                                const usersPercent = Math.min(100, (d.users / maxUsers) * 100);
+                                return (
+                                    <div key={i} className="flex-1 flex flex-col items-center group relative cursor-pointer">
+                                        {/* Hover Tooltip */}
+                                        <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 bg-slate-800 text-white text-[10px] py-1 px-2.5 rounded-lg shadow-lg transition-opacity pointer-events-none z-10 whitespace-nowrap">
+                                            Rev: ₹{d.revenue.toLocaleString('en-IN')} | Signups: {d.users}
+                                        </div>
+                                        <div className="w-full flex gap-1.5 items-end h-36 justify-center">
+                                            {/* Revenue Bar */}
+                                            <div className="w-5 bg-indigo-600 rounded-t-sm transition-all duration-300 hover:bg-indigo-700" style={{ height: `${heightPercent}%` }}></div>
+                                            {/* Users Bar */}
+                                            <div className="w-5 bg-teal-400 rounded-t-sm transition-all duration-300 hover:bg-teal-500" style={{ height: `${usersPercent}%` }}></div>
+                                        </div>
+                                        <span className="text-[10px] font-bold text-slate-500 mt-2">{d.month}</span>
+                                    </div>
+                                );
+                            })}
                         </div>
-                        <p className="placeholder-text">Live Upload Trends (Past 6 Months)</p>
+                        <div className="flex gap-6 justify-center mt-4 text-[11px] font-semibold text-slate-500">
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-3 h-3 bg-indigo-600 rounded-sm"></span> Revenue (₹)
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-3 h-3 bg-teal-400 rounded-sm"></span> Student Signups
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <div className="recent-activity-section card">
                     <div className="card-header">
-                        <h3 className="card-title">Recent Activity</h3>
-                        <button type="button" className="text-btn" onClick={() => navigate('/admin/questions')}>
+                        <h3 className="card-title font-bold text-slate-800">Recent Activity</h3>
+                        <button type="button" className="text-btn font-bold text-blue-600 hover:text-blue-800" onClick={() => navigate('/admin/questions')}>
                             View All
                         </button>
                     </div>
-                    <div className="activity-list">
+                    <div className="activity-list" style={{ maxHeight: '280px', overflowY: 'auto' }}>
                         {isLoading ? (
                             <div className="p-10 text-center"><Loader2 size={32} className="animate-spin mx-auto text-primary" /></div>
                         ) : (
-                            stats?.recent_activity?.map((activity: any, i: number) => (
-                                <div key={i} className="activity-item">
-                                    <div className={`activity-indicator ${activity.type}`}></div>
-                                    <div className="activity-details">
-                                        <p className="activity-text">
-                                            <strong>{activity.user}</strong> {activity.text}
-                                        </p>
-                                        <span className="activity-time">{new Date(activity.time).toLocaleString()}</span>
+                            stats?.recent_activity?.map((activity: any, i: number) => {
+                                let badgeColor = "bg-blue-50 text-blue-700 border-blue-100";
+                                if (activity.type === "feedback") badgeColor = "bg-amber-50 text-amber-700 border-amber-100";
+                                if (activity.type === "user") badgeColor = "bg-green-50 text-green-700 border-green-100";
+
+                                return (
+                                    <div key={i} className="activity-item p-3 border-b border-slate-50 last:border-b-0 flex items-start gap-3">
+                                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${badgeColor}`}>
+                                            {activity.type}
+                                        </span>
+                                        <div className="activity-details flex-1 min-w-0">
+                                            <p className="activity-text text-xs text-slate-700 font-semibold truncate">
+                                                {activity.text}
+                                            </p>
+                                            <div className="flex justify-between items-center mt-1 text-[10px] text-slate-400 font-bold">
+                                                <span className="truncate max-w-[150px]">{activity.user}</span>
+                                                <span>{new Date(activity.time).toLocaleDateString()}</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                         {!isLoading && stats?.recent_activity?.length === 0 && (
                             <p className="text-center py-10 text-muted">No recent activity detected.</p>

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/api/axios';
 import { Plus, Edit, Trash2, Save, Search, Loader2, BookOpen } from 'lucide-react';
 import AdminModal from '@/components/admin/AdminModal';
+import AdminConfirmModal from '@/components/admin/AdminConfirmModal';
 import { useAdminToast, getApiErrorMessage } from '@/components/admin/useAdminToast';
 import '@/styles/admin/QuestionManagement.css';
 
@@ -14,6 +15,13 @@ const AdminSubjectManager = () => {
     const [formData, setFormData] = useState({ name: '', code: '', course: '' });
     const [editForm, setEditForm] = useState({ name: '', code: '', course: '' });
     const { show, Toast } = useAdminToast();
+
+    const [confirmDelete, setConfirmDelete] = useState<{
+        open: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    }>({ open: false, title: '', message: '', onConfirm: () => {} });
 
     const { data: subjects = [], isLoading } = useQuery({
         queryKey: ['admin-subjects-full'],
@@ -117,7 +125,15 @@ const AdminSubjectManager = () => {
                                     <td>
                                         <div className="action-buttons">
                                             <button className="action-btn" onClick={() => openEdit(item)}><Edit size={16} /></button>
-                                            <button className="action-btn danger" onClick={() => { if (window.confirm(`Delete "${item.name}"?`)) deleteMutation.mutate(item.id); }}>
+                                            <button className="action-btn danger" onClick={() => setConfirmDelete({
+                                                open: true,
+                                                title: 'Delete Subject',
+                                                message: `Are you sure you want to delete the subject "${item.name}"? This action cannot be undone.`,
+                                                onConfirm: () => {
+                                                    deleteMutation.mutate(item.id);
+                                                    setConfirmDelete(prev => ({ ...prev, open: false }));
+                                                }
+                                            })}>
                                                 {deleteMutation.isPending && deleteMutation.variables === item.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                                             </button>
                                         </div>
@@ -206,6 +222,14 @@ const AdminSubjectManager = () => {
                     </select>
                 </div>
             </AdminModal>
+
+            <AdminConfirmModal
+                open={confirmDelete.open}
+                onClose={() => setConfirmDelete(prev => ({ ...prev, open: false }))}
+                onConfirm={confirmDelete.onConfirm}
+                title={confirmDelete.title}
+                message={confirmDelete.message}
+            />
         </div>
     );
 };

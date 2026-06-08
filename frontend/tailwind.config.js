@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  darkMode: 'class',
+  darkMode: ['class', '[data-theme="dark"]'],
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -11,10 +11,21 @@ export default {
         sans: ['Montserrat', 'sans-serif'],
       },
       colors: {
+        bg: 'var(--bg)',
+        'bg-secondary': 'var(--bg-secondary)',
+        card: 'var(--card)',
+        sidebar: 'var(--sidebar)',
+        border: 'var(--border)',
+        text: {
+          primary: 'var(--text-primary)',
+          secondary: 'var(--text-secondary)',
+          muted: 'var(--text-muted)',
+        },
         primary: {
-          DEFAULT: '#5B4BFF',
+          DEFAULT: 'var(--primary)',
           hover: '#4A3ACC',
           muted: '#6D5DFE',
+          glow: 'var(--primary-glow)',
         },
         secondary: {
           DEFAULT: '#0F172A',

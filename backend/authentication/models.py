@@ -32,3 +32,36 @@ def create_user_settings(sender, instance, created, **kwargs):
 def save_user_settings(sender, instance, **kwargs):
     if hasattr(instance, 'settings'):
         instance.settings.save()
+
+
+import random
+import string
+from django.utils import timezone
+from datetime import timedelta
+
+class OTP(models.Model):
+    PURPOSE_CHOICES = [
+        ('REGISTER', 'Registration'),
+        ('FORGOT_PASSWORD', 'Forgot Password'),
+    ]
+    email = models.EmailField()
+    code = models.CharField(max_length=6)
+    purpose = models.CharField(max_length=20, choices=PURPOSE_CHOICES)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_used = models.BooleanField(default=False)
+
+    def is_expired(self):
+        # Expires in 10 minutes
+        return timezone.now() > self.created_at + timedelta(minutes=10)
+
+    @classmethod
+    def generate_otp(cls, email, purpose):
+        # Generate 6-digit numeric OTP
+        code = "".join(random.choices(string.digits, k=6))
+        # Deactivate any previous unused OTPs for this email and purpose
+        cls.objects.filter(email=email, purpose=purpose, is_used=False).update(is_used=True)
+        # Create new one
+        return cls.objects.create(email=email, code=code, purpose=purpose)
+
+    def __str__(self):
+        return f"{self.email} - {self.code} ({self.purpose})"

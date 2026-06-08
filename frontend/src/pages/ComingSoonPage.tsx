@@ -41,7 +41,7 @@ export default function ComingSoonPage() {
                 </h1>
 
                 <p className="text-slate-500 text-lg font-medium leading-relaxed mb-12">
-                    We're working incredibly hard to bring premium resources for this course to the Study Partner platform. Our faculty is finalizing the materials to ensure you get the absolute best.
+                    We're working incredibly hard to bring premium resources for this course to the qubook.in platform. Our faculty is finalizing the materials to ensure you get the absolute best.
                 </p>
 
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4">

@@ -27,6 +27,8 @@ urlpatterns = [
     path('api/master/', include('master_data.urls')),
     path('api/subscriptions/', include('subscriptions.urls')),
     path('api/about/', include('about.urls')),
+    path('api/assistant/', include('assistant.urls')),
+    path('api/gamification/', include('gamification.urls')),
 ]
 
 if settings.DEBUG:

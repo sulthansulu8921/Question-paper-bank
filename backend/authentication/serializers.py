@@ -15,7 +15,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'mobile_number', 'first_name', 'last_name', 'full_name', 'password', 'settings', 'is_staff', 'subscription_tier']
+        fields = ['id', 'email', 'mobile_number', 'first_name', 'last_name', 'full_name', 'password', 'settings', 'is_staff', 'is_superuser', 'subscription_tier', 'date_joined', 'last_login']
         extra_kwargs = {'password': {'write_only': True}}
     
     def get_full_name(self, obj):
@@ -28,10 +28,34 @@ class UserSerializer(serializers.ModelSerializer):
             user=obj,
             is_active=True,
             end_date__gte=timezone.now()
-        ).first()
+        ).select_related('plan', 'level', 'subject').first()
         if active_sub:
+            details = []
+            if active_sub.level:
+                details.append(active_sub.level.name)
+            if active_sub.plan.scope == 'PAPER_WISE' and active_sub.subject:
+                details.append(active_sub.subject.name)
+            elif active_sub.plan.scope == 'GROUP_WISE' and active_sub.group:
+                details.append(active_sub.group.replace('_', ' ').title())
+            
+            period = []
+            if active_sub.plan.billing_cycle == 'MONTHLY' and active_sub.calendar_month:
+                period.append(f"{active_sub.calendar_month}")
+            elif active_sub.plan.billing_cycle == 'ATTEMPT_WISE' and active_sub.exam_attempt:
+                period.append(f"{active_sub.exam_attempt} Attempt")
+            if active_sub.year:
+                period.append(str(active_sub.year))
+            
+            period_str = " ".join(period)
+            details_str = " - ".join(details)
+            
+            if details_str and period_str:
+                return f"{details_str} ({period_str})"
+            elif details_str:
+                return details_str
             return active_sub.plan.name
         return "Free Account"
+
 
     def validate_password(self, value):
         try:

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, MessageSquare, Star, ChevronLeft, ChevronRight, Copy, Send, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, MessageSquare, Star, ChevronLeft, ChevronRight, Copy, Send, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import api from '@/api/axios';
 
 interface QuestionModalProps {
@@ -22,14 +23,14 @@ const DynamicTable = ({ tableJson, title }: { tableJson: string; title: string }
         if (!parsed.headers || !parsed.rows || parsed.headers.length === 0) return null;
 
         return (
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden my-4">
-                <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400">
+            <div className="bg-bg rounded-2xl border border-border shadow-sm overflow-hidden my-4">
+                <div className="px-4 py-2 bg-[var(--table-header)] border-b border-border text-[10px] font-black uppercase tracking-wider text-white">
                     {title}
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-xs font-bold border-collapse">
                         <thead>
-                            <tr className="bg-slate-900 text-white">
+                            <tr className="bg-[var(--table-header)] text-white">
                                 {parsed.headers.map((h: string, i: number) => (
                                     <th key={i} className="px-4 py-3 text-left font-black uppercase tracking-wider border-r border-white/10 last:border-none">
                                         {h}
@@ -37,11 +38,11 @@ const DynamicTable = ({ tableJson, title }: { tableJson: string; title: string }
                                 ))}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody className="divide-y divide-border">
                             {parsed.rows.map((row: string[], rIdx: number) => (
-                                <tr key={rIdx} className="hover:bg-slate-50/80 transition-colors">
+                                <tr key={rIdx} className="hover:bg-[var(--table-hover)] transition-colors text-text-primary">
                                     {row.map((cell: string, cIdx: number) => (
-                                        <td key={cIdx} className="px-4 py-3 text-slate-600 border-r border-slate-100 last:border-none">
+                                        <td key={cIdx} className="px-4 py-3 border-r border-border last:border-none">
                                             {cell}
                                         </td>
                                     ))}
@@ -58,6 +59,97 @@ const DynamicTable = ({ tableJson, title }: { tableJson: string; title: string }
     }
 };
 
+const parseFormattingTags = (text: string): React.ReactNode => {
+    if (!text) return '';
+    const regex = /(\[\/?(?:B|U|CENTER)\])/i;
+    const tokens = text.split(regex);
+    
+    const stack: { type: 'B' | 'U' | 'CENTER'; children: React.ReactNode[] }[] = [];
+    let currentChildren: React.ReactNode[] = [];
+    
+    tokens.forEach((token, index) => {
+        if (!token) return;
+        const upperToken = token.toUpperCase();
+        if (upperToken === '[B]') {
+            stack.push({ type: 'B', children: currentChildren });
+            currentChildren = [];
+        } else if (upperToken === '[/B]') {
+            if (stack.length > 0 && stack[stack.length - 1].type === 'B') {
+                const element = <strong key={`b-${index}`}>{currentChildren}</strong>;
+                const parent = stack.pop()!;
+                currentChildren = parent.children;
+                currentChildren.push(element);
+            } else {
+                currentChildren.push(token);
+            }
+        } else if (upperToken === '[U]') {
+            stack.push({ type: 'U', children: currentChildren });
+            currentChildren = [];
+        } else if (upperToken === '[/U]') {
+            if (stack.length > 0 && stack[stack.length - 1].type === 'U') {
+                const element = <u key={`u-${index}`}>{currentChildren}</u>;
+                const parent = stack.pop()!;
+                currentChildren = parent.children;
+                currentChildren.push(element);
+            } else {
+                currentChildren.push(token);
+            }
+        } else if (upperToken === '[CENTER]') {
+            stack.push({ type: 'CENTER', children: currentChildren });
+            currentChildren = [];
+        } else if (upperToken === '[/CENTER]') {
+            if (stack.length > 0 && stack[stack.length - 1].type === 'CENTER') {
+                const element = <div key={`center-${index}`} className="text-center w-full my-1 inline-block">{currentChildren}</div>;
+                const parent = stack.pop()!;
+                currentChildren = parent.children;
+                currentChildren.push(element);
+            } else {
+                currentChildren.push(token);
+            }
+        } else {
+            currentChildren.push(token);
+        }
+    });
+    
+    while (stack.length > 0) {
+        const parent = stack.pop()!;
+        const type = parent.type;
+        let element: React.ReactNode;
+        if (type === 'B') {
+            element = <strong>{currentChildren}</strong>;
+        } else if (type === 'U') {
+            element = <u>{currentChildren}</u>;
+        } else {
+            element = <div className="text-center w-full my-1 inline-block">{currentChildren}</div>;
+        }
+        currentChildren = parent.children;
+        currentChildren.push(element);
+    }
+    
+    return currentChildren;
+};
+
+const renderTextWithInlineTables = (text: string, tableJson: string, title: string, placeholder = '[TABLE]') => {
+    if (!text) return null;
+    if (!tableJson || !text.includes(placeholder)) {
+        return <div className="white-space-pre-wrap">{parseFormattingTags(text)}</div>;
+    }
+
+    const parts = text.split(placeholder);
+    return (
+        <div>
+            {parts.map((part, index) => (
+                <div key={index}>
+                    {part && <div className="white-space-pre-wrap">{parseFormattingTags(part)}</div>}
+                    {index < parts.length - 1 && (
+                        <DynamicTable tableJson={tableJson} title={title} />
+                    )}
+                </div>
+            ))}
+        </div>
+    );
+};
+
 export default function QuestionModal({
     isOpen,
     onClose,
@@ -68,6 +160,7 @@ export default function QuestionModal({
     totalCount = 1
 }: QuestionModalProps) {
     const queryClient = useQueryClient();
+    const navigate = useNavigate();
     const [tab, setTab] = useState<'both' | 'question' | 'answer'>('both');
     const [isSplitView, setIsSplitView] = useState(false);
     const [showFeedbackInput, setShowFeedbackInput] = useState(false);
@@ -85,6 +178,56 @@ export default function QuestionModal({
         setPartSelections({});
         setRevealedPartSolutions({});
     }, [question?.id]);
+
+    // Solved Question State Tracking
+    const [isSolved, setIsSolved] = useState(false);
+
+    useEffect(() => {
+        if (!question?.id) return;
+        const solvedStr = localStorage.getItem('qubook_solved_questions');
+        const solvedList = solvedStr ? JSON.parse(solvedStr) : [];
+        setIsSolved(solvedList.includes(question.id));
+    }, [question?.id, isOpen]);
+
+    const toggleSolved = () => {
+        if (!question?.id) return;
+        const solvedStr = localStorage.getItem('qubook_solved_questions');
+        let solvedList = solvedStr ? JSON.parse(solvedStr) : [];
+        let markedSolved = false;
+        if (solvedList.includes(question.id)) {
+            solvedList = solvedList.filter((id: any) => id !== question.id);
+            setIsSolved(false);
+        } else {
+            solvedList.push(question.id);
+            setIsSolved(true);
+            markedSolved = true;
+        }
+        localStorage.setItem('qubook_solved_questions', JSON.stringify(solvedList));
+
+        // Automatic Streak Logic: Mark today as active in study streak when a question is marked solved
+        if (markedSolved) {
+            const getDayIndex = (day: number) => day === 0 ? 6 : day - 1;
+            const todayIdx = getDayIndex(new Date().getDay());
+            const storedStreakDays = localStorage.getItem('qubook_streak_days');
+            const storedStreakCount = localStorage.getItem('qubook_streak_count');
+            
+            let days = [true, true, true, true, false, false, false];
+            let count = 12;
+            if (storedStreakDays) {
+                days = JSON.parse(storedStreakDays);
+            }
+            if (storedStreakCount) {
+                count = parseInt(storedStreakCount, 10);
+            }
+            if (!days[todayIdx]) {
+                days[todayIdx] = true;
+                count += 1;
+                localStorage.setItem('qubook_streak_days', JSON.stringify(days));
+                localStorage.setItem('qubook_streak_count', count.toString());
+            }
+        }
+        window.dispatchEvent(new Event('solvedQuestionsChanged'));
+    };
 
     // Fetch Bookmarks
     const { data: bookmarks = [] } = useQuery({
@@ -148,7 +291,7 @@ export default function QuestionModal({
             dots.push(
                 <div
                     key={i}
-                    className={`h-1.5 rounded-full transition-all duration-500 ${isActive ? 'w-8 bg-[#3F51B5]' : 'w-1.5 bg-slate-200'}`}
+                    className={`h-1.5 rounded-full transition-all duration-500 ${isActive ? 'w-8 bg-primary' : 'w-1.5 bg-border'}`}
                 />
             );
         }
@@ -187,15 +330,15 @@ export default function QuestionModal({
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 30 }}
                     transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                    className={`relative w-full ${isSplitView ? 'max-w-[98vw]' : 'max-w-5xl'} bg-white dark:bg-slate-900 rounded-[32px] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col max-h-[96vh] transition-colors duration-500 ease-in-out border border-white/20 dark:border-slate-800`}
+                    className={`relative w-full ${isSplitView ? 'max-w-[98vw]' : 'max-w-5xl'} bg-card rounded-[32px] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col max-h-[96vh] transition-all duration-700 ease-in-out border border-border`}
                 >
                     {/* Top Bar - Unified Professional Design */}
-                    <div className="flex items-center justify-between px-4 md:px-8 py-5 bg-gradient-to-r from-slate-50 to-white dark:from-slate-800 dark:to-slate-900 border-b border-slate-100 dark:border-slate-700 shrink-0">
-                        <div className="flex items-center gap-6">
+                    <div className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between md:pl-10 md:pr-12 md:py-5 bg-card border-b border-border shrink-0">
+                        <div className="flex items-center justify-between gap-3 w-full md:w-auto">
                             {/* Layout Toggle */}
                             <button
                                 onClick={() => setIsSplitView(!isSplitView)}
-                                className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 ${isSplitView ? 'bg-[#3F51B5] text-white shadow-xl rotate-90' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                                className={`hidden md:flex w-12 h-12 rounded-2xl items-center justify-center transition-all duration-300 ${isSplitView ? 'bg-primary text-white shadow-xl rotate-90' : 'bg-bg text-text-muted hover:bg-bg-secondary hover:text-primary'}`}
                                 title="Split View Mode"
                             >
                                 <Copy size={22} className={isSplitView ? 'animate-pulse' : ''} />
@@ -203,12 +346,12 @@ export default function QuestionModal({
 
                             {/* Tab System - Glassmorphism style */}
                             {!isSplitView && (
-                                <div className="flex flex-wrap md:flex-nowrap bg-slate-100/50 dark:bg-slate-800/50 p-1.5 rounded-2xl border border-slate-200/50 dark:border-slate-700/50">
+                                <div className="flex bg-bg p-1 rounded-xl md:p-1.5 md:rounded-2xl border border-border w-full md:w-auto justify-around md:justify-start">
                                     {(['both', 'question', 'answer'] as const).map((t) => (
                                         <button
                                             key={t}
                                             onClick={() => setTab(t)}
-                                            className={`px-4 md:px-10 py-2 md:py-3 rounded-[14px] text-[10px] md:text-[11px] font-black uppercase transition-all duration-300 tracking-[0.2em] ${tab === t ? 'bg-white dark:bg-slate-700 text-[#3F51B5] dark:text-blue-400 shadow-[0_8px_16px_rgba(0,0,0,0.08)]' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+                                            className={`flex-1 md:flex-none px-3 py-2 md:px-6 md:py-2 rounded-lg md:rounded-[14px] text-[10px] md:text-[11px] font-black uppercase transition-all duration-300 tracking-[0.1em] md:tracking-[0.2em] ${tab === t ? 'bg-primary text-white shadow-[0_8px_16px_rgba(0,0,0,0.08)]' : 'text-text-muted hover:text-text-primary'}`}
                                         >
                                             {t}
                                         </button>
@@ -218,29 +361,53 @@ export default function QuestionModal({
                         </div>
 
                         {/* Professional Header Icons */}
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center justify-between md:justify-end gap-2 md:gap-3 w-full md:w-auto">
                             {!isSplitView && (
-                                <div className="hidden md:flex items-center gap-3 mr-4">
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={toggleSolved}
+                                        className={`flex items-center gap-2 p-3 md:px-4 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isSolved ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-100' : 'bg-bg text-text-muted hover:bg-bg-secondary hover:text-primary'}`}
+                                        title="Mark Solved"
+                                    >
+                                        <CheckCircle2 size={14} />
+                                        <span className="hidden lg:inline">{isSolved ? 'SOLVED' : 'MARK SOLVED'}</span>
+                                    </button>
                                     <button
                                         onClick={() => setShowFeedbackInput(!showFeedbackInput)}
-                                        className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${showFeedbackInput ? 'bg-[#00BFA5] text-white shadow-lg shadow-teal-100' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
+                                        className={`flex items-center gap-2 p-3 md:px-4 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${showFeedbackInput ? 'bg-[#00BFA5] text-white shadow-lg shadow-teal-100' : 'bg-bg text-text-muted hover:bg-bg-secondary hover:text-primary'}`}
+                                        title="Submit Feedback"
                                     >
-                                        <MessageSquare size={14} /> FEEDBACK
+                                        <MessageSquare size={14} />
+                                        <span className="hidden lg:inline">FEEDBACK</span>
                                     </button>
                                     <button
                                         onClick={() => toggleBookmark.mutate()}
-                                        className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isImportant ? 'bg-[#FFB300] text-white shadow-lg shadow-amber-100' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
+                                        className={`flex items-center gap-2 p-3 md:px-4 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isImportant ? 'bg-[#FFB300] text-white shadow-lg shadow-amber-100' : 'bg-bg text-text-muted hover:bg-bg-secondary hover:text-primary'}`}
+                                        title="Mark Important"
                                     >
-                                        <Star size={14} fill={isImportant ? "white" : "none"} /> IMPORTANT
+                                        <Star size={14} fill={isImportant ? "white" : "none"} />
+                                        <span className="hidden lg:inline">IMPORTANT</span>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            onClose();
+                                            navigate('/dashboard/assistant', { state: { question } });
+                                        }}
+                                        className="flex items-center gap-2 p-3 md:px-4 md:py-2 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
+                                        title="Ask AI Tutor"
+                                    >
+                                        <Sparkles size={14} />
+                                        <span className="hidden lg:inline">ASK AI TUTOR</span>
                                     </button>
                                 </div>
                             )}
 
                             <button
                                 onClick={onClose}
-                                className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white shadow-xl hover:scale-110 active:scale-95 transition-all duration-300 group"
+                                className="w-10 h-10 md:w-12 md:h-12 bg-bg border border-border rounded-xl md:rounded-2xl flex items-center justify-center text-text-primary hover:bg-bg-secondary hover:scale-110 active:scale-95 transition-all duration-300 group shrink-0 ml-auto md:ml-0"
+                                title="Close"
                             >
-                                <X size={24} strokeWidth={3} className="group-hover:rotate-90 transition-transform duration-500" />
+                                <X size={20} strokeWidth={3} className="md:size-6 group-hover:rotate-90 transition-transform duration-500" />
                             </button>
                         </div>
                     </div>
@@ -252,14 +419,14 @@ export default function QuestionModal({
                                 initial={{ opacity: 0, y: -20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: -20 }}
-                                className="absolute top-24 right-8 z-[110] w-80 bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 space-y-4"
+                                className="absolute top-36 md:top-24 right-4 md:right-8 z-[110] w-[calc(100%-2rem)] md:w-80 bg-card rounded-3xl shadow-2xl border border-border p-6 space-y-4"
                             >
                                 <div className="flex justify-between items-center">
-                                    <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest">Share Feedback</h3>
-                                    <button onClick={() => setShowFeedbackInput(false)} className="text-slate-400"><X size={16} /></button>
+                                    <h3 className="text-xs font-black text-text-primary uppercase tracking-widest">Share Feedback</h3>
+                                    <button onClick={() => setShowFeedbackInput(false)} className="text-text-muted"><X size={16} /></button>
                                 </div>
                                 <textarea
-                                    className="w-full h-32 bg-slate-50 rounded-2xl p-4 text-sm font-medium border-none focus:ring-2 focus:ring-[#00BFA5]/20 placeholder-slate-300"
+                                    className="w-full h-32 bg-bg rounded-2xl p-4 text-sm font-medium border-none focus:ring-2 focus:ring-[#00BFA5]/20 placeholder-text-muted text-text-primary"
                                     placeholder="Tell us about this question..."
                                     value={feedback}
                                     onChange={(e) => setFeedback(e.target.value)}
@@ -267,7 +434,7 @@ export default function QuestionModal({
                                 <button
                                     onClick={handleSubmitFeedback}
                                     disabled={!feedback || isSubmitted}
-                                    className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${isSubmitted ? 'bg-teal-500 text-white' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
+                                    className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${isSubmitted ? 'bg-teal-500 text-white' : 'bg-primary hover:bg-primary-hover text-white'}`}
                                 >
                                     {isSubmitted ? 'SUBMITTED!' : <><Send size={14} /> SUBMIT FEEDBACK</>}
                                 </button>
@@ -276,8 +443,8 @@ export default function QuestionModal({
                     </AnimatePresence>
 
                     {/* Main Workspace */}
-                    <div className={`flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar ${isSplitView ? 'flex flex-col lg:grid lg:grid-cols-2 gap-10 divide-y lg:divide-y-0 lg:divide-x divide-slate-100 dark:divide-slate-800' : 'max-w-4xl mx-auto w-full'}`}>
-                        
+                    <div className={`flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar ${isSplitView ? 'grid grid-cols-2 gap-10 divide-x divide-border' : 'max-w-4xl mx-auto w-full'}`}>
+
                         {/* Question Column */}
                         {(isSplitView || tab === 'both' || tab === 'question') && (
                             <motion.div
@@ -287,27 +454,53 @@ export default function QuestionModal({
                                 className="space-y-6"
                             >
                                 <div className="space-y-2">
-                                    <div className="inline-flex items-center gap-3 px-3 py-1 bg-slate-950 dark:bg-slate-100 text-white dark:text-slate-900 text-[9px] font-black rounded-full uppercase tracking-wider">
-                                        {question.question_type} Question
+                                    <div className={`inline-flex items-center gap-3 px-3 py-1 text-[9px] font-black rounded-full uppercase tracking-wider ${question.question_type === 'CASE_SCENARIO' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-primary/20 text-primary border border-primary/30'}`}>
+                                        {question.question_type === 'CASE_SCENARIO' ? 'MCQ Case Scenario' : `${question.question_type} Question`}
                                     </div>
-                                    <h2 className="text-xl md:text-2xl font-black text-[#1A237E] dark:text-blue-300 tracking-tight leading-tight">
+                                    <h2 className="text-2xl font-black text-text-primary tracking-tight leading-tight">
                                         Question {question.q_no || `ID #${question.id}`}
-                                        <span className="ml-3 text-base md:text-lg text-slate-400 dark:text-slate-500 font-bold">(Marks: {question.marks || '1'})</span>
+                                        <span className="ml-3 text-lg text-text-muted font-bold">(Marks: {question.marks || '1'})</span>
                                     </h2>
                                 </div>
 
-                                {/* Main Text */}
-                                <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 rounded-2xl p-4 md:p-5 text-sm font-semibold text-slate-700 dark:text-slate-200 leading-relaxed white-space-pre-wrap">
-                                    {question.question_text || 'No question text provided.'}
-                                </div>
+                                {/* Case Scenario Passage Context */}
+                                {question.question_type === 'CASE_SCENARIO' && question.case_scenario_passage && (
+                                    <div className="border-l-4 border-amber-500 bg-amber-500/10 rounded-r-2xl p-6 text-sm font-semibold text-text-primary leading-relaxed white-space-pre-wrap">
+                                        <h4 className="text-xs font-black uppercase text-amber-500 tracking-wider mb-2">Case Scenario Passage / Context</h4>
+                                        {question.case_scenario_passage}
+                                    </div>
+                                )}
+
+                                {/* Main Text and Media */}
+                                {question.question_type !== 'CASE_SCENARIO' && (question.question_text || (!question.image_url && !question.pdf_url)) && (
+                                    <div className="bg-bg border border-border rounded-2xl p-5 text-sm font-semibold text-text-primary leading-relaxed">
+                                        {renderTextWithInlineTables(question.question_text || 'No question text provided.', question.table_data, "Question Data Table")}
+                                    </div>
+                                )}
+                                
+                                {question.image_url && (
+                                    <div className="w-full mt-4 rounded-2xl overflow-hidden border border-border shadow-sm">
+                                        <img src={question.image_url} alt="Question Media" className="w-full h-auto object-contain" />
+                                    </div>
+                                )}
+
+                                {question.pdf_url && (
+                                    <div className="w-full mt-4 flex items-center justify-center p-8 border-2 border-dashed border-border rounded-2xl">
+                                        <a href={question.pdf_url} target="_blank" rel="noreferrer" className="px-6 py-3 bg-primary text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg hover:scale-105 transition-transform">
+                                            View PDF Document
+                                        </a>
+                                    </div>
+                                )}
 
                                 {/* Main Table */}
-                                <DynamicTable tableJson={question.table_data} title="Question Data Table" />
+                                {!question.question_text?.includes('[TABLE]') && (
+                                    <DynamicTable tableJson={question.table_data} title="Question Data Table" />
+                                )}
 
                                 {/* MCQ Options (Top Level) */}
                                 {question.question_type === 'MCQ' && question.options && question.options.length > 0 && (
                                     <div className="space-y-3 mt-6">
-                                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Select your answer:</h3>
+                                        <h3 className="text-xs font-black text-text-muted uppercase tracking-widest">Select your answer:</h3>
                                         <div className="grid gap-2">
                                             {question.options.map((opt: any, oIdx: number) => {
                                                 const letter = String.fromCharCode(65 + oIdx);
@@ -315,13 +508,13 @@ export default function QuestionModal({
                                                 const isCorrect = opt.is_correct;
                                                 const isLocked = selectedOptionIdx !== null;
 
-                                                let btnStyle = "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700";
+                                                let btnStyle = "bg-bg hover:bg-bg-secondary border-border text-text-secondary";
                                                 if (isSelected) {
                                                     btnStyle = isCorrect
-                                                        ? "bg-green-500 border-green-500 text-white shadow-md shadow-green-100"
-                                                        : "bg-red-500 border-red-500 text-white shadow-md shadow-red-100";
+                                                        ? "bg-green-500 border-green-500 text-white shadow-md dark:shadow-none"
+                                                        : "bg-red-500 border-red-500 text-white shadow-md dark:shadow-none";
                                                 } else if (isLocked && isCorrect) {
-                                                    btnStyle = "bg-green-100 border-green-300 text-green-800";
+                                                    btnStyle = "bg-green-500/20 border-green-500/30 text-green-600 dark:text-green-400";
                                                 }
 
                                                 return (
@@ -331,10 +524,10 @@ export default function QuestionModal({
                                                         onClick={() => handleOptionSelect(oIdx)}
                                                         className={`flex items-center gap-3 p-4 border rounded-2xl text-left text-xs font-bold transition-all ${btnStyle}`}
                                                     >
-                                                        <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-black shrink-0 ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                                                        <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-black shrink-0 ${isSelected ? 'bg-white/20 text-white' : 'bg-bg-secondary text-text-muted'}`}>
                                                             {letter}
                                                         </span>
-                                                        <span className="flex-1">{opt.text}</span>
+                                                        <span className="flex-1">{parseFormattingTags(opt.text)}</span>
                                                         {isSelected && (
                                                             <span>
                                                                 {isCorrect ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
@@ -348,53 +541,58 @@ export default function QuestionModal({
                                 )}
 
                                 {/* Sub-Questions (Parts) */}
-                                {question.question_type === 'MIXED' && question.parts && question.parts.length > 0 && (
+                                {(question.question_type === 'MIXED' || question.question_type === 'CASE_SCENARIO') && question.parts && question.parts.length > 0 && (
                                     <div className="space-y-6 mt-8">
-                                        <h3 className="text-xs font-black text-[#1A237E] uppercase tracking-wider border-b border-slate-100 pb-2">Sub-Questions / Parts:</h3>
+                                        <h3 className="text-xs font-black text-primary uppercase tracking-wider border-b border-border pb-2">Sub-Questions / Parts:</h3>
                                         {question.parts.map((part: any, pIdx: number) => {
-                                            const isSelected = partSelections[part.id] !== undefined;
-                                            const showPartSol = revealedPartSolutions[part.id];
+                                            const keyId = part.id || pIdx;
+                                            const isSelected = partSelections[keyId] !== undefined;
+                                            const showPartSol = revealedPartSolutions[keyId];
 
                                             return (
-                                                <div key={part.id || pIdx} className="border border-slate-200/60 rounded-2xl p-5 bg-white space-y-4">
+                                                <div key={keyId} className="border border-border rounded-2xl p-5 bg-card space-y-4">
                                                     <div className="flex justify-between items-center">
-                                                        <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-black rounded uppercase tracking-wider">
+                                                        <span className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-black rounded uppercase tracking-wider">
                                                             Part {part.identifier || `(${pIdx + 1})`}
                                                         </span>
-                                                        <span className="text-[10px] font-bold text-slate-400">{part.marks} Marks</span>
+                                                        <span className="text-[10px] font-bold text-text-muted">{part.marks} Marks</span>
                                                     </div>
 
-                                                    <p className="text-xs font-bold text-slate-700">{part.question_text}</p>
+                                                    <div className="text-xs font-bold text-text-primary">
+                                                        {renderTextWithInlineTables(part.question_text, part.table_data, `Part ${part.identifier} Table`)}
+                                                    </div>
 
-                                                    <DynamicTable tableJson={part.table_data} title={`Part ${part.identifier} Table`} />
+                                                    {!part.question_text?.includes('[TABLE]') && (
+                                                        <DynamicTable tableJson={part.table_data} title={`Part ${part.identifier} Table`} />
+                                                    )}
 
                                                     {/* Part MCQ */}
                                                     {part.question_type === 'MCQ' && part.options && part.options.length > 0 && (
                                                         <div className="grid gap-1.5 mt-2">
                                                             {part.options.map((pOpt: any, poIdx: number) => {
                                                                 const letter = String.fromCharCode(65 + poIdx);
-                                                                const isPartOptSelected = partSelections[part.id] === poIdx;
+                                                                const isPartOptSelected = partSelections[keyId] === poIdx;
                                                                 const isPartOptCorrect = pOpt.is_correct;
                                                                 const isPartLocked = isSelected;
 
-                                                                let partOptStyle = "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100";
+                                                                let partOptStyle = "bg-bg border-border text-text-secondary hover:bg-bg-secondary";
                                                                 if (isPartOptSelected) {
                                                                     partOptStyle = isPartOptCorrect
                                                                         ? "bg-green-500 border-green-500 text-white"
                                                                         : "bg-red-500 border-red-500 text-white";
                                                                 } else if (isPartLocked && isPartOptCorrect) {
-                                                                    partOptStyle = "bg-green-100 border-green-300 text-green-800";
+                                                                    partOptStyle = "bg-green-500/20 border-green-500/30 text-green-600 dark:text-green-400";
                                                                 }
 
                                                                 return (
                                                                     <button
                                                                         key={poIdx}
                                                                         disabled={isPartLocked}
-                                                                        onClick={() => handlePartOptionSelect(part.id, poIdx)}
+                                                                        onClick={() => handlePartOptionSelect(keyId, poIdx)}
                                                                         className={`flex items-center gap-2 p-2.5 border rounded-xl text-left text-xs font-bold transition-all ${partOptStyle}`}
                                                                     >
-                                                                        <span className="text-[10px] font-black text-slate-400 w-4">{letter}.</span>
-                                                                        <span className="flex-1">{pOpt.text}</span>
+                                                                        <span className="text-[10px] font-black text-text-muted w-4">{letter}.</span>
+                                                                        <span className="flex-1">{parseFormattingTags(pOpt.text)}</span>
                                                                     </button>
                                                                 );
                                                             })}
@@ -402,13 +600,13 @@ export default function QuestionModal({
                                                     )}
 
                                                     {/* Part Solutions Toggles */}
-                                                    <div className="border-t border-slate-100 pt-3 flex justify-between items-center">
-                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                                    <div className="border-t border-border pt-3 flex justify-between items-center">
+                                                        <span className="text-[10px] font-black text-text-muted uppercase tracking-widest">
                                                             {isSelected || part.question_type === 'NORMAL' ? 'Answer Key Available' : 'Select Option to Unlock Solution'}
                                                         </span>
                                                         <button
-                                                            onClick={() => togglePartSolution(part.id)}
-                                                            className="px-3 py-1 bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider rounded-lg hover:scale-105 transition-transform"
+                                                            onClick={() => togglePartSolution(keyId)}
+                                                            className="px-3 py-1 bg-primary hover:bg-primary-hover text-white text-[10px] font-black uppercase tracking-wider rounded-lg hover:scale-105 transition-transform"
                                                         >
                                                             {showPartSol ? 'Hide Answer' : 'Reveal Answer'}
                                                         </button>
@@ -418,11 +616,15 @@ export default function QuestionModal({
                                                         <motion.div
                                                             initial={{ opacity: 0, height: 0 }}
                                                             animate={{ opacity: 1, height: 'auto' }}
-                                                            className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-xs font-bold text-slate-600 italic space-y-2 mt-2"
+                                                            className="bg-bg border border-border rounded-xl p-4 text-xs font-bold text-text-secondary italic space-y-2 mt-2"
                                                         >
                                                             <div className="text-[10px] font-black uppercase text-teal-600 tracking-wider">Suggested Solution:</div>
-                                                            <div className="white-space-pre-wrap">{part.correct_answer || 'No solution text provided.'}</div>
-                                                            <DynamicTable tableJson={part.answer_table_data} title={`Part ${part.identifier} Solution Table`} />
+                                                            <div>
+                                                                {renderTextWithInlineTables(part.correct_answer || 'No solution text provided.', part.answer_table_data, `Part ${part.identifier} Solution Table`)}
+                                                            </div>
+                                                            {!part.correct_answer?.includes('[TABLE]') && (
+                                                                <DynamicTable tableJson={part.answer_table_data} title={`Part ${part.identifier} Solution Table`} />
+                                                            )}
                                                         </motion.div>
                                                     )}
                                                 </div>
@@ -439,35 +641,41 @@ export default function QuestionModal({
                                 key={`a-${question.id}`}
                                 initial={{ opacity: 0, x: 20 }}
                                 animate={{ opacity: 1, x: 0 }}
-                                className={`space-y-6 ${isSplitView ? 'pl-10' : 'mt-12 pt-12 border-t-2 border-dashed border-slate-100'}`}
+                                className={`space-y-6 ${isSplitView ? 'pl-10' : 'mt-12 pt-12 border-t-2 border-dashed border-border'}`}
                             >
                                 <div className="space-y-2">
                                     <div className="inline-flex items-center gap-3 px-3 py-1 bg-[#00BFA5] text-white text-[9px] font-black rounded-full uppercase tracking-wider shadow-sm">
                                         Proposed Solution
                                     </div>
-                                    <h2 className="text-2xl font-black text-[#1A237E] tracking-tight leading-tight">
+                                    <h2 className="text-2xl font-black text-text-primary tracking-tight leading-tight">
                                         Answer Keys & Steps
                                     </h2>
                                 </div>
 
                                 {/* Answer Text */}
-                                {question.question_type !== 'MIXED' ? (
+                                {question.question_type !== 'MIXED' && question.question_type !== 'CASE_SCENARIO' ? (
                                     <div className="space-y-6">
-                                        <div className="bg-emerald-50/50 border border-emerald-100 rounded-[24px] p-6 text-sm font-semibold text-slate-600 italic white-space-pre-wrap leading-relaxed">
+                                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-[24px] p-6 text-sm font-semibold text-text-primary italic leading-relaxed">
                                             {question.question_type === 'MCQ' && question.options && question.options.some((o: any) => o.is_correct) && (
-                                                <div className="mb-4 pb-4 border-b border-emerald-200/60 not-italic">
-                                                    <span className="text-emerald-700 font-black uppercase tracking-wider block mb-1 text-xs">Correct Option</span>
-                                                    <div className="text-emerald-900 font-bold text-lg">
-                                                        {String.fromCharCode(65 + question.options.findIndex((o: any) => o.is_correct))} - {question.options.find((o: any) => o.is_correct)?.text}
+                                                <div className="mb-4 pb-4 border-b border-emerald-500/20 not-italic">
+                                                    <span className="text-emerald-500 font-black uppercase tracking-wider block mb-1 text-xs">Correct Option</span>
+                                                    <div className="text-emerald-400 font-bold text-lg">
+                                                        {String.fromCharCode(65 + question.options.findIndex((o: any) => o.is_correct))} - {parseFormattingTags(question.options.find((o: any) => o.is_correct)?.text)}
                                                     </div>
                                                 </div>
                                             )}
-                                            {question.correct_answer || (question.question_type === 'MCQ' ? 'No additional explanation provided.' : 'No suggested answer or key is entered.')}
+                                            {renderTextWithInlineTables(
+                                                question.correct_answer || (question.question_type === 'MCQ' ? 'No additional explanation provided.' : 'No suggested answer or key is entered.'),
+                                                question.answer_table_data,
+                                                "Answer Details Table"
+                                            )}
                                         </div>
-                                        {question.answer_table_data && <DynamicTable tableJson={question.answer_table_data} title="Answer Details Table" />}
+                                        {!question.correct_answer?.includes('[TABLE]') && question.answer_table_data && (
+                                            <DynamicTable tableJson={question.answer_table_data} title="Answer Details Table" />
+                                        )}
                                     </div>
                                 ) : (
-                                    <div className="p-6 border-2 border-dashed border-slate-100 rounded-3xl text-center text-xs font-bold text-slate-400 italic">
+                                    <div className="p-6 border-2 border-dashed border-border rounded-3xl text-center text-xs font-bold text-text-muted italic">
                                         This question has multi-part sub-questions. Please use the individual 'Reveal Answer' toggles next to each part on the left to see part-by-part detailed solutions.
                                     </div>
                                 )}
@@ -476,18 +684,18 @@ export default function QuestionModal({
                     </div>
 
                     {/* Cinematic Control Bar */}
-                    <div className="px-12 py-6 bg-gradient-to-t from-slate-50 to-white border-t border-slate-100 shrink-0">
-                        <div className="flex items-center justify-between max-w-3xl mx-auto">
+                    <div className="px-4 py-4 md:px-12 md:py-6 bg-card border-t border-border shrink-0">
+                        <div className="flex items-center justify-between max-w-3xl mx-auto gap-3">
                             <button
                                 onClick={onPrev}
-                                className="group flex items-center gap-3 px-6 py-4 bg-white border-2 border-slate-100 text-[#3F51B5] text-xs font-black rounded-2xl hover:border-[#3F51B5] hover:bg-[#3F51B5]/5 transition-all uppercase tracking-widest active:scale-95"
+                                className="group flex items-center gap-2 md:gap-3 px-4 py-3 md:px-6 md:py-4 bg-bg border-2 border-border text-primary text-[10px] md:text-xs font-black rounded-[14px] md:rounded-2xl hover:border-primary transition-all uppercase tracking-widest active:scale-95"
                             >
                                 <ChevronLeft size={16} strokeWidth={3} className="group-hover:-translate-x-1 transition-transform" />
-                                PREVIOUS
+                                <span className="hidden xs:inline">PREVIOUS</span>
                             </button>
 
                             <div className="flex flex-col items-center">
-                                <span className="text-[9px] font-black uppercase tracking-wider mb-1 text-slate-300">
+                                <span className="text-[9px] font-black uppercase tracking-wider mb-1 text-text-muted">
                                     Record {currentIndex + 1} of {totalCount}
                                 </span>
                                 <div className="flex gap-1.5 items-center">
@@ -497,9 +705,9 @@ export default function QuestionModal({
 
                             <button
                                 onClick={onNext}
-                                className="group flex items-center gap-3 px-6 py-4 bg-[#3F51B5] text-white text-xs font-black rounded-2xl shadow-[0_12px_24px_-6px_rgba(63,81,181,0.3)] hover:scale-105 active:scale-95 transition-all uppercase tracking-widest"
+                                className="group flex items-center gap-2 md:gap-3 px-4 py-3 md:px-6 md:py-4 bg-primary text-white text-[10px] md:text-xs font-black rounded-[14px] md:rounded-2xl shadow-[0_12px_24px_-6px_rgba(63,81,181,0.3)] hover:scale-105 active:scale-95 transition-all uppercase tracking-widest"
                             >
-                                NEXT
+                                <span className="hidden xs:inline">NEXT</span>
                                 <ChevronRight size={16} strokeWidth={3} className="group-hover:translate-x-1 transition-transform" />
                             </button>
                         </div>

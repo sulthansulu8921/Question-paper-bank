@@ -13,4 +13,22 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (error.response && error.response.status === 401) {
+            const url = error.config?.url || '';
+            const isAuthEndpoint = url.includes('/auth/login/') ||
+                                   url.includes('/auth/google/') ||
+                                   url.includes('/auth/register/') ||
+                                   url.includes('/auth/forgot-password/');
+            if (!isAuthEndpoint) {
+                useAuthStore.getState().logout();
+                window.location.href = '/auth?tab=login';
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
 export default api;

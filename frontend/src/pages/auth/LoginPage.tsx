@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, Loader2, ArrowRight, CheckCircle, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowRight, CheckCircle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
+
+import Logo from '@/components/Logo';
 
 export default function LoginPage() {
     const navigate = useNavigate();
@@ -11,6 +13,7 @@ export default function LoginPage() {
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -45,7 +48,7 @@ export default function LoginPage() {
 
                     <div className="relative z-10 space-y-2">
                         <Link to="/" className="flex items-center gap-2 mb-16 hover:scale-105 transition-transform duration-300">
-                            <img src="/logo.png" alt="Qubook Logo" className="h-10 object-contain" style={{ filter: 'drop-shadow(0 0 10px rgba(255, 255, 255, 0.8))' }} />
+                            <Logo theme="dark" className="h-10 object-contain" />
                         </Link>
                         <h2 className="text-4xl md:text-5xl font-black tracking-tight leading-tight">Elevate your <br /> Exam Preparation</h2>
                         <p className="text-white/60 font-medium text-lg pt-4 max-w-sm">Join 50,000+ students already mastering their professional syllabus.</p>
@@ -104,13 +107,20 @@ export default function LoginPage() {
                             <div className="relative group">
                                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-primary transition-colors" size={18} />
                                 <input
-                                    type="password"
+                                    type={showPassword ? "text" : "password"}
                                     required
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     placeholder="••••••••"
-                                    className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4 pl-12 pr-6 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all"
+                                    className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4 pl-12 pr-12 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all"
                                 />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </button>
                             </div>
                         </div>
 
@@ -124,7 +134,7 @@ export default function LoginPage() {
                     </form>
 
                     <div className="mt-12 text-center text-sm font-medium text-gray-400">
-                        New to Study Partner? <Link to="/register" className="text-primary font-black uppercase tracking-widest text-[10px] ml-2 hover:underline">Join Today</Link>
+                        New to qubook.in? <Link to="/register" className="text-primary font-black uppercase tracking-widest text-[10px] ml-2 hover:underline">Join Today</Link>
                     </div>
                 </div>
             </motion.div>

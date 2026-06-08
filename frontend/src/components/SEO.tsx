@@ -8,7 +8,7 @@ interface SEOProps {
     image?: string;
 }
 
-export default function SEO({ title, description, type = 'website', name = 'Study Partner', image }: SEOProps) {
+export default function SEO({ title, description, type = 'website', name = 'qubook.in', image }: SEOProps) {
     return (
         <Helmet>
             <title>{`${title} | ${name}`}</title>

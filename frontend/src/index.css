@@ -6,12 +6,37 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --bg: #F4F7FB;
+    --bg-secondary: #FFFFFF;
+    --card: #FFFFFF;
+    --sidebar: #FFFFFF;
+    --border: #E2E8F0;
+    --text-primary: #0F172A;
+    --text-secondary: #64748B;
+    --text-muted: #94A3B8;
+    --primary: #5B4DFF;
+    --primary-glow: rgba(91, 77, 255, 0.2);
+    --table-header: #7986CB;
+    --table-hover: rgba(0, 0, 0, 0.02);
+  }
+
+  [data-theme="dark"] {
+    --bg: #0F172A;
+    --bg-secondary: #131C31;
+    --card: #182338;
+    --sidebar: #111827;
+    --border: rgba(255, 255, 255, 0.08);
+    --text-primary: #F8FAFC;
+    --text-secondary: #CBD5E1;
+    --text-muted: #94A3B8;
+    --primary: #6D5CFF;
+    --primary-glow: rgba(91, 77, 255, 0.35);
+    --table-header: #1E293B;
+    --table-hover: rgba(255, 255, 255, 0.03);
   }
 
   body {
-    @apply bg-light text-dark font-sans antialiased selection:bg-primary selection:text-white overflow-x-hidden transition-colors duration-300 dark:bg-slate-950 dark:text-slate-50;
+    @apply bg-[var(--bg)] text-[var(--text-primary)] font-sans antialiased selection:bg-[var(--primary)] selection:text-white overflow-x-hidden;
   }
 }
 

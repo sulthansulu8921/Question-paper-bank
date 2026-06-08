@@ -1,6 +1,6 @@
-# Study Partner - Premium Educational SaaS
+# qubook.in - Premium Educational SaaS
 
-Study Partner is a modern learning and question paper management system built with Django (REST API) and React (Vite/TypeScript).
+qubook.in is a modern learning and question paper management system built with Django (REST API) and React (Vite/TypeScript).
 
 ## 🚀 Getting Started
 

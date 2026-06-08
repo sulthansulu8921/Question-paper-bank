@@ -1,18 +1,37 @@
+
 import { useState, useMemo, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import api from '@/api/axios';
 import {
     Database, Layers, BookOpen, FileText, ListTree,
-    Loader2, Plus, ChevronRight, Search
+    Loader2, Plus, ChevronRight, Search, Edit, Trash2, Save
 } from 'lucide-react';
+import AdminModal from '@/components/admin/AdminModal';
+import AdminConfirmModal from '@/components/admin/AdminConfirmModal';
+import { useAdminToast, getApiErrorMessage } from '@/components/admin/useAdminToast';
 import '@/styles/admin/MasterDatabase.css';
 import '@/styles/admin/QuestionManagement.css';
 
 const AdminMasterDatabase = () => {
+    const queryClient = useQueryClient();
+    const { show, Toast } = useAdminToast();
     const [search, setSearch] = useState('');
     const [selectedLevelId, setSelectedLevelId] = useState<number | null>(null);
     const [selectedPaperId, setSelectedPaperId] = useState<number | null>(null);
+
+    // Modal state managers
+    const [levelModal, setLevelModal] = useState<{ open: boolean; editId?: number; name: string; order: number }>({ open: false, name: '', order: 0 });
+    const [paperModal, setPaperModal] = useState<{ open: boolean; editId?: number; name: string; code: string; order: number }>({ open: false, name: '', code: '', order: 0 });
+    const [chapterModal, setChapterModal] = useState<{ open: boolean; editId?: number; name: string; order: number }>({ open: false, name: '', order: 0 });
+    const [topicModal, setTopicModal] = useState<{ open: boolean; editId?: number; chapterId?: number; name: string; order: number }>({ open: false, name: '', order: 0 });
+
+    const [confirmDelete, setConfirmDelete] = useState<{
+        open: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    }>({ open: false, title: '', message: '', onConfirm: () => {} });
 
     const { data: stats, isLoading: statsLoading } = useQuery({
         queryKey: ['master-stats'],
@@ -22,6 +41,114 @@ const AdminMasterDatabase = () => {
     const { data: tree = [], isLoading: treeLoading } = useQuery({
         queryKey: ['master-tree'],
         queryFn: async () => (await api.get('/master/tree/')).data,
+    });
+
+    // Invalidate master queries
+    const invalidateMaster = () => {
+        queryClient.invalidateQueries({ queryKey: ['master-tree'] });
+        queryClient.invalidateQueries({ queryKey: ['master-stats'] });
+    };
+
+    // Level mutations
+    const saveLevelMutation = useMutation({
+        mutationFn: async (data: { name: string; order: number }) => {
+            if (levelModal.editId) {
+                return api.patch(`/master/levels/${levelModal.editId}/`, data);
+            }
+            return api.post('/master/levels/', data);
+        },
+        onSuccess: () => {
+            invalidateMaster();
+            setLevelModal({ open: false, name: '', order: 0 });
+            show(levelModal.editId ? 'Level updated.' : 'Level created.');
+        },
+        onError: (err) => show(getApiErrorMessage(err, 'Failed to save Level.'), 'error')
+    });
+
+    const deleteLevelMutation = useMutation({
+        mutationFn: async (id: number) => api.delete(`/master/levels/${id}/`),
+        onSuccess: () => {
+            invalidateMaster();
+            setSelectedLevelId(null);
+            show('Level deleted.');
+        },
+        onError: (err) => show(getApiErrorMessage(err, 'Failed to delete Level.'), 'error')
+    });
+
+    // Paper mutations
+    const savePaperMutation = useMutation({
+        mutationFn: async (data: { name: string; code: string; order: number; level: number }) => {
+            if (paperModal.editId) {
+                return api.patch(`/master/papers/${paperModal.editId}/`, data);
+            }
+            return api.post('/master/papers/', data);
+        },
+        onSuccess: () => {
+            invalidateMaster();
+            setPaperModal({ open: false, name: '', code: '', order: 0 });
+            show(paperModal.editId ? 'Paper updated.' : 'Paper created.');
+        },
+        onError: (err) => show(getApiErrorMessage(err, 'Failed to save Paper.'), 'error')
+    });
+
+    const deletePaperMutation = useMutation({
+        mutationFn: async (id: number) => api.delete(`/master/papers/${id}/`),
+        onSuccess: () => {
+            invalidateMaster();
+            setSelectedPaperId(null);
+            show('Paper deleted.');
+        },
+        onError: (err) => show(getApiErrorMessage(err, 'Failed to delete Paper.'), 'error')
+    });
+
+    // Chapter mutations
+    const saveChapterMutation = useMutation({
+        mutationFn: async (data: { name: string; order: number; paper: number }) => {
+            if (chapterModal.editId) {
+                return api.patch(`/master/chapters/${chapterModal.editId}/`, data);
+            }
+            return api.post('/master/chapters/', data);
+        },
+        onSuccess: () => {
+            invalidateMaster();
+            setChapterModal({ open: false, name: '', order: 0 });
+            show(chapterModal.editId ? 'Chapter updated.' : 'Chapter created.');
+        },
+        onError: (err) => show(getApiErrorMessage(err, 'Failed to save Chapter.'), 'error')
+    });
+
+    const deleteChapterMutation = useMutation({
+        mutationFn: async (id: number) => api.delete(`/master/chapters/${id}/`),
+        onSuccess: () => {
+            invalidateMaster();
+            show('Chapter deleted.');
+        },
+        onError: (err) => show(getApiErrorMessage(err, 'Failed to delete Chapter.'), 'error')
+    });
+
+    // Topic mutations
+    const saveTopicMutation = useMutation({
+        mutationFn: async (data: { name: string; order: number; chapter: number }) => {
+            if (topicModal.editId) {
+                return api.patch(`/master/topics/${topicModal.editId}/`, data);
+            }
+            return api.post('/master/topics/', data);
+        },
+        onSuccess: () => {
+            invalidateMaster();
+            setTopicModal({ open: false, name: '', order: 0 });
+            show(topicModal.editId ? 'Topic updated.' : 'Topic created.');
+        },
+        onError: (err) => show(getApiErrorMessage(err, 'Failed to save Topic.'), 'error')
+    });
+
+    const deleteTopicMutation = useMutation({
+        mutationFn: async (id: number) => api.delete(`/master/topics/${id}/`),
+        onSuccess: () => {
+            invalidateMaster();
+            show('Topic deleted.');
+        },
+        onError: (err) => show(getApiErrorMessage(err, 'Failed to delete Topic.'), 'error')
     });
 
     const filteredTree = useMemo(() => {
@@ -65,7 +192,7 @@ const AdminMasterDatabase = () => {
     const displayPaper = displayLevel?.papers?.find((p: any) => p.id === paperId);
 
     const statCards = [
-        { label: 'CA Levels', value: stats?.levels, icon: Layers, color: 'var(--color-primary-light)' },
+        { label: 'Course Levels', value: stats?.levels, icon: Layers, color: 'var(--color-primary-light)' },
         { label: 'Papers', value: stats?.papers, icon: BookOpen, color: 'var(--color-accent)' },
         { label: 'Chapters', value: stats?.chapters, icon: ListTree, color: '#8b5cf6' },
         { label: 'Topics', value: stats?.topics, icon: FileText, color: '#f59e0b' },
@@ -73,38 +200,46 @@ const AdminMasterDatabase = () => {
     ];
 
     return (
-        <div className="master-db-container">
-            <div className="qm-header">
+        <div className="master-db-container px-6 py-6">
+            {Toast}
+            <div className="qm-header flex justify-between items-center mb-6">
                 <div>
-                    <div className="flex items-center gap-2 mb-1" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Database size={18} style={{ color: 'var(--color-accent)' }} />
-                        <span style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--color-accent)' }}>
-                            ICAI Enterprise Master DB
+                    <div className="flex items-center gap-2 mb-1">
+                        <Database size={18} className="text-blue-600" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-blue-600">
+                            Enterprise Master DB
                         </span>
                     </div>
-                    <h1 className="page-title">Master Database</h1>
-                    <p className="page-subtitle">
-                        Complete ICAI structure: CA Level → Paper → Chapter → Topic → Questions
+                    <h1 className="page-title text-xl font-bold text-slate-800">Master Database</h1>
+                    <p className="page-subtitle text-xs text-slate-500">
+                        Complete structure: Course Level → Paper → Chapter → Topic → Questions
                     </p>
                 </div>
-                <div className="header-actions">
-                    <Link to="/admin/questions/new" className="primary-btn flex-center gap-sm">
-                        <Plus size={18} />
+                <div className="header-actions flex gap-3">
+                    <button 
+                        onClick={() => setLevelModal({ open: true, name: '', order: tree.length + 1 })}
+                        className="secondary-btn flex-center gap-xs font-bold text-xs"
+                    >
+                        <Plus size={16} />
+                        <span>Add Course Level</span>
+                    </button>
+                    <Link to="/admin/questions/new" className="primary-btn flex-center gap-xs font-bold text-xs">
+                        <Plus size={16} />
                         <span>Add Question</span>
                     </Link>
                 </div>
             </div>
 
-            <div className="master-stats-grid">
+            <div className="master-stats-grid grid grid-cols-5 gap-4 mb-6">
                 {statCards.map((s, i) => {
                     const Icon = s.icon;
                     return (
-                        <div key={i} className="master-stat-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span className="stat-label">{s.label}</span>
+                        <div key={i} className="master-stat-card bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="stat-label text-[10px] font-bold text-slate-400 uppercase">{s.label}</span>
                                 <Icon size={18} style={{ color: s.color, opacity: 0.7 }} />
                             </div>
-                            <div className="stat-value">
+                            <div className="stat-value text-2xl font-black text-slate-800">
                                 {statsLoading ? '...' : (s.value ?? 0).toLocaleString()}
                             </div>
                         </div>
@@ -112,101 +247,365 @@ const AdminMasterDatabase = () => {
                 })}
             </div>
 
-            <div className="master-tree-layout">
-                <div className="master-tree-panel">
-                    <div className="master-tree-toolbar">
-                        <div className="search-box" style={{ width: '100%' }}>
-                            <Search size={18} className="search-icon" />
+            <div className="master-tree-layout grid grid-cols-[320px_1fr] gap-6">
+                <div className="master-tree-panel bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden flex flex-col h-full">
+                    <div className="master-tree-toolbar p-4 border-b border-slate-50">
+                        <div className="search-box relative flex items-center">
+                            <Search size={18} className="absolute left-3 text-slate-400" />
                             <input
                                 type="text"
                                 placeholder="Search papers, chapters, topics..."
+                                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm"
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
                             />
                         </div>
                     </div>
-                    <div className="master-tree-scroll">
+                    <div className="master-tree-scroll flex-1 overflow-y-auto p-3">
                         {treeLoading && (
-                            <div style={{ padding: '2rem', textAlign: 'center' }}>
-                                <Loader2 className="animate-spin" style={{ margin: '0 auto', color: 'var(--color-primary-light)' }} />
+                            <div className="p-10 text-center">
+                                <Loader2 className="animate-spin mx-auto text-blue-600" />
                             </div>
                         )}
                         {filteredTree.map((level: any) => (
-                            <div key={level.id} className="tree-level">
-                                <button
-                                    type="button"
-                                    className={`tree-level-btn ${levelId === level.id ? 'active' : ''}`}
+                            <div key={level.id} className="tree-level mb-3">
+                                <div
+                                    className={`tree-level-btn flex justify-between items-center px-3 py-2 rounded-lg text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 cursor-pointer transition-colors ${levelId === level.id ? 'bg-blue-50/70 text-blue-600 border border-blue-100' : ''}`}
                                     onClick={() => {
                                         setSelectedLevelId(level.id);
                                         setSelectedPaperId(level.papers[0]?.id ?? null);
                                     }}
                                 >
-                                    <span>{level.name}</span>
-                                    <span className="tree-paper-meta">{level.paper_count} papers</span>
-                                </button>
-                                {levelId === level.id &&
-                                    level.papers.map((paper: any) => (
-                                        <button
-                                            key={paper.id}
-                                            type="button"
-                                            className={`tree-paper-btn ${paperId === paper.id ? 'active' : ''}`}
-                                            onClick={() => setSelectedPaperId(paper.id)}
+                                    <span className="truncate max-w-[150px]">{level.name}</span>
+                                    <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                                        <button className="text-slate-400 hover:text-blue-600 transition-colors" onClick={() => setLevelModal({ open: true, editId: level.id, name: level.name, order: level.order })}><Edit size={12} /></button>
+                                        <button className="text-slate-400 hover:text-red-600 transition-colors" onClick={() => setConfirmDelete({
+                                            open: true,
+                                            title: 'Delete Course Level',
+                                            message: `Are you sure you want to delete the Course Level "${level.name}"? This will delete all papers, chapters, and topics within it.`,
+                                            onConfirm: () => {
+                                                deleteLevelMutation.mutate(level.id);
+                                                setConfirmDelete(prev => ({ ...prev, open: false }));
+                                            }
+                                        })}><Trash2 size={12} /></button>
+                                        <span className="tree-paper-meta text-[10px] text-slate-400 font-bold bg-white px-2 py-0.5 rounded border border-slate-100">{level.paper_count} papers</span>
+                                    </div>
+                                </div>
+                                {levelId === level.id && (
+                                    <div className="mt-1 pl-3 flex flex-col gap-1 border-l border-slate-100 ml-3">
+                                        {level.papers.map((paper: any) => (
+                                            <div
+                                                key={paper.id}
+                                                className={`tree-paper-btn flex justify-between items-center px-3 py-1.5 rounded text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer transition-colors ${paperId === paper.id ? 'bg-teal-50 text-teal-700 font-bold' : ''}`}
+                                                onClick={() => setSelectedPaperId(paper.id)}
+                                            >
+                                                <div className="truncate max-w-[140px]">{paper.name}</div>
+                                                <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                                                    <button className="text-slate-400 hover:text-blue-600 transition-colors" onClick={() => setPaperModal({ open: true, editId: paper.id, name: paper.name, code: paper.code || '', order: paper.order })}><Edit size={11} /></button>
+                                                    <button className="text-slate-400 hover:text-red-600 transition-colors" onClick={() => setConfirmDelete({
+                                                        open: true,
+                                                        title: 'Delete Paper',
+                                                        message: `Are you sure you want to delete the Paper "${paper.name}"? This will delete all chapters and topics within it.`,
+                                                        onConfirm: () => {
+                                                            deletePaperMutation.mutate(paper.id);
+                                                            setConfirmDelete(prev => ({ ...prev, open: false }));
+                                                        }
+                                                    })}><Trash2 size={11} /></button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        <button 
+                                            onClick={() => setPaperModal({ open: true, name: '', code: '', order: level.papers.length + 1 })}
+                                            className="tree-paper-btn flex items-center gap-1 text-[11px] text-blue-600 font-bold hover:bg-blue-50 py-1"
                                         >
-                                            <div>{paper.name}</div>
-                                            <div className="tree-paper-meta">{paper.chapter_count} chapters</div>
+                                            <Plus size={11} /> Add Paper
                                         </button>
-                                    ))}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
                 </div>
 
-                <div className="master-detail-panel">
+                <div className="master-detail-panel bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden flex flex-col h-full">
                     {displayPaper ? (
-                        <>
-                            <div className="master-detail-header">
-                                <h2>{displayPaper.name}</h2>
-                                <p>{displayLevel?.name}</p>
-                                <div className="breadcrumb-path">
-                                    <span>{displayLevel?.name}</span>
-                                    <span className="sep">›</span>
-                                    <span>{displayPaper.name}</span>
-                                    <span className="sep">›</span>
-                                    <span>{displayPaper.chapters?.length ?? 0} Chapters</span>
+                        <div className="flex flex-col h-full">
+                            <div className="master-detail-header p-5 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+                                <div>
+                                    <h2 className="text-md font-bold text-slate-800">{displayPaper.name}</h2>
+                                    <div className="breadcrumb-path flex items-center gap-1.5 text-xs text-slate-400 mt-1">
+                                        <span>{displayLevel?.name}</span>
+                                        <span className="sep">›</span>
+                                        <span>{displayPaper.name}</span>
+                                        <span className="sep">›</span>
+                                        <span>{displayPaper.chapters?.length ?? 0} Chapters</span>
+                                    </div>
                                 </div>
+                                <button 
+                                    onClick={() => setChapterModal({ open: true, name: '', order: (displayPaper.chapters?.length || 0) + 1 })}
+                                    className="primary-btn flex-center gap-xs font-bold text-xs"
+                                >
+                                    <Plus size={16} /> Add Chapter
+                                </button>
                             </div>
-                            <div className="chapter-grid">
+                            <div className="chapter-grid p-5 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto max-h-[600px]">
                                 {displayPaper.chapters?.map((chapter: any) => (
-                                    <div key={chapter.id} className="chapter-card">
-                                        <h4>{chapter.name}</h4>
-                                        <div className="topic-pills">
-                                            {chapter.topics?.map((t: any) => (
-                                                <span key={t.id} className="topic-pill">{t.name}</span>
-                                            ))}
+                                    <div key={chapter.id} className="chapter-card bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between hover:border-blue-300 transition-colors">
+                                        <div>
+                                            <div className="flex justify-between items-start mb-3 gap-2">
+                                                <h4 className="text-xs font-bold text-slate-800 line-clamp-2">{chapter.name}</h4>
+                                                <div className="flex items-center gap-1">
+                                                    <button className="text-slate-400 hover:text-blue-600 transition-colors p-1" onClick={() => setChapterModal({ open: true, editId: chapter.id, name: chapter.name, order: chapter.order })}><Edit size={12} /></button>
+                                                    <button className="text-slate-400 hover:text-red-600 transition-colors p-1" onClick={() => setConfirmDelete({
+                                                        open: true,
+                                                        title: 'Delete Chapter',
+                                                        message: `Are you sure you want to delete the Chapter "${chapter.name}"? This will delete all topics within it.`,
+                                                        onConfirm: () => {
+                                                            deleteChapterMutation.mutate(chapter.id);
+                                                            setConfirmDelete(prev => ({ ...prev, open: false }));
+                                                        }
+                                                    })}><Trash2 size={12} /></button>
+                                                </div>
+                                            </div>
+                                            <div className="topic-pills flex flex-wrap gap-1.5 mb-4">
+                                                {chapter.topics?.map((t: any) => (
+                                                    <span key={t.id} className="topic-pill flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-100 group/pill relative">
+                                                        <span>{t.name}</span>
+                                                        <button 
+                                                            className="hover:text-red-600 font-bold ml-1" 
+                                                            title="Delete Topic"
+                                                            onClick={() => setConfirmDelete({
+                                                                open: true,
+                                                                title: 'Delete Topic',
+                                                                message: `Are you sure you want to delete the Topic "${t.name}"?`,
+                                                                onConfirm: () => {
+                                                                    deleteTopicMutation.mutate(t.id);
+                                                                    setConfirmDelete(prev => ({ ...prev, open: false }));
+                                                                }
+                                                            })}
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                                <button 
+                                                    onClick={() => setTopicModal({ open: true, chapterId: chapter.id, name: '', order: (chapter.topics?.length || 0) + 1 })}
+                                                    className="flex items-center gap-0.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border border-slate-200 text-slate-500 bg-white hover:bg-slate-50"
+                                                >
+                                                    <Plus size={10} /> Add Topic
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                                        <div className="flex justify-between items-center border-t border-slate-50 pt-3 mt-auto">
+                                            <span className="text-[10px] text-slate-400 font-bold">
                                                 {chapter.question_count ?? 0} questions
                                             </span>
                                             <Link
                                                 to={`/admin/questions/new?chapter=${chapter.id}&topic=${chapter.topics?.[0]?.id ?? ''}`}
-                                                style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-primary-light)', display: 'flex', alignItems: 'center', gap: 4 }}
+                                                className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-0.5"
                                             >
-                                                Add Q <ChevronRight size={14} />
+                                                Add Question <ChevronRight size={12} />
                                             </Link>
                                         </div>
                                     </div>
                                 ))}
                             </div>
-                        </>
+                        </div>
                     ) : (
-                        <div style={{ padding: '4rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                            <ListTree size={48} style={{ margin: '0 auto 1rem', opacity: 0.3 }} />
-                            <p>Select a CA level and paper to browse chapters.</p>
+                        <div className="flex flex-col items-center justify-center p-12 text-center text-slate-400 h-full">
+                            <ListTree size={48} className="mx-auto mb-3 opacity-30" />
+                            <p className="text-sm font-semibold">Select a course level and paper to browse chapters.</p>
                         </div>
                     )}
                 </div>
             </div>
+
+            {/* Level Modal */}
+            <AdminModal
+                open={levelModal.open}
+                onClose={() => setLevelModal({ open: false, name: '', order: 0 })}
+                title={levelModal.editId ? "Edit Course Level" : "Add New Course Level"}
+                footer={
+                    <>
+                        <button type="button" className="secondary-btn text-xs font-bold" onClick={() => setLevelModal({ open: false, name: '', order: 0 })}>Cancel</button>
+                        <button 
+                            type="button" 
+                            className="primary-btn flex-center gap-xs font-bold text-xs"
+                            onClick={() => saveLevelMutation.mutate({ name: levelModal.name, order: levelModal.order })}
+                            disabled={saveLevelMutation.isPending || !levelModal.name}
+                        >
+                            {saveLevelMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                            <span>Save Level</span>
+                        </button>
+                    </>
+                }
+            >
+                <div className="admin-form-group mb-4">
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">Course Level Name *</label>
+                    <input 
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
+                        value={levelModal.name} 
+                        onChange={e => setLevelModal({ ...levelModal, name: e.target.value })} 
+                        placeholder="e.g. Intermediate" 
+                    />
+                </div>
+                <div className="admin-form-group">
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">Display Order</label>
+                    <input 
+                        type="number"
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
+                        value={levelModal.order} 
+                        onChange={e => setLevelModal({ ...levelModal, order: parseInt(e.target.value) || 0 })} 
+                    />
+                </div>
+            </AdminModal>
+
+            {/* Paper Modal */}
+            <AdminModal
+                open={paperModal.open}
+                onClose={() => setPaperModal({ open: false, name: '', code: '', order: 0 })}
+                title={paperModal.editId ? "Edit Paper" : "Add New Paper"}
+                footer={
+                    <>
+                        <button type="button" className="secondary-btn text-xs font-bold" onClick={() => setPaperModal({ open: false, name: '', code: '', order: 0 })}>Cancel</button>
+                        <button 
+                            type="button" 
+                            className="primary-btn flex-center gap-xs font-bold text-xs"
+                            onClick={() => {
+                                if (!levelId) return;
+                                savePaperMutation.mutate({ name: paperModal.name, code: paperModal.code, order: paperModal.order, level: levelId });
+                            }}
+                            disabled={savePaperMutation.isPending || !paperModal.name}
+                        >
+                            {savePaperMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                            <span>Save Paper</span>
+                        </button>
+                    </>
+                }
+            >
+                <div className="admin-form-group mb-4">
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">Paper Name *</label>
+                    <input 
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
+                        value={paperModal.name} 
+                        onChange={e => setPaperModal({ ...paperModal, name: e.target.value })} 
+                        placeholder="e.g. Paper 1 - Accounting" 
+                    />
+                </div>
+                <div className="admin-form-group mb-4">
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">Paper Code</label>
+                    <input 
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
+                        value={paperModal.code} 
+                        onChange={e => setPaperModal({ ...paperModal, code: e.target.value })} 
+                        placeholder="e.g. P1-ACC" 
+                    />
+                </div>
+                <div className="admin-form-group">
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">Display Order</label>
+                    <input 
+                        type="number"
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
+                        value={paperModal.order} 
+                        onChange={e => setPaperModal({ ...paperModal, order: parseInt(e.target.value) || 0 })} 
+                    />
+                </div>
+            </AdminModal>
+
+            {/* Chapter Modal */}
+            <AdminModal
+                open={chapterModal.open}
+                onClose={() => setChapterModal({ open: false, name: '', order: 0 })}
+                title={chapterModal.editId ? "Edit Chapter" : "Add New Chapter"}
+                footer={
+                    <>
+                        <button type="button" className="secondary-btn text-xs font-bold" onClick={() => setChapterModal({ open: false, name: '', order: 0 })}>Cancel</button>
+                        <button 
+                            type="button" 
+                            className="primary-btn flex-center gap-xs font-bold text-xs"
+                            onClick={() => {
+                                if (!paperId) return;
+                                saveChapterMutation.mutate({ name: chapterModal.name, order: chapterModal.order, paper: paperId });
+                            }}
+                            disabled={saveChapterMutation.isPending || !chapterModal.name}
+                        >
+                            {saveChapterMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                            <span>Save Chapter</span>
+                        </button>
+                    </>
+                }
+            >
+                <div className="admin-form-group mb-4">
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">Chapter Name *</label>
+                    <input 
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
+                        value={chapterModal.name} 
+                        onChange={e => setChapterModal({ ...chapterModal, name: e.target.value })} 
+                        placeholder="e.g. Chapter 1: Introduction to Accounting" 
+                    />
+                </div>
+                <div className="admin-form-group">
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">Display Order</label>
+                    <input 
+                        type="number"
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
+                        value={chapterModal.order} 
+                        onChange={e => setChapterModal({ ...chapterModal, order: parseInt(e.target.value) || 0 })} 
+                    />
+                </div>
+            </AdminModal>
+
+            {/* Topic Modal */}
+            <AdminModal
+                open={topicModal.open}
+                onClose={() => setTopicModal({ open: false, name: '', order: 0 })}
+                title="Add New Topic"
+                footer={
+                    <>
+                        <button type="button" className="secondary-btn text-xs font-bold" onClick={() => setTopicModal({ open: false, name: '', order: 0 })}>Cancel</button>
+                        <button 
+                            type="button" 
+                            className="primary-btn flex-center gap-xs font-bold text-xs"
+                            onClick={() => {
+                                const chId = topicModal.chapterId;
+                                if (!chId) return;
+                                saveTopicMutation.mutate({ name: topicModal.name, order: topicModal.order, chapter: chId });
+                            }}
+                            disabled={saveTopicMutation.isPending || !topicModal.name}
+                        >
+                            {saveTopicMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                            <span>Save Topic</span>
+                        </button>
+                    </>
+                }
+            >
+                <div className="admin-form-group mb-4">
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">Topic Name *</label>
+                    <input 
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
+                        value={topicModal.name} 
+                        onChange={e => setTopicModal({ ...topicModal, name: e.target.value })} 
+                        placeholder="e.g. Topic 1: Standard Settings" 
+                    />
+                </div>
+                <div className="admin-form-group">
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">Display Order</label>
+                    <input 
+                        type="number"
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
+                        value={topicModal.order} 
+                        onChange={e => setTopicModal({ ...topicModal, order: parseInt(e.target.value) || 0 })} 
+                    />
+                </div>
+            </AdminModal>
+
+            <AdminConfirmModal
+                open={confirmDelete.open}
+                onClose={() => setConfirmDelete(prev => ({ ...prev, open: false }))}
+                onConfirm={confirmDelete.onConfirm}
+                title={confirmDelete.title}
+                message={confirmDelete.message}
+            />
         </div>
     );
 };

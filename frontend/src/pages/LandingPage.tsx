@@ -15,6 +15,8 @@ const features = [
     { icon: Shield, title: "Premium Downloads", desc: "Offline access to watermarked notes and papers." },
 ];
 
+import Logo from '@/components/Logo';
+
 export default function LandingPage() {
     return (
         <div className="min-h-screen bg-light text-dark font-sans overflow-x-hidden">
@@ -22,7 +24,7 @@ export default function LandingPage() {
             <nav className="w-full h-20 flex items-center justify-between px-6 md:px-12 glass fixed top-0 z-[100] border-b border-white/20 transition-all">
                 <div className="flex items-center gap-2">
                     <Link to="/" className="flex items-center gap-2 hover:scale-105 transition-transform duration-300">
-                        <img src="/logo.png" alt="Qubook Logo" className="h-10 object-contain" />
+                        <Logo theme="light" className="h-10 object-contain" />
                     </Link>
                 </div>
 
@@ -89,7 +91,7 @@ export default function LandingPage() {
                     {[
                         { label: "Students", value: "50,000+" },
                         { label: "Question Papers", value: "10,000+" },
-                        { label: "Courses", value: "25+" },
+                        { label: "CA Courses", value: "3 Major" },
                         { label: "Rating", value: "4.9/5" }
                     ].map((stat, i) => (
                         <motion.div
@@ -184,12 +186,16 @@ export default function LandingPage() {
                 <div className="max-w-7xl mx-auto">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-16 pb-16 border-b border-white/10">
                         <div className="col-span-1 lg:col-span-1">
-                            <div className="text-3xl font-black mb-6">Study Partner</div>
+                            <div className="text-3xl font-black mb-6">qubook.in</div>
                             <p className="text-white/60 text-sm leading-relaxed mb-8">Empowering students across India with premium learning resources, suggested answers, and handwritten notes.</p>
                             <div className="flex gap-4">
-                                <div className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center hover:bg-primary transition-colors cursor-pointer">FB</div>
-                                <div className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center hover:bg-primary transition-colors cursor-pointer">TW</div>
-                                <div className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center hover:bg-primary transition-colors cursor-pointer">IN</div>
+                                <a href="https://www.instagram.com/p/DYrVIdHEqWf/?igsh=MTBiNGphbHV3bGNneA==" target="_blank" rel="noopener noreferrer" className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center hover:bg-[#E1306C] hover:text-white transition-colors text-white/70" aria-label="Instagram">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+                                        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+                                        <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+                                    </svg>
+                                </a>
                             </div>
                         </div>
                         <div>
@@ -213,14 +219,17 @@ export default function LandingPage() {
                         <div>
                             <h5 className="font-bold mb-8 uppercase tracking-widest text-xs text-primary">Support</h5>
                             <ul className="flex flex-col gap-5 text-white/50 text-sm">
-                                <li className="flex items-center gap-2">Mumbai, Maharashtra, India</li>
-                                <li className="flex items-center gap-2">qubook.helpline@gmail.com</li>
-                                <li className="flex items-center gap-2">+91 98765 43210</li>
+                                <li>
+                                    <a href="mailto:qubook.helpline@gmail.com" className="hover:text-white transition-colors">qubook.helpline@gmail.com</a>
+                                </li>
+                                <li>
+                                    <a href="tel:+918086390965" className="hover:text-white transition-colors">+91 8086390965</a>
+                                </li>
                             </ul>
                         </div>
                     </div>
                     <div className="pt-12 text-center text-white/30 text-xs font-medium">
-                        &copy; 2026 Study Partner. Designed for Excellence. Premium Educational SaaS.
+                        &copy; 2026 qubook.in. Designed for Excellence. Premium Educational SaaS.
                     </div>
                 </div>
             </footer>

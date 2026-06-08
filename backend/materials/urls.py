@@ -4,6 +4,7 @@ from materials.views import (
     QuestionPaperViewSet, AnswerPaperViewSet, NotesViewSet, 
     VideoViewSet, MCQViewSet, BookmarkViewSet, SubjectiveQuestionViewSet, FeedbackViewSet,
     AdminDashboardStatsView, ExportQuestionsExcelView, ImportQuestionsExcelView,
+    PDFQuestionExtractView, UploadPDFView, GenericFileUploadView, ParseTextOnlyView,
 )
 
 router = DefaultRouter()
@@ -12,7 +13,7 @@ router.register(r'answers', AnswerPaperViewSet)
 router.register(r'notes', NotesViewSet)
 router.register(r'videos', VideoViewSet)
 router.register(r'mcqs', MCQViewSet)
-router.register(r'subjective-questions', SubjectiveQuestionViewSet)
+router.register(r'subjective-questions', SubjectiveQuestionViewSet, basename='subjective-question')
 router.register(r'bookmarks', BookmarkViewSet, basename='bookmark')
 router.register(r'feedback', FeedbackViewSet, basename='feedback')
 
@@ -21,4 +22,9 @@ urlpatterns = [
     path('dashboard-stats/', AdminDashboardStatsView.as_view(), name='dashboard-stats'),
     path('questions/export-excel/', ExportQuestionsExcelView.as_view(), name='export-excel'),
     path('questions/import-excel/', ImportQuestionsExcelView.as_view(), name='import-excel'),
+    path('questions/extract-from-pdf/', PDFQuestionExtractView.as_view(), name='extract-from-pdf'),
+    path('questions/parse-text/', ParseTextOnlyView.as_view(), name='parse-text'),
+    path('upload-pdf/', UploadPDFView.as_view(), name='upload-pdf'),
+    path('upload-file/', GenericFileUploadView.as_view(), name='upload-file'),
 ]
+

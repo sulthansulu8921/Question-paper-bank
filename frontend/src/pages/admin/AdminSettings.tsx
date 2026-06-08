@@ -133,7 +133,7 @@ const AdminSettings = () => {
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
                                 <span style={{ color: 'var(--color-text-muted)' }}>Platform</span>
-                                <span style={{ fontWeight: 700 }}>Study Partner v2.0</span>
+                                <span style={{ fontWeight: 700 }}>qubook.in v2.0</span>
                             </div>
                         </div>
                     </div>

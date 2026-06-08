@@ -25,7 +25,7 @@ export default function CourseSelection() {
         return (
             <div className="h-[60vh] flex flex-col items-center justify-center gap-4">
                 <Loader2 className="animate-spin text-primary" size={40} />
-                <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">Loading Syllabus...</p>
+                <p className="text-text-muted font-bold uppercase tracking-widest text-xs">Loading Syllabus...</p>
             </div>
         );
     }
@@ -35,11 +35,11 @@ export default function CourseSelection() {
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                 <div>
                     <span className="text-primary font-black uppercase tracking-widest text-[10px] mb-2 block">Choose your focus</span>
-                    <h1 className="text-4xl md:text-5xl font-black text-gray-900 tracking-tight">Available Courses</h1>
+                    <h1 className="text-4xl md:text-5xl font-black text-text-primary tracking-tight">Available Courses</h1>
                 </div>
                 <div className="flex gap-2">
-                    <button className="px-5 py-2.5 bg-white border border-gray-100 rounded-xl text-xs font-black uppercase tracking-widest shadow-sm hover:bg-gray-50 transition-colors">All Categories</button>
-                    <button className="px-5 py-2.5 bg-gray-900 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg">New Arrival</button>
+                    <button className="px-5 py-2.5 bg-card border border-border rounded-xl text-xs font-black uppercase tracking-widest shadow-sm hover:bg-bg-secondary transition-colors text-text-primary">All Categories</button>
+                    <button className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg">New Arrival</button>
                 </div>
             </div>
 
@@ -53,7 +53,7 @@ export default function CourseSelection() {
                     >
                         <Link
                             to={`/dashboard/courses/${course.id}`}
-                            className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-xl shadow-gray-200/50 block group hover:translate-y-[-12px] transition-all duration-500 relative overflow-hidden"
+                            className="bg-card p-8 rounded-[2.5rem] border border-border shadow-xl dark:shadow-none block group hover:translate-y-[-12px] transition-all duration-500 relative overflow-hidden"
                         >
                             {/* Premium Badge */}
                             {course.is_premium && (
@@ -71,29 +71,29 @@ export default function CourseSelection() {
                                 <BookOpen size={40} className="relative z-10 p-0.5" />
                             </div>
 
-                            <h3 className="text-2xl font-black text-gray-900 mb-4 group-hover:text-primary transition-colors">{course.name}</h3>
-                            <p className="text-gray-400 font-medium text-sm leading-relaxed mb-10 line-clamp-2">
+                            <h3 className="text-2xl font-black text-text-primary mb-4 group-hover:text-primary transition-colors">{course.name}</h3>
+                            <p className="text-text-secondary font-medium text-sm leading-relaxed mb-10 line-clamp-2">
                                 {course.short_description || "Master your syllabus with comprehensive papers, suggested answers, and handwritten notes."}
                             </p>
 
-                            <div className="pt-6 border-t border-gray-50 flex items-center justify-between">
+                            <div className="pt-6 border-t border-border flex items-center justify-between">
                                 <div className="flex gap-4">
                                     <div className="flex flex-col">
-                                        <div className="flex items-center gap-1.5 text-gray-900 font-black text-base">
+                                        <div className="flex items-center gap-1.5 text-text-primary font-black text-base">
                                             <Layers size={14} className="text-primary" /> {course.levels_count || 2}
                                         </div>
-                                        <span className="text-gray-300 text-[10px] font-black uppercase tracking-tighter">Levels</span>
+                                        <span className="text-text-muted text-[10px] font-black uppercase tracking-tighter">Levels</span>
                                     </div>
-                                    <div className="w-[1px] h-8 bg-gray-50 mx-1" />
+                                    <div className="w-[1px] h-8 bg-border mx-1" />
                                     <div className="flex flex-col">
-                                        <div className="flex items-center gap-1.5 text-gray-900 font-black text-base">
+                                        <div className="flex items-center gap-1.5 text-text-primary font-black text-base">
                                             <Star size={14} className="text-accent fill-accent" /> 4.9
                                         </div>
-                                        <span className="text-gray-300 text-[10px] font-black uppercase tracking-tighter">Rating</span>
+                                        <span className="text-text-muted text-[10px] font-black uppercase tracking-tighter">Rating</span>
                                     </div>
                                 </div>
 
-                                <div className="w-12 h-12 rounded-2xl bg-gray-50 text-gray-300 flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-all shadow-inner">
+                                <div className="w-12 h-12 rounded-2xl bg-bg text-text-muted flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-all shadow-inner">
                                     <ChevronRight size={24} strokeWidth={3} />
                                 </div>
                             </div>
@@ -105,12 +105,12 @@ export default function CourseSelection() {
                 ))}
 
                 {/* Placeholder for future growth */}
-                <div className="bg-gray-50 border-4 border-dashed border-gray-100 rounded-[2.5rem] p-8 flex flex-col items-center justify-center text-center opacity-60">
-                    <div className="w-16 h-16 rounded-full bg-gray-200/50 flex items-center justify-center text-gray-400 mb-4">
+                <div className="bg-card/50 border-4 border-dashed border-border rounded-[2.5rem] p-8 flex flex-col items-center justify-center text-center opacity-60">
+                    <div className="w-16 h-16 rounded-full bg-bg flex items-center justify-center text-text-muted mb-4">
                         <Users size={32} />
                     </div>
-                    <h4 className="font-black text-gray-500 uppercase tracking-widest text-xs">Request Course</h4>
-                    <p className="text-[10px] font-bold text-gray-400 mt-1 max-w-[150px]">Don't see your course? Tell our team to add it.</p>
+                    <h4 className="font-black text-text-primary uppercase tracking-widest text-xs">Request Course</h4>
+                    <p className="text-[10px] font-bold text-text-secondary mt-1 max-w-[150px]">Don't see your course? Tell our team to add it.</p>
                 </div>
             </div>
         </div>

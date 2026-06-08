@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Mail, Phone, MapPin, Clock, MessageCircle, Send, Loader2, CheckCircle, ArrowRight } from 'lucide-react';
+import { Mail, Phone, Clock, MessageCircle, Loader2, CheckCircle, ArrowRight } from 'lucide-react';
 import api from '@/api/axios';
 
 interface SiteSettings {
@@ -21,6 +21,8 @@ const fadeUp = {
     transition: { duration: 0.6 },
 };
 
+import Logo from '@/components/Logo';
+
 export default function ContactPage() {
     const { data: settings } = useQuery<SiteSettings>({
         queryKey: ['site-settings'],
@@ -38,21 +40,35 @@ export default function ContactPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true); setError('');
+        
+        const whatsappNumber = settings?.whatsapp_number?.replace(/\D/g, '') || '918086390965';
+        const text = `Hello Qubook Support,
+
+I would like to contact you. Here are my details:
+*Name:* ${form.full_name}
+*Mobile:* ${form.mobile || 'N/A'}
+*Email:* ${form.email}
+*Subject:* ${form.subject}
+*Message:* ${form.message}`;
+
+        const encodedText = encodeURIComponent(text);
+        
         try {
             await api.post('/about/contact/', form);
-            setSuccess(true);
-            setForm({ full_name: '', email: '', mobile: '', subject: '', message: '' });
-        } catch {
-            setError('Failed to send message. Please try again.');
-        } finally {
-            setLoading(false);
+        } catch (err) {
+            console.error('Failed to log message to DB', err);
         }
+        
+        window.open(`https://wa.me/${whatsappNumber}?text=${encodedText}`, '_blank');
+        
+        setSuccess(true);
+        setForm({ full_name: '', email: '', mobile: '', subject: '', message: '' });
+        setLoading(false);
     };
 
     const contactInfo = [
         { icon: Mail, label: 'Email', value: settings?.contact_email || 'qubook.helpline@gmail.com', href: `mailto:${settings?.contact_email || 'qubook.helpline@gmail.com'}` },
-        { icon: Phone, label: 'Phone', value: settings?.contact_phone || '+91 98765 43210', href: `tel:${settings?.contact_phone}` },
-        { icon: MapPin, label: 'Address', value: settings?.office_address || 'Mumbai, Maharashtra, India', href: '#map' },
+        { icon: Phone, label: 'Phone', value: settings?.contact_phone || '+91 8086390965', href: settings?.contact_phone ? `tel:${settings.contact_phone}` : 'tel:+918086390965' },
         { icon: Clock, label: 'Support Hours', value: settings?.support_hours || 'Mon–Sat, 9am–6pm IST', href: undefined },
     ];
 
@@ -62,7 +78,7 @@ export default function ContactPage() {
             <nav className="w-full h-20 flex items-center justify-between px-6 md:px-12 glass fixed top-0 z-[100] border-b border-white/20 transition-all">
                 <div className="flex items-center gap-2">
                     <Link to="/" className="flex items-center gap-2 hover:scale-105 transition-transform duration-300">
-                        <img src="/logo.png" alt="Qubook Logo" className="h-10 object-contain" />
+                        <Logo theme="light" className="h-10 object-contain" />
                     </Link>
                 </div>
 
@@ -92,7 +108,7 @@ export default function ContactPage() {
 
             {/* CONTACT INFO CARDS */}
             <section className="py-12 px-6 max-w-7xl mx-auto">
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     {contactInfo.map((item, i) => (
                         <motion.div key={i} {...fadeUp} transition={{ delay: i * 0.08 }}>
                             {item.href && item.href !== '#map' ? (
@@ -158,33 +174,20 @@ export default function ContactPage() {
                                 <textarea name="message" required rows={4} value={form.message} onChange={handleChange} placeholder="Tell us how we can help..." className="w-full px-6 py-4 rounded-2xl border border-gray-50 focus:outline-none focus:ring-4 focus:ring-primary/10 bg-gray-50/50 text-sm font-medium resize-none transition-all" />
                             </div>
 
-                            <button type="submit" disabled={loading} className="w-full py-5 bg-primary text-white rounded-2xl font-black text-lg hover:translate-y-[-2px] flex items-center justify-center gap-3 shadow-2xl shadow-primary/30 transition-all disabled:opacity-70">
-                                {loading ? <Loader2 size={24} className="animate-spin" /> : <><Send size={20} className="fill-white" /> Send Message</>}
+                            <button type="submit" disabled={loading} className="w-full py-5 bg-emerald-500 text-white rounded-2xl font-black text-lg hover:translate-y-[-2px] flex items-center justify-center gap-3 shadow-2xl shadow-emerald-500/30 transition-all disabled:opacity-70">
+                                {loading ? <Loader2 size={24} className="animate-spin" /> : <><MessageCircle size={20} className="fill-white" /> Send on WhatsApp</>}
                             </button>
                         </form>
                     )}
                 </motion.div>
 
-                {/* map + whatsapp */}
+                {/* whatsapp support */}
                 <div className="flex flex-col gap-6 w-full lg:sticky lg:top-28">
-                    {settings?.google_maps_embed_url ? (
-                        <motion.div {...fadeUp} transition={{ delay: 0.1 }} className="rounded-[3rem] overflow-hidden h-[400px] shadow-2xl border-4 border-white">
-                            <iframe src={settings.google_maps_embed_url} className="w-full h-full border-none" title="Office Location" loading="lazy" />
-                        </motion.div>
-                    ) : (
-                        <motion.div {...fadeUp} className="rounded-[3rem] h-[400px] bg-gray-100 flex items-center justify-center border-4 border-dashed border-gray-200">
-                            <div className="text-center text-gray-400">
-                                <MapPin className="mx-auto mb-4" size={48} />
-                                <p className="text-sm font-black uppercase tracking-widest">Office Map Location</p>
-                                <p className="text-xs font-bold mt-2">Configure in Admin Panel</p>
-                            </div>
-                        </motion.div>
-                    )}
 
                     {(settings?.whatsapp_number || true) && (
                         <motion.a
                             {...fadeUp}
-                            href={`https://wa.me/${settings?.whatsapp_number?.replace(/\D/g, '') || '919876543210'}`}
+                            href={`https://wa.me/${settings?.whatsapp_number?.replace(/\D/g, '') || '918086390965'}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="bg-white p-8 rounded-[2.5rem] flex items-center gap-6 border border-gray-100 shadow-xl shadow-gray-200/50 hover:translate-y-[-10px] transition-transform group"

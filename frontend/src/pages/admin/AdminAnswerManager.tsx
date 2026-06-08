@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/api/axios';
 import { Plus, Edit, Trash2, Search, Loader2, Save, ExternalLink } from 'lucide-react';
 import AdminModal from '@/components/admin/AdminModal';
+import AdminConfirmModal from '@/components/admin/AdminConfirmModal';
 import FileUploadZone from '@/components/admin/FileUploadZone';
 import { useAdminToast, getApiErrorMessage } from '@/components/admin/useAdminToast';
 import '@/styles/admin/QuestionManagement.css';
@@ -15,6 +16,12 @@ const AdminAnswerManager = () => {
     const [modalMode, setModalMode] = useState<'add' | 'edit' | null>(null);
     const [editId, setEditId] = useState<number | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [confirmDelete, setConfirmDelete] = useState<{
+        open: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    }>({ open: false, title: '', message: '', onConfirm: () => {} });
     const [formData, setFormData] = useState(emptyForm);
 
     const { data: answers = [], isLoading } = useQuery({
@@ -181,9 +188,15 @@ const AdminAnswerManager = () => {
                                             <button
                                                 type="button"
                                                 className="action-btn danger"
-                                                onClick={() => {
-                                                    if (window.confirm(`Delete "${item.title}"?`)) deleteMutation.mutate(item.id);
-                                                }}
+                                                onClick={() => setConfirmDelete({
+                                                    open: true,
+                                                    title: 'Delete Suggested Answer',
+                                                    message: `Are you sure you want to delete the suggested answer "${item.title}"? This action cannot be undone.`,
+                                                    onConfirm: () => {
+                                                        deleteMutation.mutate(item.id);
+                                                        setConfirmDelete(prev => ({ ...prev, open: false }));
+                                                    }
+                                                })}
                                             >
                                                 <Trash2 size={16} />
                                             </button>
@@ -266,6 +279,14 @@ const AdminAnswerManager = () => {
                     />
                 </div>
             </AdminModal>
+
+            <AdminConfirmModal
+                open={confirmDelete.open}
+                onClose={() => setConfirmDelete(prev => ({ ...prev, open: false }))}
+                onConfirm={confirmDelete.onConfirm}
+                title={confirmDelete.title}
+                message={confirmDelete.message}
+            />
         </div>
     );
 };
