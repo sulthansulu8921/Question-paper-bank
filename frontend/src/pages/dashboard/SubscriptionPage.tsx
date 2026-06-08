@@ -78,7 +78,10 @@ export default function SubscriptionPage() {
     // Fetch user payment history
     const { data: paymentHistory = [], isLoading: paymentsLoading } = useQuery<any[]>({
         queryKey: ['user-payments'],
-        queryFn: async () => (await api.get('/subscriptions/payments/')).data,
+        queryFn: async () => {
+            const res = (await api.get('/subscriptions/payments/')).data;
+            return Array.isArray(res) ? res : (res.results ?? []);
+        },
     });
 
     const handleDownloadInvoice = async (paymentId: number, transactionId: string) => {

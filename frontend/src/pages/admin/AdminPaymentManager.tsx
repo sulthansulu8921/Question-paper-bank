@@ -53,7 +53,10 @@ export default function AdminPaymentManager() {
     // Fetch payments list
     const { data: payments = [], isLoading, error } = useQuery<Payment[]>({
         queryKey: ['admin-payments-history'],
-        queryFn: async () => (await api.get('/subscriptions/payments/')).data,
+        queryFn: async () => {
+            const res = (await api.get('/subscriptions/payments/?page_size=200')).data;
+            return Array.isArray(res) ? res : (res.results ?? []);
+        },
         refetchInterval: 30000 // Refetch every 30 seconds for live updates
     });
 

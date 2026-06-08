@@ -13,7 +13,10 @@ const AdminAnalytics = () => {
 
     const { data: questions = [] } = useQuery({
         queryKey: ['admin-questions'],
-        queryFn: async () => (await api.get('/materials/subjective-questions/')).data,
+        queryFn: async () => {
+            const res = (await api.get('/materials/subjective-questions/?page_size=200')).data;
+            return Array.isArray(res) ? res : (res.results ?? []);
+        },
     });
 
     // Compute source breakdown

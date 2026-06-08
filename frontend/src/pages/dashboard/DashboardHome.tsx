@@ -50,24 +50,36 @@ export default function DashboardHome() {
 
     const { data: questions = [], isLoading: isLoadingQuestions } = useQuery({
         queryKey: ['subjective-questions'],
-        queryFn: async () => (await api.get('/materials/subjective-questions/')).data,
+        queryFn: async () => {
+            const res = (await api.get('/materials/subjective-questions/?page_size=5')).data;
+            return Array.isArray(res) ? res : (res.results ?? []);
+        },
     });
 
     const { data: bookmarks = [] } = useQuery({
         queryKey: ['bookmarks'],
-        queryFn: async () => (await api.get('/materials/bookmarks/')).data,
+        queryFn: async () => {
+            const res = (await api.get('/materials/bookmarks/')).data;
+            return Array.isArray(res) ? res : (res.results ?? []);
+        },
     });
 
     // Fetch active user subscriptions
     const { data: userSubscriptions = [], isLoading: isLoadingSubs } = useQuery<any[]>({
         queryKey: ['user-subscriptions'],
-        queryFn: async () => (await api.get('/subscriptions/my-subscriptions/')).data,
+        queryFn: async () => {
+            const res = (await api.get('/subscriptions/my-subscriptions/')).data;
+            return Array.isArray(res) ? res : (res.results ?? []);
+        },
     });
 
     // Fetch user payment history
     const { data: payments = [], isLoading: isLoadingPayments } = useQuery<any[]>({
         queryKey: ['user-payments'],
-        queryFn: async () => (await api.get('/subscriptions/payments/')).data,
+        queryFn: async () => {
+            const res = (await api.get('/subscriptions/payments/?page_size=3')).data;
+            return Array.isArray(res) ? res : (res.results ?? []);
+        },
     });
 
     const getDaysRemaining = (endDateStr: string) => {
