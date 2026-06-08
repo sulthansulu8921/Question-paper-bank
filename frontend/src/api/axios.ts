@@ -14,7 +14,23 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-    (response) => response,
+    (response) => {
+        // Transparently unwrap DRF paginated responses into plain arrays.
+        // A paginated response has shape: { count, next, previous, results: [...] }
+        // This runs on every GET response so all 40+ queryFns across the app
+        // keep working without any per-file changes.
+        const data = response.data;
+        if (
+            data !== null &&
+            typeof data === 'object' &&
+            !Array.isArray(data) &&
+            Array.isArray(data.results) &&
+            'count' in data
+        ) {
+            response.data = data.results;
+        }
+        return response;
+    },
     (error) => {
         if (error.response && error.response.status === 401) {
             const url = error.config?.url || '';

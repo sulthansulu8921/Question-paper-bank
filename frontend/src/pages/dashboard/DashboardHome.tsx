@@ -45,7 +45,10 @@ export default function DashboardHome() {
     // Fetch master questions and courses list for stats counting
     const { data: courses = [] } = useQuery({
         queryKey: ['courses'],
-        queryFn: async () => (await api.get('/courses/courses/')).data,
+        queryFn: async () => {
+            const res = (await api.get('/courses/courses/')).data;
+            return Array.isArray(res) ? res : (res.results ?? []);
+        },
     });
 
     const { data: questions = [], isLoading: isLoadingQuestions } = useQuery({
