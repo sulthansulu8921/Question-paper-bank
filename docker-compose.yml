@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: qubook_backend
+    restart: always
+    volumes:
+      - ./backend/media:/app/media
+      - ./backend/static:/app/static
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - ./backend/.env
