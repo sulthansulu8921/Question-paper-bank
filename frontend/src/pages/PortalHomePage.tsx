@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { BookOpen, Phone, Mail, ChevronRight, Loader2, Sparkles, ArrowRight } from 'lucide-react';
+import { BookOpen, Phone, Mail, ChevronRight, Loader2, Sparkles, ArrowRight, Menu, X } from 'lucide-react';
 import Logo from '@/components/Logo';
 import api from '@/api/axios';
 import lightBg from '@/assets/light-portal-bg.png';
@@ -20,6 +20,7 @@ export default function PortalHomePage() {
     const [email, setEmail] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [subscribed, setSubscribed] = useState(false);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     const handleSubscribe = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -90,11 +91,64 @@ export default function PortalHomePage() {
                     <Link to="/contact" className="text-sm font-bold text-slate-500 hover:text-[#0F172A] transition-all">Contact Us</Link>
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="hidden lg:flex items-center gap-4">
                     <Link to="/auth?tab=login" className="px-6 py-2.5 text-slate-600 text-sm font-bold hover:text-[#0F172A] transition-colors">Login</Link>
                     <Link to="/auth?tab=register" className="px-8 py-3 bg-gradient-to-r from-[#4F46E5] to-[#7C3AED] hover:from-[#4338CA] hover:to-[#6D28D9] text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:-translate-y-0.5 transition-all">Free Signup</Link>
                 </div>
+
+                {/* Mobile Hamburger Menu Button */}
+                <button
+                    onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                    className="lg:hidden p-2 text-slate-600 hover:text-[#0F172A] transition-colors"
+                >
+                    {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+                </button>
             </nav>
+
+            {/* Mobile Menu Overlay */}
+            {isMobileMenuOpen && (
+                <div className="lg:hidden fixed top-20 left-0 w-full bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-lg z-[99] flex flex-col p-6 gap-6 transition-all duration-300 ease-in-out">
+                    <div className="flex flex-col gap-4">
+                        <Link
+                            to="/"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="text-sm font-bold text-[#0F172A] hover:text-[#4F46E5] py-2 border-b border-slate-100 transition-colors"
+                        >
+                            Home
+                        </Link>
+                        <Link
+                            to="/about"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="text-sm font-bold text-slate-500 hover:text-[#0F172A] py-2 border-b border-slate-100 transition-colors"
+                        >
+                            About Us
+                        </Link>
+                        <Link
+                            to="/contact"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="text-sm font-bold text-slate-500 hover:text-[#0F172A] py-2 border-b border-slate-100 transition-colors"
+                        >
+                            Contact Us
+                        </Link>
+                    </div>
+                    <div className="flex flex-col gap-3 pt-2">
+                        <Link
+                            to="/auth?tab=login"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="w-full py-3 text-center text-slate-600 text-sm font-bold hover:text-[#0F172A] border border-slate-200 rounded-full transition-colors"
+                        >
+                            Login
+                        </Link>
+                        <Link
+                            to="/auth?tab=register"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="w-full py-3 text-center bg-gradient-to-r from-[#4F46E5] to-[#7C3AED] text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg shadow-indigo-500/30 transition-all"
+                        >
+                            Free Signup
+                        </Link>
+                    </div>
+                </div>
+            )}
 
             {/* PROFESSIONAL TICKER ANNOUNCEMENT */}
             <div className="w-full bg-gradient-to-r from-[#4F46E5] via-[#6366F1] to-[#7C3AED] py-3 text-center mt-20 relative z-50 shadow-md overflow-hidden border-b border-indigo-400/30">

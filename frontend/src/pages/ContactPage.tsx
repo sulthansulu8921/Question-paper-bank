@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Mail, Phone, Clock, MessageCircle, Loader2, CheckCircle, ArrowRight } from 'lucide-react';
+import { Mail, Phone, Clock, MessageCircle, Loader2, CheckCircle, ArrowRight, Menu, X } from 'lucide-react';
 import api from '@/api/axios';
 
 interface SiteSettings {
@@ -24,6 +24,7 @@ const fadeUp = {
 import Logo from '@/components/Logo';
 
 export default function ContactPage() {
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const { data: settings } = useQuery<SiteSettings>({
         queryKey: ['site-settings'],
         queryFn: async () => (await api.get('/about/settings/')).data,
@@ -89,10 +90,63 @@ I would like to contact you. Here are my details:
                     <Link to="/contact" className="text-sm font-bold text-primary">Contact Us</Link>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="hidden lg:flex items-center gap-3">
                     <Link to="/login" className="px-6 py-2.5 bg-primary text-white text-sm font-extrabold rounded-full shadow-xl shadow-primary/30 hover:scale-105 active:scale-95 transition-all">Login</Link>
                 </div>
+
+                {/* Mobile Hamburger Menu Button */}
+                <button
+                    onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                    className="lg:hidden p-2 text-slate-600 hover:text-primary transition-colors"
+                >
+                    {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+                </button>
             </nav>
+
+            {/* Mobile Menu Overlay */}
+            {isMobileMenuOpen && (
+                <div className="lg:hidden fixed top-20 left-0 w-full glass z-[99] flex flex-col p-6 gap-6 transition-all duration-300 ease-in-out">
+                    <div className="flex flex-col gap-4">
+                        <Link
+                            to="/"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="text-sm font-bold text-slate-500 hover:text-primary py-2 border-b border-slate-100/10 transition-colors"
+                        >
+                            Home
+                        </Link>
+                        <Link
+                            to="/dashboard/courses"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="text-sm font-bold text-slate-500 hover:text-primary py-2 border-b border-slate-100/10 transition-colors"
+                        >
+                            Courses
+                        </Link>
+                        <Link
+                            to="/about"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="text-sm font-bold text-slate-500 hover:text-primary py-2 border-b border-slate-100/10 transition-colors"
+                        >
+                            About Us
+                        </Link>
+                        <Link
+                            to="/contact"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="text-sm font-bold text-primary py-2 border-b border-slate-100/10 transition-colors"
+                        >
+                            Contact Us
+                        </Link>
+                    </div>
+                    <div className="flex flex-col gap-3 pt-2">
+                        <Link
+                            to="/login"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="w-full py-3 text-center bg-primary text-white text-sm font-extrabold rounded-full shadow-xl shadow-primary/30 transition-all"
+                        >
+                            Login
+                        </Link>
+                    </div>
+                </div>
+            )}
 
             {/* HERO */}
             <section className="pt-40 pb-20 px-6 text-center bg-gradient-to-b from-primary/5 to-transparent relative overflow-hidden">

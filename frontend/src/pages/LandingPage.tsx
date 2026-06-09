@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { BookOpen, FileText, ChevronRight, CheckCircle, Zap, Shield, Search } from 'lucide-react';
+import { BookOpen, FileText, ChevronRight, CheckCircle, Zap, Shield, Search, Menu, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const courses = [
@@ -18,6 +19,7 @@ const features = [
 import Logo from '@/components/Logo';
 
 export default function LandingPage() {
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     return (
         <div className="min-h-screen bg-light text-dark font-sans overflow-x-hidden">
             {/* TOP NAVBAR */}
@@ -38,12 +40,95 @@ export default function LandingPage() {
                     <Link to="/contact" className="text-sm font-semibold hover:text-primary transition-colors">Contact Us</Link>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="hidden lg:flex items-center gap-3">
                     <Link to="/login" className="px-6 py-2 text-sm font-bold border border-gray-200 rounded-full hover:bg-gray-50 transition-colors hidden md:block">Login</Link>
                     <Link to="/register" className="px-6 py-2.5 bg-primary text-white text-sm font-extrabold rounded-full shadow-xl shadow-primary/30 hover:scale-105 active:scale-95 transition-all">Register</Link>
-                    <button className="p-2.5 bg-accent/10 text-accent rounded-full lg:hidden"><Search size={20} /></button>
+                </div>
+
+                {/* Mobile Search & Hamburger Button */}
+                <div className="flex items-center gap-3 lg:hidden">
+                    <button className="p-2.5 bg-accent/10 text-accent rounded-full"><Search size={20} /></button>
+                    <button
+                        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                        className="p-2 text-slate-600 hover:text-primary transition-colors"
+                    >
+                        {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+                    </button>
                 </div>
             </nav>
+
+            {/* Mobile Menu Overlay */}
+            {isMobileMenuOpen && (
+                <div className="lg:hidden fixed top-20 left-0 w-full glass z-[99] flex flex-col p-6 gap-6 transition-all duration-300 ease-in-out">
+                    <div className="flex flex-col gap-4">
+                        <Link
+                            to="/"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="text-sm font-bold text-primary py-2 border-b border-slate-100/10 transition-colors"
+                        >
+                            Home
+                        </Link>
+                        <Link
+                            to="/dashboard/courses"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="text-sm font-bold text-slate-500 hover:text-primary py-2 border-b border-slate-100/10 transition-colors"
+                        >
+                            Courses
+                        </Link>
+                        <Link
+                            to="/papers"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="text-sm font-bold text-slate-500 hover:text-primary py-2 border-b border-slate-100/10 transition-colors"
+                        >
+                            Question Papers
+                        </Link>
+                        <Link
+                            to="/notes"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="text-sm font-bold text-slate-500 hover:text-primary py-2 border-b border-slate-100/10 transition-colors"
+                        >
+                            Notes
+                        </Link>
+                        <Link
+                            to="/mcqs"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="text-sm font-bold text-slate-500 hover:text-primary py-2 border-b border-slate-100/10 transition-colors"
+                        >
+                            MCQs
+                        </Link>
+                        <Link
+                            to="/about"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="text-sm font-bold text-slate-500 hover:text-primary py-2 border-b border-slate-100/10 transition-colors"
+                        >
+                            About Us
+                        </Link>
+                        <Link
+                            to="/contact"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="text-sm font-bold text-slate-500 hover:text-primary py-2 border-b border-slate-100/10 transition-colors"
+                        >
+                            Contact Us
+                        </Link>
+                    </div>
+                    <div className="flex flex-col gap-3 pt-2">
+                        <Link
+                            to="/login"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="w-full py-3 text-center bg-white border border-slate-200 text-dark text-sm font-bold rounded-full transition-colors"
+                        >
+                            Login
+                        </Link>
+                        <Link
+                            to="/register"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="w-full py-3 text-center bg-primary text-white text-sm font-extrabold rounded-full shadow-xl shadow-primary/30 transition-all"
+                        >
+                            Register
+                        </Link>
+                    </div>
+                </div>
+            )}
 
             {/* HERO SECTION */}
             <section className="relative pt-32 pb-24 md:pt-48 md:pb-32 px-6 flex flex-col items-center justify-center text-center overflow-hidden">
