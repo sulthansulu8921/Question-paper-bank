@@ -11,6 +11,7 @@ import '@/styles/admin/QuestionManagement.css';
 const emptyForm = {
     title: '',
     description: '',
+    course: '',
     subject: '',
     topic: '',
     file_url: '',
@@ -36,6 +37,11 @@ const AdminNotesManager = () => {
         queryFn: async () => (await api.get('/materials/notes/')).data,
     });
 
+    const { data: courses = [] } = useQuery({
+        queryKey: ['courses-small'],
+        queryFn: async () => (await api.get('/courses/courses/')).data,
+    });
+
     const { data: subjects = [] } = useQuery({
         queryKey: ['subjects-small'],
         queryFn: async () => (await api.get('/courses/subjects/')).data,
@@ -45,6 +51,11 @@ const AdminNotesManager = () => {
         queryKey: ['topics-small'],
         queryFn: async () => (await api.get('/courses/topics/')).data,
     });
+
+    // Filter subjects based on selected course in form
+    const filteredSubjectsForForm = subjects.filter(
+        (s: any) => !formData.course || String(s.course) === String(formData.course)
+    );
 
     // Filter topics based on selected subject in form
     const filteredTopicsForForm = topics.filter(
@@ -58,11 +69,12 @@ const AdminNotesManager = () => {
             description: formData.description.trim(),
             subject: parseInt(formData.subject, 10),
             topic: formData.topic ? parseInt(formData.topic, 10) : null,
-            course: selectedSubj ? selectedSubj.course : null,
+            course: formData.course ? parseInt(formData.course, 10) : (selectedSubj ? selectedSubj.course : null),
             file_url: formData.file_url || '',
             is_premium: formData.is_premium,
         };
     };
+
 
     const createMutation = useMutation({
         mutationFn: (data: ReturnType<typeof buildPayload>) => api.post('/materials/notes/', data),
@@ -107,10 +119,15 @@ const AdminNotesManager = () => {
 
     const openEdit = (item: any) => {
         setEditId(item.id);
+        const subjectId = item.subject?.toString() || '';
+        const selectedSubj = subjects.find((s: any) => String(s.id) === String(subjectId));
+        const courseId = item.course?.toString() || (selectedSubj ? selectedSubj.course?.toString() : '');
+
         setFormData({
             title: item.title || '',
             description: item.description || '',
-            subject: item.subject?.toString() || '',
+            course: courseId,
+            subject: subjectId,
             topic: item.topic?.toString() || '',
             file_url: item.file_url || '',
             is_premium: item.is_premium ?? true,
@@ -285,6 +302,21 @@ const AdminNotesManager = () => {
                     />
                 </div>
                 <div className="admin-form-group">
+                    <label>Course (optional)</label>
+                    <select
+                        className="admin-form-input"
+                        value={formData.course}
+                        onChange={(e) => setFormData({ ...formData, course: e.target.value, subject: '', topic: '' })}
+                    >
+                        <option value="">Select Course...</option>
+                        {courses.map((c: any) => (
+                            <option key={c.id} value={c.id}>
+                                {c.name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+                <div className="admin-form-group">
                     <label>Subject *</label>
                     <select
                         className="admin-form-input"
@@ -292,9 +324,9 @@ const AdminNotesManager = () => {
                         onChange={(e) => setFormData({ ...formData, subject: e.target.value, topic: '' })}
                     >
                         <option value="">Select Subject...</option>
-                        {subjects.map((s: any) => (
+                        {filteredSubjectsForForm.map((s: any) => (
                             <option key={s.id} value={s.id}>
-                                {s.name}
+                                {s.name} {s.course_name ? `(${s.course_name})` : ''}
                             </option>
                         ))}
                     </select>
