@@ -314,16 +314,6 @@ export default function NotesPage() {
                             <div className="flex items-center gap-3">
                                 <a
                                     href={activeNote.file_url}
-                                    download={`${activeNote.title}.pdf`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-colors"
-                                >
-                                    <Download size={14} />
-                                    <span>Download</span>
-                                </a>
-                                <a
-                                    href={activeNote.file_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 transition-colors"
@@ -338,7 +328,7 @@ export default function NotesPage() {
                         <div className="bg-slate-800 rounded-3xl border border-slate-900 shadow-2xl overflow-hidden min-h-[70vh] flex flex-col relative">
                             {activeNote.file_url ? (
                                 <iframe
-                                    src={`${activeNote.file_url}#toolbar=1`}
+                                    src={`${activeNote.file_url}#toolbar=0`}
                                     className="w-full flex-1 border-none min-h-[70vh]"
                                     title={activeNote.title}
                                 />
