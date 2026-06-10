@@ -74,15 +74,12 @@ export default function AuthPage() {
                     });
                     
                     const renderBtn = () => {
-                        const btnId = tab === 'login' ? 'google-signin-button-login' : 'google-signin-button-register';
-                        const btnEl = document.getElementById(btnId);
+                        const btnEl = document.getElementById('google-signin-button');
                         if (btnEl) {
                             btnEl.innerHTML = ''; // Clear previous button instance
-                            // Strict width check (must be between 200 and 400px)
-                            const width = btnEl.clientWidth >= 200 && btnEl.clientWidth <= 400 ? btnEl.clientWidth : 320;
                             googleObj.accounts.id.renderButton(
                                 btnEl,
-                                { theme: 'outline', size: 'large', width: width, text: tab === 'register' ? 'signup_with' : 'signin_with' }
+                                { theme: 'outline', size: 'large', width: 320, text: tab === 'register' ? 'signup_with' : 'signin_with' }
                             );
                         }
                     };
@@ -390,17 +387,6 @@ export default function AuthPage() {
                                 <button type="submit" disabled={loading} className="w-full bg-primary text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-primary/30 hover:translate-y-[-2px] transition-all flex items-center justify-center gap-3 disabled:opacity-70">
                                     {loading ? <Loader2 size={24} className="animate-spin" /> : <><ArrowRight size={18} /> Sign In</>}
                                 </button>
-
-                                <div className="relative my-6 flex items-center justify-center">
-                                    <div className="absolute inset-0 flex items-center">
-                                        <div className="w-full border-t border-slate-100"></div>
-                                    </div>
-                                    <span className="relative bg-white px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Or continue with</span>
-                                </div>
-
-                                <div className="flex justify-center">
-                                    <div id="google-signin-button-login" className="w-full"></div>
-                                </div>
                             </motion.form>
                         )}
 
@@ -499,17 +485,6 @@ export default function AuthPage() {
                                 <button type="submit" disabled={loading} className="w-full bg-primary text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-primary/30 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-70 mt-4">
                                     {loading ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={18} /> Register Now</>}
                                 </button>
-
-                                <div className="relative my-6 flex items-center justify-center">
-                                    <div className="absolute inset-0 flex items-center">
-                                        <div className="w-full border-t border-slate-100"></div>
-                                    </div>
-                                    <span className="relative bg-white px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Or continue with</span>
-                                </div>
-
-                                <div className="flex justify-center">
-                                    <div id="google-signin-button-register" className="w-full"></div>
-                                </div>
                             </motion.form>
                         )}
 
@@ -600,6 +575,21 @@ export default function AuthPage() {
                             </motion.form>
                         )}
                     </AnimatePresence>
+
+                    {(tab === 'login' || tab === 'register') && (
+                        <>
+                            <div className="relative my-6 flex items-center justify-center">
+                                <div className="absolute inset-0 flex items-center">
+                                    <div className="w-full border-t border-slate-100"></div>
+                                </div>
+                                <span className="relative bg-white px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Or continue with</span>
+                            </div>
+
+                            <div className="flex justify-center">
+                                <div id="google-signin-button" className="w-full flex justify-center"></div>
+                            </div>
+                        </>
+                    )}
                 </div>
             </motion.div>
         </div>
