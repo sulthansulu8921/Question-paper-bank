@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import { Outlet } from 'react-router-dom';
@@ -16,7 +16,18 @@ export default function DashboardLayout() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [modalError, setModalError] = useState('');
 
-    const showMobilePrompt = user && !user.mobile_number?.trim();
+    const [hasDismissed, setHasDismissed] = useState(() => {
+        if (!user) return false;
+        return localStorage.getItem(`dismissed_mobile_prompt_${user.id}`) === 'true';
+    });
+
+    useEffect(() => {
+        if (user) {
+            setHasDismissed(localStorage.getItem(`dismissed_mobile_prompt_${user.id}`) === 'true');
+        }
+    }, [user]);
+
+    const showMobilePrompt = user && !user.mobile_number?.trim() && !hasDismissed;
 
     const handleMobileSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -85,7 +96,7 @@ export default function DashboardLayout() {
                 </main>
             </div>
 
-            {/* Non-dismissible Mobile Number Modal */}
+            {/* Dismissible Mobile Number Modal */}
             <AnimatePresence>
                 {showMobilePrompt && (
                     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
@@ -94,6 +105,20 @@ export default function DashboardLayout() {
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             className="bg-card border border-border rounded-[2.5rem] p-8 md:p-10 max-w-md w-full shadow-2xl relative overflow-hidden"
                         >
+                            {/* Close Button */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (user) {
+                                        localStorage.setItem(`dismissed_mobile_prompt_${user.id}`, 'true');
+                                        setHasDismissed(true);
+                                    }
+                                }}
+                                className="absolute top-6 right-6 text-text-muted hover:text-text-primary p-2 hover:bg-bg rounded-xl transition-all"
+                            >
+                                <X size={16} />
+                            </button>
+
                             {/* Accent Glow */}
                             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-36 h-36 bg-primary/20 rounded-full blur-3xl -z-10" />
 
@@ -130,17 +155,32 @@ export default function DashboardLayout() {
                                     </div>
                                 </div>
 
-                                <button
-                                    type="submit"
-                                    disabled={isSubmitting}
-                                    className="w-full bg-primary text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-primary/30 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-75"
-                                >
-                                    {isSubmitting ? (
-                                        <Loader2 size={20} className="animate-spin" />
-                                    ) : (
-                                        <>Save & Continue</>
-                                    )}
-                                </button>
+                                <div className="space-y-3">
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting}
+                                        className="w-full bg-primary text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-primary/30 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-75"
+                                    >
+                                        {isSubmitting ? (
+                                            <Loader2 size={20} className="animate-spin" />
+                                        ) : (
+                                            <>Save & Continue</>
+                                        )}
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (user) {
+                                                localStorage.setItem(`dismissed_mobile_prompt_${user.id}`, 'true');
+                                                setHasDismissed(true);
+                                            }
+                                        }}
+                                        className="w-full text-text-muted hover:text-text-primary py-2 text-xs font-black uppercase tracking-widest transition-colors text-center"
+                                    >
+                                        Skip for Now
+                                    </button>
+                                </div>
                             </form>
                         </motion.div>
                     </div>
