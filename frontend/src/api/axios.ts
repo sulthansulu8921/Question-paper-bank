@@ -15,10 +15,6 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
     (response) => {
-        // Transparently unwrap DRF paginated responses into plain arrays.
-        // A paginated response has shape: { count, next, previous, results: [...] }
-        // This runs on every GET response so all 40+ queryFns across the app
-        // keep working without any per-file changes.
         const data = response.data;
         if (
             data !== null &&
@@ -27,7 +23,17 @@ api.interceptors.response.use(
             Array.isArray(data.results) &&
             'count' in data
         ) {
-            response.data = data.results;
+            const results = data.results;
+            // Attach DRF pagination metadata as custom properties on the array object
+            Object.defineProperties(results, {
+                count: { value: data.count, writable: true, enumerable: false },
+                next: { value: data.next, writable: true, enumerable: false },
+                previous: { value: data.previous, writable: true, enumerable: false },
+                locked_count: { value: data.locked_count ?? 0, writable: true, enumerable: false },
+                access_limit: { value: data.access_limit ?? -1, writable: true, enumerable: false },
+                has_full_access: { value: data.has_full_access ?? true, writable: true, enumerable: false }
+            });
+            response.data = results;
         }
         return response;
     },

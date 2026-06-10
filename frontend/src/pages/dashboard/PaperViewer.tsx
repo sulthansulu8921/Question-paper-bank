@@ -1,6 +1,7 @@
 import { ArrowLeft, Download, MessageCircle, Video } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import QuestionTable from '@/components/dashboard/QuestionTable';
+import { useAuthStore } from '@/store/useAuthStore';
 
 const SUBJECT_LOOKUP: Record<string, { name: string, code: string }> = {
     '1': { name: 'Advanced Accounting', code: 'PAPER 1' },
@@ -14,6 +15,7 @@ const SUBJECT_LOOKUP: Record<string, { name: string, code: string }> = {
 export default function PaperViewer() {
     const navigate = useNavigate();
     const { id } = useParams<{ id: string }>();
+    const user = useAuthStore((state) => state.user);
     
     const subjectInfo = id ? SUBJECT_LOOKUP[id] : null;
     const subjectName = subjectInfo ? subjectInfo.name : 'Unknown Subject';
@@ -23,7 +25,7 @@ export default function PaperViewer() {
             {/* Topmost Utility Bar (My Plan / Help / Guest) */}
             <div className="bg-[var(--table-header)] px-10 py-3 flex items-center justify-between shrink-0 text-white text-[11px] font-black uppercase tracking-widest transition-colors duration-200">
                 <div className="flex items-center gap-8">
-                    <span>My Plan: Free</span>
+                    <span>My Plan: {user?.subscription_tier || 'Free Account'}</span>
                     <span className="opacity-60 cursor-pointer hover:opacity-100 transition-opacity">Help</span>
                 </div>
                 <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">

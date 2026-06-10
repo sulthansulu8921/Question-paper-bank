@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Eye, Home, Search, Star, X } from 'lucide-react';
+import { Eye, Home, Search, Star, X, Lock } from 'lucide-react';
 import QuestionModal from './QuestionModal';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams, useParams } from 'react-router-dom';
+import { useSearchParams, useParams, Link } from 'react-router-dom';
 import api from '@/api/axios';
 
 interface Question {
@@ -284,6 +284,38 @@ export default function QuestionTable({
                                 </tr>
                             );
                         })}
+                        {/* Render locked rows if present */}
+                        {!isLoading && (questions as any).locked_count > 0 && (
+                            <tr className="bg-bg/25 border-t border-border opacity-70">
+                                <td className="px-4 py-5 text-xs font-bold text-center border-r border-border text-text-muted">
+                                    {filteredQuestions.length + 1}
+                                </td>
+                                <td className="px-6 py-5 text-xs font-black border-r border-border text-text-muted blur-[2px] select-none">
+                                    •••••••• ••••••••
+                                </td>
+                                <td className="px-6 py-5 text-[11px] font-bold border-r border-border text-text-muted blur-[2px] select-none">
+                                    ••••••••
+                                </td>
+                                <td className="px-6 py-5 text-[11px] font-bold border-r border-border text-text-muted blur-[2px] select-none">
+                                    ••••
+                                </td>
+                                <td className="px-6 py-5 text-[11px] font-black border-r border-border text-text-muted blur-[2px] select-none">
+                                    ••
+                                </td>
+                                <td className="px-8 py-5 text-xs font-black border-r border-border text-text-muted blur-[2px] select-none">
+                                    ••
+                                </td>
+                                <td className="px-8 py-5 text-center flex items-center justify-center">
+                                    <Link 
+                                        to="/dashboard/subscription"
+                                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md transition-all scale-95 hover:scale-100"
+                                    >
+                                        <Lock size={12} />
+                                        <span>Unlock {(questions as any).locked_count} More</span>
+                                    </Link>
+                                </td>
+                            </tr>
+                        )}
                     </tbody>
                 </table>
             </div>
