@@ -6,6 +6,7 @@ from django.dispatch import receiver
 class User(AbstractUser):
     mobile_number = models.CharField(max_length=15, unique=True, null=True, blank=True)
     email = models.EmailField(unique=True)
+    session_key = models.CharField(max_length=100, null=True, blank=True)
     # is_premium shortcut can be tracked dynamically via UserSubscription, but useful for caching maybe
     
     USERNAME_FIELD = 'email'

@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.tokens import RefreshToken
 from authentication.models import User, OTP
 from authentication.serializers import UserSerializer
 from authentication.permissions import IsSuperUser
@@ -34,7 +35,25 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
         username = attrs.get('email') or attrs.get('username')
         if username:
             attrs[self.username_field] = str(username).strip().lower()
-        return super().validate(attrs)
+        
+        # Validate password & get tokens
+        data = super().validate(attrs)
+        
+        # Generate single-session key
+        import uuid
+        session_key = str(uuid.uuid4())
+        self.user.session_key = session_key
+        self.user.save(update_fields=['session_key'])
+        
+        # Manually generate tokens with the session_key custom claim
+        refresh = RefreshToken.for_user(self.user)
+        refresh['session_key'] = session_key
+        refresh.access_token['session_key'] = session_key
+        
+        data['refresh'] = str(refresh)
+        data['access'] = str(refresh.access_token)
+        
+        return data
 
 class EmailTokenObtainPairView(TokenObtainPairView):
     serializer_class = EmailTokenObtainPairSerializer
@@ -49,8 +68,6 @@ class EmailTokenObtainPairView(TokenObtainPairView):
             'refresh': str(serializer.validated_data['refresh']),
             'user': UserSerializer(user).data,
         })
-
-from rest_framework_simplejwt.tokens import RefreshToken
 
 class RegisterRequestOTPView(APIView):
     permission_classes = (permissions.AllowAny,)
@@ -116,7 +133,17 @@ class RegisterView(generics.CreateAPIView):
         
         response = super().create(request, *args, **kwargs)
         user = User.objects.get(email=response.data['email'])
+        
+        # Generate single-session key
+        import uuid
+        session_key = str(uuid.uuid4())
+        user.session_key = session_key
+        user.save(update_fields=['session_key'])
+        
         refresh = RefreshToken.for_user(user)
+        refresh['session_key'] = session_key
+        refresh.access_token['session_key'] = session_key
+        
         return Response({
             'user': response.data,
             'access': str(refresh.access_token),
@@ -351,7 +378,14 @@ class GoogleAuthView(APIView):
             created = True
 
         # Generate JWT Tokens
+        import uuid
+        session_key = str(uuid.uuid4())
+        user.session_key = session_key
+        user.save(update_fields=['session_key'])
+
         refresh = RefreshToken.for_user(user)
+        refresh['session_key'] = session_key
+        refresh.access_token['session_key'] = session_key
 
         return Response({
             'user': UserSerializer(user).data,
