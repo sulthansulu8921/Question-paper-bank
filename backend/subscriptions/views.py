@@ -66,7 +66,7 @@ class UserSubscriptionViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        if self.request.user and self.request.user.is_staff:
+        if self.request.user and self.request.user.is_staff and self.request.query_params.get('all') == 'true':
             return UserSubscription.objects.all().order_by('-start_date')
         return UserSubscription.objects.filter(user=self.request.user).order_by('-start_date')
 
@@ -277,7 +277,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     serializer_class = PaymentSerializer
 
     def get_queryset(self):
-        if self.request.user and self.request.user.is_superuser:
+        if self.request.user and self.request.user.is_superuser and self.request.query_params.get('all') == 'true':
             return Payment.objects.all().order_by('-created_at')
         return Payment.objects.filter(user=self.request.user).order_by('-created_at')
 

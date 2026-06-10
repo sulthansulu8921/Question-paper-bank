@@ -42,13 +42,13 @@ const AdminUserManager = () => {
     // Fetch platform subscriptions
     const { data: subscriptions = [], isLoading: isSubsLoading } = useQuery({
         queryKey: ['admin-subscriptions'],
-        queryFn: async () => (await api.get('/subscriptions/my-subscriptions/')).data
+        queryFn: async () => (await api.get('/subscriptions/my-subscriptions/?all=true')).data
     });
 
     // Fetch platform payments
     const { data: payments = [], isLoading: isPaymentsLoading } = useQuery({
         queryKey: ['admin-payments'],
-        queryFn: async () => (await api.get('/subscriptions/payments/')).data
+        queryFn: async () => (await api.get('/subscriptions/payments/?all=true')).data
     });
 
     // Fetch courses / subjects to filter by paper
