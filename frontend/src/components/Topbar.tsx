@@ -50,7 +50,7 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
     return (
         <header className="h-20 bg-card border-b border-border flex items-center justify-between px-4 md:px-10 shrink-0 relative z-[60]">
             {/* SEARCH / LOGO AREA */}
-            <div className="flex items-center gap-4 w-full max-w-md">
+            <div className="flex items-center gap-2 md:gap-4 shrink-0">
                 {onMenuClick && (
                     <button
                         onClick={onMenuClick}
@@ -60,11 +60,11 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
                     </button>
                 )}
 
-                <div className="lg:hidden flex items-center mr-2 shrink-0">
-                    <Logo className="h-8 object-contain" />
+                <div className="lg:hidden flex items-center mr-1 md:mr-2 shrink-0">
+                    <Logo className="h-7 md:h-8 object-contain" />
                 </div>
 
-                <div className="relative group w-full hidden md:block">
+                <div className="relative group w-full hidden md:block md:w-64 lg:w-80">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted group-focus-within:text-primary transition-colors" size={18} />
                     <input
                         type="text"
@@ -78,12 +78,12 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
             </div>
 
             {/* ACTION CENTER */}
-            <div className="flex items-center gap-6">
-                <div className="flex items-center gap-3">
-                    {/* Theme Toggle Button */}
+            <div className="flex items-center gap-2 md:gap-6 shrink-0">
+                <div className="flex items-center gap-1.5 md:gap-3">
+                    {/* Theme Toggle Button (Desktop Slider) */}
                     <button
                         onClick={toggleTheme}
-                        className={`relative w-16 h-8 rounded-full transition-colors duration-300 shadow-inner flex items-center px-1 ${theme === 'dark' ? 'bg-primary' : 'bg-gray-200'}`}
+                        className={`relative w-16 h-8 rounded-full transition-colors duration-300 shadow-inner hidden md:flex items-center px-1 ${theme === 'dark' ? 'bg-primary' : 'bg-gray-200'}`}
                     >
                         <motion.div
                             initial={false}
@@ -101,32 +101,40 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
                         </motion.div>
                     </button>
 
-                    <button className="w-11 h-11 flex items-center justify-center text-text-secondary hover:text-primary hover:bg-primary/5 rounded-xl transition-all relative">
+                    {/* Theme Toggle Button (Mobile Icon Only) */}
+                    <button
+                        onClick={toggleTheme}
+                        className="w-10 h-10 md:hidden flex items-center justify-center text-text-secondary hover:text-primary hover:bg-primary/5 rounded-xl transition-all"
+                    >
+                        {theme === 'dark' ? <Moon size={20} /> : <Sun size={20} />}
+                    </button>
+
+                    <button className="w-10 h-10 md:w-11 md:h-11 flex items-center justify-center text-text-secondary hover:text-primary hover:bg-primary/5 rounded-xl transition-all relative">
                         <Bell size={20} />
-                        <span className="absolute top-3 right-3 w-2 h-2 bg-danger rounded-full border-2 border-[var(--bg-secondary)] ring-2 ring-danger/20 animate-pulse"></span>
+                        <span className="absolute top-2.5 right-2.5 md:top-3 md:right-3 w-2 h-2 bg-danger rounded-full border-2 border-[var(--bg-card)] ring-2 ring-danger/20 animate-pulse"></span>
                     </button>
                 </div>
 
-                <div className="h-8 w-[1px] bg-gray-100" />
+                <div className="h-8 w-[1px] bg-border hidden sm:block" />
 
                 {/* PROFILE DROPDOWN */}
                 <div className="relative" ref={dropdownRef}>
                     <button
                         onClick={() => setIsProfileOpen(!isProfileOpen)}
-                        className="flex items-center gap-4 group cursor-pointer"
+                        className="flex items-center gap-2 md:gap-4 group cursor-pointer"
                     >
                         <div className="text-right hidden md:block">
                             <p className="text-sm font-black text-text-primary leading-tight">{user?.full_name || 'Student User'}</p>
                             <p className="text-[10px] font-black text-primary uppercase tracking-tighter mt-0.5">{user?.subscription_tier || 'Free Account'}</p>
                         </div>
                         <div className="relative">
-                            <div className="w-11 h-11 bg-gradient-to-tr from-primary to-accent rounded-[1rem] flex items-center justify-center shadow-lg shadow-primary/20 group-hover:scale-105 transition-transform duration-200 overflow-hidden">
+                            <div className="w-10 h-10 md:w-11 md:h-11 bg-gradient-to-tr from-primary to-accent rounded-[1rem] flex items-center justify-center shadow-lg shadow-primary/20 group-hover:scale-105 transition-transform duration-200 overflow-hidden">
                                 <div className="absolute inset-0 bg-white/10 mix-blend-overlay" />
                                 <span className="text-white text-sm font-black relative z-10">{initials}</span>
                             </div>
-                            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-success border-2 border-white rounded-full shadow-sm" />
+                            <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-success border-2 border-[var(--bg-card)] rounded-full shadow-sm" />
                         </div>
-                        <ChevronDown size={16} className={`text-gray-300 group-hover:text-gray-900 transition-all ${isProfileOpen ? 'rotate-180 text-gray-900' : ''}`} />
+                        <ChevronDown size={16} className={`text-gray-300 group-hover:text-gray-900 transition-all hidden md:block ${isProfileOpen ? 'rotate-180 text-gray-900' : ''}`} />
                     </button>
 
                     {/* DROPDOWN MENU */}

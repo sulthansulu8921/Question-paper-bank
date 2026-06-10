@@ -5,7 +5,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
 import { 
     Lock, Sparkles, ArrowLeft, 
-    Download, ExternalLink, Search, Loader2, BookOpenCheck,
+    ExternalLink, Search, Loader2, BookOpenCheck,
     Eye, ShieldAlert, ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
