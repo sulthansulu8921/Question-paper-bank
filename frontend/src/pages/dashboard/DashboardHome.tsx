@@ -516,8 +516,12 @@ export default function DashboardHome() {
                                                 </div>
                                                 <div className="text-right">
                                                     <p className="font-black text-primary text-xs">₹{parseFloat(pay.amount).toFixed(2)}</p>
-                                                    <span className="inline-flex items-center gap-1 text-[8px] font-black uppercase text-emerald-600 mt-0.5">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Success
+                                                    <span className={`inline-flex items-center gap-1 text-[8px] font-black uppercase mt-0.5 ${
+                                                        pay.status === 'SUCCESS' ? 'text-emerald-600' : pay.status === 'FAILED' ? 'text-red-500' : 'text-amber-500'
+                                                    }`}>
+                                                        <span className={`w-1.5 h-1.5 rounded-full ${
+                                                            pay.status === 'SUCCESS' ? 'bg-emerald-500' : pay.status === 'FAILED' ? 'bg-red-500' : 'bg-amber-500'
+                                                        }`} /> {pay.status}
                                                     </span>
                                                 </div>
                                             </div>
