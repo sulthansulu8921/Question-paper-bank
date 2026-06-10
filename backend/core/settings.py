@@ -17,7 +17,7 @@ if env_path.exists():
             if line and not line.startswith('#'):
                 if '=' in line:
                     key, val = line.split('=', 1)
-                    os.environ[key.strip()] = val.strip().strip("'\"")
+                    os.environ.setdefault(key.strip(), val.strip().strip("'\""))
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
