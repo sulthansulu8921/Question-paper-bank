@@ -1454,7 +1454,7 @@ class UploadPDFView(APIView):
         # Save file — store under question_papers/ folder
         from django.core.files.storage import default_storage
         file_path = default_storage.save(f'question_papers/{pdf_file.name}', pdf_file)
-        file_url  = request.build_absolute_uri(f'/media/{file_path}')
+        file_url  = request.build_absolute_uri(default_storage.url(file_path))
 
         # Optionally create a QuestionPaper record
         record = None
@@ -1498,7 +1498,7 @@ class GenericFileUploadView(APIView):
         # Save to default storage inside 'uploads/' directory
         from django.core.files.storage import default_storage
         file_path = default_storage.save(f'uploads/{uploaded_file.name}', uploaded_file)
-        file_url  = request.build_absolute_uri(f'/media/{file_path}')
+        file_url  = request.build_absolute_uri(default_storage.url(file_path))
 
         return Response({
             'message': 'File uploaded successfully.',
