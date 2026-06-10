@@ -294,24 +294,37 @@ const AdminMasterDatabase = () => {
                                 {levelId === level.id && (
                                     <div className="mt-1 pl-3 flex flex-col gap-1 border-l border-slate-100 ml-3">
                                         {level.papers.map((paper: any) => (
-                                            <div
-                                                key={paper.id}
-                                                className={`tree-paper-btn flex justify-between items-center px-3 py-1.5 rounded text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer transition-colors ${paperId === paper.id ? 'bg-teal-50 text-teal-700 font-bold' : ''}`}
-                                                onClick={() => setSelectedPaperId(paper.id)}
-                                            >
-                                                <div className="truncate max-w-[140px]">{paper.name}</div>
-                                                <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                                                    <button className="text-slate-400 hover:text-blue-600 transition-colors" onClick={() => setPaperModal({ open: true, editId: paper.id, name: paper.name, code: paper.code || '', order: paper.order })}><Edit size={11} /></button>
-                                                    <button className="text-slate-400 hover:text-red-600 transition-colors" onClick={() => setConfirmDelete({
-                                                        open: true,
-                                                        title: 'Delete Paper',
-                                                        message: `Are you sure you want to delete the Paper "${paper.name}"? This will delete all chapters and topics within it.`,
-                                                        onConfirm: () => {
-                                                            deletePaperMutation.mutate(paper.id);
-                                                            setConfirmDelete(prev => ({ ...prev, open: false }));
-                                                        }
-                                                    })}><Trash2 size={11} /></button>
+                                            <div key={paper.id} className="flex flex-col gap-0.5">
+                                                <div
+                                                    className={`tree-paper-btn flex justify-between items-center px-3 py-1.5 rounded text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer transition-colors ${paperId === paper.id ? 'bg-teal-50 text-teal-700 font-bold' : ''}`}
+                                                    onClick={() => setSelectedPaperId(paper.id)}
+                                                >
+                                                    <div className="truncate max-w-[140px]">{paper.name}</div>
+                                                    <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                                                        <button className="text-slate-400 hover:text-blue-600 transition-colors" onClick={() => setPaperModal({ open: true, editId: paper.id, name: paper.name, code: paper.code || '', order: paper.order })}><Edit size={11} /></button>
+                                                        <button className="text-slate-400 hover:text-red-600 transition-colors" onClick={() => setConfirmDelete({
+                                                            open: true,
+                                                            title: 'Delete Paper',
+                                                            message: `Are you sure you want to delete the Paper "${paper.name}"? This will delete all chapters and topics within it.`,
+                                                            onConfirm: () => {
+                                                                deletePaperMutation.mutate(paper.id);
+                                                                setConfirmDelete(prev => ({ ...prev, open: false }));
+                                                            }
+                                                        })}><Trash2 size={11} /></button>
+                                                    </div>
                                                 </div>
+                                                {paperId === paper.id && paper.chapters && paper.chapters.length > 0 && (
+                                                    <div className="mt-0.5 mb-1.5 pl-4 flex flex-col gap-0.5 border-l border-teal-200 ml-4">
+                                                        {paper.chapters.map((chapter: any) => (
+                                                            <div 
+                                                                key={chapter.id}
+                                                                className="flex items-center justify-between py-1 text-[11px] text-slate-500 hover:text-slate-700 transition-colors"
+                                                            >
+                                                                <span className="truncate max-w-[150px] font-medium">• {chapter.name}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                         <button 
@@ -353,7 +366,12 @@ const AdminMasterDatabase = () => {
                                     <div key={chapter.id} className="chapter-card bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between hover:border-blue-300 transition-colors">
                                         <div>
                                             <div className="flex justify-between items-start mb-3 gap-2">
-                                                <h4 className="text-xs font-bold text-slate-800 line-clamp-2">{chapter.name}</h4>
+                                                <div className="flex flex-col gap-0.5">
+                                                    <h4 className="text-xs font-bold text-slate-800 line-clamp-2">{chapter.name}</h4>
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">
+                                                        Paper: {displayPaper.name} {displayPaper.code ? `(${displayPaper.code})` : ''}
+                                                    </span>
+                                                </div>
                                                 <div className="flex items-center gap-1">
                                                     <button className="text-slate-400 hover:text-blue-600 transition-colors p-1" onClick={() => setChapterModal({ open: true, editId: chapter.id, name: chapter.name, order: chapter.order })}><Edit size={12} /></button>
                                                     <button className="text-slate-400 hover:text-red-600 transition-colors p-1" onClick={() => setConfirmDelete({
@@ -483,6 +501,12 @@ const AdminMasterDatabase = () => {
                     </>
                 }
             >
+                {displayLevel && (
+                    <div className="mb-4 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Parent Level:</span>
+                        <div className="text-xs font-bold text-slate-700">{displayLevel.name}</div>
+                    </div>
+                )}
                 <div className="admin-form-group mb-4">
                     <label className="text-xs font-bold text-slate-700 mb-1 block">Paper Name *</label>
                     <input 
@@ -535,6 +559,12 @@ const AdminMasterDatabase = () => {
                     </>
                 }
             >
+                {displayPaper && (
+                    <div className="mb-4 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Parent Paper:</span>
+                        <div className="text-xs font-bold text-slate-700">{displayPaper.name}</div>
+                    </div>
+                )}
                 <div className="admin-form-group mb-4">
                     <label className="text-xs font-bold text-slate-700 mb-1 block">Chapter Name *</label>
                     <input 
@@ -579,6 +609,14 @@ const AdminMasterDatabase = () => {
                     </>
                 }
             >
+                {displayPaper && topicModal.chapterId && (
+                    <div className="mb-4 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Parent Chapter:</span>
+                        <div className="text-xs font-bold text-slate-700">
+                            {displayPaper.chapters?.find((c: any) => c.id === topicModal.chapterId)?.name}
+                        </div>
+                    </div>
+                )}
                 <div className="admin-form-group mb-4">
                     <label className="text-xs font-bold text-slate-700 mb-1 block">Topic Name *</label>
                     <input 

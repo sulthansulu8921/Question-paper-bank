@@ -9,6 +9,7 @@ import '@/styles/admin/Modal.css';
 
 const AdminLayout = () => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
     return (
         <AdminSearchProvider>
@@ -20,7 +21,12 @@ const AdminLayout = () => {
                         role="presentation"
                     />
                 )}
-                <Sidebar open={sidebarOpen} onNavigate={() => setSidebarOpen(false)} />
+                <Sidebar
+                    open={sidebarOpen}
+                    collapsed={sidebarCollapsed}
+                    onNavigate={() => setSidebarOpen(false)}
+                    onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
+                />
                 <div className="admin-main">
                     <Topbar onMenuToggle={() => setSidebarOpen((o) => !o)} />
                     <main className="admin-content">

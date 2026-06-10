@@ -30,6 +30,13 @@ class SubscriptionPlan(models.Model):
     scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, null=True, blank=True)
     billing_cycle = models.CharField(max_length=20, choices=CYCLE_CHOICES, null=True, blank=True)
 
+    # Access control: how many questions per chapter can a user on this plan see
+    # -1 = unlimited (premium), 0 = no access, N = first N questions only
+    free_questions_per_chapter = models.IntegerField(
+        default=3,
+        help_text="Number of questions visible per chapter. Set -1 for unlimited (premium), 0 for no access."
+    )
+
     def __str__(self):
         return self.name
 

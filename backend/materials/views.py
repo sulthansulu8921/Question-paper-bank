@@ -86,6 +86,91 @@ class SubjectiveQuestionViewSet(viewsets.ModelViewSet):
 
         return queryset.order_by('topic__order', 'id')
 
+    def _get_access_limit(self, request):
+        """
+        Returns (limit, has_full_access):
+        - Staff/superuser → -1 (unlimited)
+        - Active premium subscription matching paper/group → -1 (unlimited)
+        - Free user / no matching sub → plan's free_questions_per_chapter (default 3)
+        """
+        user = request.user
+
+        # Staff / admin always get full access
+        if user and user.is_authenticated and (user.is_staff or user.is_superuser):
+            return -1, True
+
+        from django.utils import timezone
+        from subscriptions.models import UserSubscription
+        from subscriptions.permissions import user_has_active_subscription
+
+        if user and user.is_authenticated:
+            active_subs = UserSubscription.objects.filter(
+                user=user,
+                is_active=True,
+                end_date__gte=timezone.now()
+            ).select_related('plan', 'subject')
+
+            for sub in active_subs:
+                scope = sub.plan.scope
+                # GROUP_WISE = full access to all papers in group
+                if scope == 'GROUP_WISE':
+                    return -1, True
+                # PAPER_WISE = full access to that specific paper
+                if scope == 'PAPER_WISE':
+                    paper_id = request.query_params.get('paper_id')
+                    subject_id = request.query_params.get('subject_id')
+                    if paper_id and sub.subject:
+                        # Match by subject name against paper
+                        from master_data.models import ICAIPaper
+                        try:
+                            paper = ICAIPaper.objects.get(id=paper_id)
+                            if sub.subject.name.lower() in paper.name.lower() or paper.name.lower() in sub.subject.name.lower():
+                                return -1, True
+                        except ICAIPaper.DoesNotExist:
+                            pass
+                    if subject_id and sub.subject_id and str(sub.subject_id) == str(subject_id):
+                        return -1, True
+
+            # Has active subscriptions but none match this content — use free limit from first plan
+            if active_subs.exists():
+                limit = active_subs.first().plan.free_questions_per_chapter
+                return limit, limit == -1
+
+        # Guest / no subscription → default free limit = 3
+        return 3, False
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        total_count = queryset.count()
+
+        access_limit, has_full_access = self._get_access_limit(request)
+
+        # Apply limit server-side (never send locked questions to client)
+        if not has_full_access and access_limit >= 0:
+            visible_qs = queryset[:access_limit]
+            locked_count = max(0, total_count - access_limit)
+        else:
+            visible_qs = queryset
+            locked_count = 0
+
+        page = self.paginate_queryset(visible_qs)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            response = self.get_paginated_response(serializer.data)
+            response.data['locked_count'] = locked_count
+            response.data['access_limit'] = access_limit
+            response.data['has_full_access'] = has_full_access
+            return response
+
+        serializer = self.get_serializer(visible_qs, many=True)
+        return Response({
+            'results': serializer.data,
+            'count': len(serializer.data),
+            'locked_count': locked_count,
+            'access_limit': access_limit,
+            'has_full_access': has_full_access,
+        })
+
 class QuestionPaperViewSet(viewsets.ModelViewSet):
     queryset = QuestionPaper.objects.all()
     serializer_class = QuestionPaperSerializer

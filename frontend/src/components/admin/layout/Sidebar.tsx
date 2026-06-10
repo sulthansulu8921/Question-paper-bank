@@ -17,6 +17,8 @@ import {
     CreditCard,
     Receipt,
     FileText,
+    ChevronLeft,
+    ChevronRight,
 } from 'lucide-react';
 import Logo from '@/components/Logo';
 import '@/styles/admin/Sidebar.css';
@@ -42,12 +44,13 @@ const menuItems = [
 
 interface SidebarProps {
     open?: boolean;
+    collapsed?: boolean;
     onNavigate?: () => void;
+    onToggleCollapse?: () => void;
 }
 
-const Sidebar = ({ open = false, onNavigate }: SidebarProps) => {
+const Sidebar = ({ open = false, collapsed = false, onNavigate, onToggleCollapse }: SidebarProps) => {
     const logout = useAuthStore((state) => state.logout);
-
     const user = useAuthStore((state) => state.user);
 
     const visibleMenuItems = menuItems.filter((item) => {
@@ -58,7 +61,7 @@ const Sidebar = ({ open = false, onNavigate }: SidebarProps) => {
                 '/admin/users',
                 '/admin/coupons',
                 '/admin/pricing',
-                '/admin/payments'
+                '/admin/payments',
             ];
             return !restrictedPaths.includes(item.path);
         }
@@ -71,9 +74,28 @@ const Sidebar = ({ open = false, onNavigate }: SidebarProps) => {
     };
 
     return (
-        <aside className={`sidebar ${open ? 'open' : ''}`}>
-            <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60px', padding: '0 1rem' }}>
-                <Logo theme="dark" className="h-10 object-contain" style={{ transition: 'all 0.3s ease' }} />
+        <aside className={`sidebar ${open ? 'open' : ''} ${collapsed ? 'collapsed' : ''}`}>
+            {/* Header: Logo + toggle button */}
+            <div className="sidebar-header">
+                {!collapsed && (
+                    <Logo theme="dark" className="h-8 object-contain" style={{ flex: 1, minWidth: 0, transition: 'opacity 0.2s' }} />
+                )}
+                {/* Toggle button — visible only on desktop */}
+                <button
+                    type="button"
+                    className="sidebar-toggle-btn"
+                    onClick={onToggleCollapse}
+                    title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                    style={{ display: 'none' }}
+                    id="sidebar-desktop-toggle"
+                >
+                    {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+                </button>
+                <style>{`
+                    @media (min-width: 769px) {
+                        #sidebar-desktop-toggle { display: flex !important; }
+                    }
+                `}</style>
             </div>
 
             <nav className="sidebar-nav">
@@ -86,9 +108,10 @@ const Sidebar = ({ open = false, onNavigate }: SidebarProps) => {
                                     to={item.path}
                                     end={item.path === '/admin'}
                                     onClick={onNavigate}
+                                    data-label={item.name}
                                     className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+                                    title={collapsed ? item.name : undefined}
                                 >
-
                                     <Icon size={20} className="nav-icon" />
                                     <span className="nav-label">{item.name}</span>
                                 </NavLink>
@@ -103,6 +126,8 @@ const Sidebar = ({ open = false, onNavigate }: SidebarProps) => {
                     type="button"
                     className="nav-link logout-btn"
                     onClick={handleLogout}
+                    data-label="Logout"
+                    title={collapsed ? 'Logout' : undefined}
                     style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer' }}
                 >
                     <LogOut size={20} className="nav-icon" />
