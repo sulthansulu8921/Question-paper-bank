@@ -27,6 +27,8 @@ import AdminPricingManager from '@/pages/admin/AdminPricingManager';
 import AdminPaymentManager from '@/pages/admin/AdminPaymentManager';
 import DashboardComingSoon from '@/pages/dashboard/DashboardComingSoon';
 import NotesPage from '@/pages/dashboard/NotesPage';
+import CourseSelection from '@/pages/dashboard/CourseSelection';
+import CourseDetailPage from '@/pages/dashboard/CourseDetailPage';
 
 import QuestionPapersHub from '@/pages/dashboard/QuestionPapersHub';
 import SavedQuestionsPage from '@/pages/dashboard/SavedQuestionsPage';
@@ -109,8 +111,8 @@ export default function AppRouter() {
                 >
                     <Route index element={<DashboardHome />} />
                     <Route path="account" element={<AccountPage />} />
-                    <Route path="courses" element={<DashboardComingSoon title="Courses" />} />
-                    <Route path="courses/:id" element={<DashboardComingSoon title="Courses" />} />
+                    <Route path="courses" element={<CourseSelection />} />
+                    <Route path="courses/:id" element={<CourseDetailPage />} />
                     <Route path="papers" element={<QuestionPapersHub />} />
                     <Route path="papers/subject/:id" element={<PaperViewer />} />
                     <Route path="notes" element={<NotesPage />} />

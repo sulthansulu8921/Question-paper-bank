@@ -92,7 +92,7 @@ export default function CourseDetailPage() {
                                     </div>
 
                                     <Link
-                                        to={`/dashboard/papers?subject=${subject.id}`}
+                                        to={`/dashboard/papers/subject/${subject.id}`}
                                         className="p-2 text-gray-400 hover:text-primary bg-gray-50 group-hover:bg-primary/10 rounded-xl transition-all"
                                     >
                                         <ChevronRight size={20} />
