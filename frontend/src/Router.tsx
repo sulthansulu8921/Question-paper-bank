@@ -19,6 +19,7 @@ import AdminSubjectManager from '@/pages/admin/AdminSubjectManager';
 import AdminPaperManager from '@/pages/admin/AdminPaperManager';
 import AdminAnswerManager from '@/pages/admin/AdminAnswerManager';
 import AdminNotesManager from '@/pages/admin/AdminNotesManager';
+import AdminVideoManager from '@/pages/admin/AdminVideoManager';
 import AdminUserManager from '@/pages/admin/AdminUserManager';
 import AdminSettings from '@/pages/admin/AdminSettings';
 import AdminMasterDatabase from '@/pages/admin/AdminMasterDatabase';
@@ -141,6 +142,7 @@ export default function AppRouter() {
                     <Route path="papers" element={<AdminPaperManager />} />
                     <Route path="answers" element={<AdminAnswerManager />} />
                     <Route path="notes" element={<AdminNotesManager />} />
+                    <Route path="videos" element={<AdminVideoManager />} />
                     <Route path="questions/new" element={<AddQuestion />} />
                     <Route path="questions/:id/edit" element={<AddQuestion />} />
                     <Route path="analytics" element={<SuperAdminRoute><AdminAnalytics /></SuperAdminRoute>} />

@@ -17,6 +17,7 @@ import {
     CreditCard,
     Receipt,
     FileText,
+    Video,
     ChevronLeft,
     ChevronRight,
 } from 'lucide-react';
@@ -33,6 +34,7 @@ const menuItems = [
     { path: '/admin/papers', name: 'Model Test Papers', icon: Files },
     { path: '/admin/answers', name: 'Suggested Answers', icon: CheckSquare },
     { path: '/admin/notes', name: 'Study Notes', icon: FileText },
+    { path: '/admin/videos', name: 'Recorded Videos', icon: Video },
     { path: '/admin/analytics', name: 'Analytics', icon: BarChart2 },
     { path: '/admin/users', name: 'Users', icon: Users },
     { path: '/admin/courses', name: 'Courses', icon: Database },

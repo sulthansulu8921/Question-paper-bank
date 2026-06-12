@@ -338,6 +338,9 @@ class NotesSerializer(serializers.ModelSerializer):
         return ret
 
 class VideoSerializer(serializers.ModelSerializer):
+    subject_name = serializers.CharField(source='subject.name', read_only=True)
+    topic_name = serializers.CharField(source='topic.name', read_only=True)
+
     class Meta:
         model = Video
         fields = '__all__'
