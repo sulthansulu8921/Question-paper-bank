@@ -1,24 +1,35 @@
-import { ArrowLeft, Download, MessageCircle, Video } from 'lucide-react';
+import { ArrowLeft, Download, MessageCircle, Video, Loader2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import api from '@/api/axios';
 import QuestionTable from '@/components/dashboard/QuestionTable';
 import { useAuthStore } from '@/store/useAuthStore';
-
-const SUBJECT_LOOKUP: Record<string, { name: string, code: string }> = {
-    '1': { name: 'Advanced Accounting', code: 'PAPER 1' },
-    '2': { name: 'Corporate and Other Laws', code: 'PAPER 2' },
-    '3': { name: 'Taxation', code: 'PAPER 3' },
-    '4': { name: 'Cost and Management Accounting', code: 'PAPER 4' },
-    '5': { name: 'Auditing and Ethics', code: 'PAPER 5' },
-    '6': { name: 'Financial Management and Strategic Management', code: 'PAPER 6' },
-};
 
 export default function PaperViewer() {
     const navigate = useNavigate();
     const { id } = useParams<{ id: string }>();
     const user = useAuthStore((state) => state.user);
-    
-    const subjectInfo = id ? SUBJECT_LOOKUP[id] : null;
-    const subjectName = subjectInfo ? subjectInfo.name : 'Unknown Subject';
+
+    // Fetch Subject info dynamically from API
+    const { data: subject = null, isLoading } = useQuery<any>({
+        queryKey: ['subject', id],
+        queryFn: async () => {
+            if (!id) return null;
+            const res = await api.get(`/courses/subjects/${id}/`);
+            return res.data;
+        },
+        enabled: !!id,
+    });
+
+    if (isLoading) {
+        return (
+            <div className="h-screen w-full flex items-center justify-center bg-bg">
+                <Loader2 className="animate-spin text-primary" size={32} />
+            </div>
+        );
+    }
+
+    const subjectName = subject ? subject.name : 'Unknown Subject';
 
     return (
         <div className="flex flex-col bg-bg min-h-screen font-sans -m-8 relative text-text-primary">
@@ -36,7 +47,7 @@ export default function PaperViewer() {
             {/* Subject Detail Bar (Deep Blue Bar) */}
             <div className="bg-bg-secondary border-b border-border px-10 py-3 flex items-center justify-between shrink-0 transition-colors duration-200">
                 <h2 className="text-sm font-black text-text-primary tracking-wider uppercase">
-                    Subject : {subjectName}
+                    Subject : {subjectName} {subject?.code ? `(${subject.code})` : ''}
                 </h2>
                 <div className="flex items-center gap-4">
                     <button className="p-1 px-3 bg-white/10 hover:bg-white/20 rounded text-text-primary transition-all">
@@ -62,7 +73,7 @@ export default function PaperViewer() {
                 <div className="flex items-center gap-8 text-[10px] font-black text-text-muted uppercase tracking-widest">
                     <button onClick={() => navigate(-1)} className="flex items-center gap-2 hover:text-primary transition-colors">
                         <ArrowLeft size={14} /> Back to Hub
-                    </button>
+                     </button>
                     <div className="h-4 w-[1px] bg-border" />
                     <button className="flex items-center gap-2 hover:text-primary transition-colors">
                         <Download size={14} /> Download PDF
