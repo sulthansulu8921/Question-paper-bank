@@ -30,6 +30,66 @@ export default function AdminCourseManager() {
         queryFn: async () => (await api.get('/courses/courses/')).data,
     });
 
+    const [newLevelName, setNewLevelName] = useState('');
+    const [editingLevelId, setEditingLevelId] = useState<number | null>(null);
+    const [editingLevelName, setEditingLevelName] = useState('');
+
+    const createLevelMutation = useMutation({
+        mutationFn: (data: { course: number; name: string }) => api.post('/courses/levels/', data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin-courses'] });
+            setNewLevelName('');
+            show('Level created successfully.');
+        },
+        onError: (e) => show(getApiErrorMessage(e, 'Failed to create level.'), 'error'),
+    });
+
+    const updateLevelMutation = useMutation({
+        mutationFn: ({ id, name }: { id: number; name: string }) => api.patch(`/courses/levels/${id}/`, { name }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin-courses'] });
+            setEditingLevelId(null);
+            show('Level updated successfully.');
+        },
+        onError: (e) => show(getApiErrorMessage(e, 'Failed to update level.'), 'error'),
+    });
+
+    const deleteLevelMutation = useMutation({
+        mutationFn: (id: number) => api.delete(`/courses/levels/${id}/`),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin-courses'] });
+            show('Level deleted.');
+        },
+        onError: (e) => show(getApiErrorMessage(e, 'Failed to delete level.'), 'error'),
+    });
+
+    const handleCreateLevel = () => {
+        if (!editId || !newLevelName.trim()) return;
+        createLevelMutation.mutate({ course: editId, name: newLevelName.trim() });
+    };
+
+    const handleUpdateLevel = (levelId: number) => {
+        if (!editingLevelName.trim()) return;
+        updateLevelMutation.mutate({ id: levelId, name: editingLevelName.trim() });
+    };
+
+    const handleDeleteLevel = (levelId: number) => {
+        setConfirmDelete({
+            open: true,
+            title: 'Delete Level',
+            message: 'Are you sure you want to delete this level? All subjects under it will also be affected.',
+            onConfirm: () => {
+                deleteLevelMutation.mutate(levelId);
+                setConfirmDelete(prev => ({ ...prev, open: false }));
+            }
+        });
+    };
+
+    const isMutatingLevel = createLevelMutation.isPending || updateLevelMutation.isPending || deleteLevelMutation.isPending;
+
+    const selectedCourse = courses.find((c: any) => c.id === editId);
+    const currentLevels = selectedCourse?.levels || [];
+
     const createMutation = useMutation({
         mutationFn: (newCourse: typeof emptyForm) => api.post('/courses/courses/', newCourse),
         onSuccess: () => {
@@ -279,6 +339,91 @@ export default function AdminCourseManager() {
                         existingUrl={formData.thumbnail}
                     />
                 </div>
+
+                {modalMode === 'edit' && editId && (
+                    <div className="pt-6 mt-6 border-t border-border space-y-4">
+                        <h4 className="text-sm font-black text-text-primary uppercase tracking-widest">Manage Levels / Groups</h4>
+                        
+                        {/* Levels List */}
+                        <div className="space-y-2">
+                            {currentLevels.length === 0 ? (
+                                <p className="text-xs text-text-muted italic">No levels created yet. Create one below.</p>
+                            ) : (
+                                currentLevels.map((lvl: any) => (
+                                    <div key={lvl.id} className="flex items-center justify-between p-3 bg-bg border border-border rounded-xl">
+                                        {editingLevelId === lvl.id ? (
+                                            <div className="flex items-center gap-2 flex-1 mr-4">
+                                                <input
+                                                    type="text"
+                                                    className="admin-form-input py-1 text-xs"
+                                                    value={editingLevelName}
+                                                    onChange={(e) => setEditingLevelName(e.target.value)}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    className="primary-btn py-1 px-3 text-xs"
+                                                    onClick={() => handleUpdateLevel(lvl.id)}
+                                                    disabled={isMutatingLevel}
+                                                >
+                                                    Save
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="secondary-btn py-1 px-3 text-xs"
+                                                    onClick={() => setEditingLevelId(null)}
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <span className="text-sm font-bold text-text-primary">{lvl.name}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setEditingLevelId(lvl.id);
+                                                            setEditingLevelName(lvl.name);
+                                                        }}
+                                                        className="action-btn"
+                                                    >
+                                                        <Edit size={14} />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteLevel(lvl.id)}
+                                                        className="action-btn danger"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Add Level Form */}
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                className="admin-form-input flex-1 py-2 text-xs"
+                                placeholder="e.g. Group 1"
+                                value={newLevelName}
+                                onChange={(e) => setNewLevelName(e.target.value)}
+                            />
+                            <button
+                                type="button"
+                                className="primary-btn py-2 px-4 text-xs flex items-center gap-1 shrink-0"
+                                onClick={handleCreateLevel}
+                                disabled={isMutatingLevel || !newLevelName.trim()}
+                            >
+                                <Plus size={14} /> Add Level
+                            </button>
+                        </div>
+                    </div>
+                )}
             </AdminModal>
 
             <AdminConfirmModal

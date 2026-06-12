@@ -12,8 +12,8 @@ const AdminSubjectManager = () => {
     const [isAdding, setIsAdding] = useState(false);
     const [editItem, setEditItem] = useState<any>(null);
     const [searchTerm, setSearchTerm] = useState('');
-    const [formData, setFormData] = useState({ name: '', code: '', course: '' });
-    const [editForm, setEditForm] = useState({ name: '', code: '', course: '' });
+    const [formData, setFormData] = useState({ name: '', code: '', course: '', level: '' });
+    const [editForm, setEditForm] = useState({ name: '', code: '', course: '', level: '' });
     const { show, Toast } = useAdminToast();
 
     const [confirmDelete, setConfirmDelete] = useState<{
@@ -38,7 +38,7 @@ const AdminSubjectManager = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['admin-subjects-full'] });
             setIsAdding(false);
-            setFormData({ name: '', code: '', course: '' });
+            setFormData({ name: '', code: '', course: '', level: '' });
             show('Subject added successfully.');
         },
         onError: (e) => show(getApiErrorMessage(e, 'Failed to add subject.'), 'error'),
@@ -65,8 +65,21 @@ const AdminSubjectManager = () => {
 
     const openEdit = (item: any) => {
         setEditItem(item);
-        setEditForm({ name: item.name, code: item.code || '', course: item.course?.toString() || '' });
+        setEditForm({
+            name: item.name,
+            code: item.code || '',
+            course: item.course?.toString() || '',
+            level: item.level?.toString() || '',
+        });
     };
+
+    const selectedCourseIdForAdd = Number(formData.course);
+    const selectedCourseForAdd = courses.find((c: any) => c.id === selectedCourseIdForAdd);
+    const levelsForAdd = selectedCourseForAdd?.levels || [];
+
+    const selectedCourseIdForEdit = Number(editForm.course);
+    const selectedCourseForEdit = courses.find((c: any) => c.id === selectedCourseIdForEdit);
+    const levelsForEdit = selectedCourseForEdit?.levels || [];
 
     const filteredItems = subjects.filter((s: any) =>
         s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -121,7 +134,10 @@ const AdminSubjectManager = () => {
                                     <td>
                                         {item.code ? <span className="attempt-tag">{item.code}</span> : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
                                     </td>
-                                    <td style={{ color: 'var(--color-text-muted)' }}>{item.course_name || courses.find((c: any) => c.id === item.course)?.name || '—'}</td>
+                                    <td style={{ color: 'var(--color-text-muted)' }}>
+                                        {item.course_name || courses.find((c: any) => c.id === item.course)?.name || '—'}
+                                        {item.level_name ? ` · ${item.level_name}` : ''}
+                                    </td>
                                     <td>
                                         <div className="action-buttons">
                                             <button className="action-btn" onClick={() => openEdit(item)}><Edit size={16} /></button>
@@ -147,7 +163,7 @@ const AdminSubjectManager = () => {
 
             <AdminModal
                 open={isAdding}
-                onClose={() => { setIsAdding(false); setFormData({ name: '', code: '', course: '' }); }}
+                onClose={() => { setIsAdding(false); setFormData({ name: '', code: '', course: '', level: '' }); }}
                 title="Add New Subject"
                 footer={
                     <>
@@ -158,6 +174,10 @@ const AdminSubjectManager = () => {
                             onClick={() => {
                                 if (!formData.course) {
                                     show('Please select a parent course.', 'error');
+                                    return;
+                                }
+                                if (!formData.level) {
+                                    show('Please select a course level.', 'error');
                                     return;
                                 }
                                 createMutation.mutate(formData);
@@ -180,11 +200,20 @@ const AdminSubjectManager = () => {
                 </div>
                 <div className="admin-form-group">
                     <label>Parent Course *</label>
-                    <select className="admin-form-input" value={formData.course} onChange={e => setFormData({ ...formData, course: e.target.value })}>
+                    <select className="admin-form-input" value={formData.course} onChange={e => setFormData({ ...formData, course: e.target.value, level: '' })}>
                         <option value="">Select Course...</option>
                         {courses.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                 </div>
+                {levelsForAdd.length > 0 && (
+                    <div className="admin-form-group">
+                        <label>Parent Level *</label>
+                        <select className="admin-form-input" value={formData.level} onChange={e => setFormData({ ...formData, level: e.target.value })}>
+                            <option value="">Select Level...</option>
+                            {levelsForAdd.map((lvl: any) => <option key={lvl.id} value={lvl.id}>{lvl.name}</option>)}
+                        </select>
+                    </div>
+                )}
             </AdminModal>
 
             <AdminModal
@@ -197,7 +226,17 @@ const AdminSubjectManager = () => {
                         <button
                             type="button"
                             className="primary-btn flex-center gap-sm"
-                            onClick={() => editMutation.mutate({ id: editItem.id, data: editForm })}
+                            onClick={() => {
+                                if (!editForm.course) {
+                                    show('Please select a parent course.', 'error');
+                                    return;
+                                }
+                                if (!editForm.level) {
+                                    show('Please select a course level.', 'error');
+                                    return;
+                                }
+                                editMutation.mutate({ id: editItem.id, data: editForm });
+                            }}
                             disabled={editMutation.isPending || !editForm.name}
                         >
                             {editMutation.isPending ? <Loader2 className="animate-spin" /> : <Save size={18} />}
@@ -216,11 +255,20 @@ const AdminSubjectManager = () => {
                 </div>
                 <div className="admin-form-group">
                     <label>Parent Course</label>
-                    <select className="admin-form-input" value={editForm.course} onChange={e => setEditForm({ ...editForm, course: e.target.value })}>
+                    <select className="admin-form-input" value={editForm.course} onChange={e => setEditForm({ ...editForm, course: e.target.value, level: '' })}>
                         <option value="">Select Course...</option>
                         {courses.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                 </div>
+                {levelsForEdit.length > 0 && (
+                    <div className="admin-form-group">
+                        <label>Parent Level *</label>
+                        <select className="admin-form-input" value={editForm.level} onChange={e => setEditForm({ ...editForm, level: e.target.value })}>
+                            <option value="">Select Level...</option>
+                            {levelsForEdit.map((lvl: any) => <option key={lvl.id} value={lvl.id}>{lvl.name}</option>)}
+                        </select>
+                    </div>
+                )}
             </AdminModal>
 
             <AdminConfirmModal
