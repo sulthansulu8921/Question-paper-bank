@@ -73,3 +73,24 @@ Admin UI: `/admin/master` — browse full ICAI structure and add questions per c
 - `backend/materials`: Question papers, Answers, Notes.
 - `frontend/src/pages`: User & Admin dashboard views.
 - `frontend/src/components`: Premium UI components (Sidebar, Topbar, etc.).
+
+## 💾 Database Backups
+
+Database backups are automatically generated and uploaded to **Cloudflare R2** via a daily cron job scheduled on the EC2 production instance.
+
+### Configuration
+Backups are controlled by the `ENABLE_DB_BACKUP` environment variable in the backend's `.env` file (`/home/ubuntu/study-partner/backend/.env`):
+* `ENABLE_DB_BACKUP=True`: Enables the daily backup script (default is disabled/False).
+
+### Running Manually
+To run the database backup script manually at any time:
+1. SSH into the AWS EC2 instance:
+   ```bash
+   ssh -i <your-key>.pem ubuntu@api.qubook.in
+   ```
+2. Execute the backup script:
+   ```bash
+   /home/ubuntu/study-partner/backup_db.sh
+   ```
+   This will dump, compress, and upload the backup directly to the Cloudflare R2 bucket (`qubook-media/backups/`).
+

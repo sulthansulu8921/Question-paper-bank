@@ -1,6 +1,27 @@
 #!/bin/bash
 set -e
 
+# Load environment variables from backend .env if it exists
+ENV_FILE="/home/ubuntu/study-partner/backend/.env"
+if [ -f "$ENV_FILE" ]; then
+    # Read line-by-line to avoid issues with spaces/special characters in values
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Ignore comments and empty lines
+        if [[ ! "$line" =~ ^# ]] && [[ "$line" =~ = ]]; then
+            # Extract key and value, stripping whitespace and outer quotes
+            key=$(echo "$line" | cut -d'=' -f1 | tr -d '[:space:]')
+            value=$(echo "$line" | cut -d'=' -f2- | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+            export "$key=$value"
+        fi
+    done < "$ENV_FILE"
+fi
+
+# Check if backup is enabled (defaults to False if not set to True)
+if [ "${ENABLE_DB_BACKUP}" != "True" ]; then
+    echo "[$(date)] Database backup is disabled (ENABLE_DB_BACKUP is not set to True). Exiting."
+    exit 0
+fi
+
 # Configuration
 BACKUP_DIR="/home/ubuntu/study-partner/backups"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
