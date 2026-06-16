@@ -76,9 +76,18 @@ class Coupon(models.Model):
     code = models.CharField(max_length=50, unique=True)
     discount_percent = models.IntegerField(default=0) # percentage: 1 - 100
     restricted_email = models.EmailField(max_length=255, null=True, blank=True)
+    restricted_course = models.ForeignKey('courses.Course', on_delete=models.SET_NULL, null=True, blank=True, related_name='coupons')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"{self.code} ({self.discount_percent}% off)"
+
+class PlatformSetting(models.Model):
+    key = models.CharField(max_length=100, unique=True)
+    value = models.CharField(max_length=255, default="true")
+    description = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"{self.key}: {self.value}"
 

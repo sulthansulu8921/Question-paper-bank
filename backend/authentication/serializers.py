@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from authentication.models import User, UserSettings
+from courses.models import Course
 
 class UserSettingsSerializer(serializers.ModelSerializer):
     class Meta:
@@ -12,14 +13,27 @@ class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     settings = UserSettingsSerializer(read_only=True)
     subscription_tier = serializers.SerializerMethodField()
+    selected_course = serializers.PrimaryKeyRelatedField(
+        queryset=Course.objects.all(),
+        required=False,
+        allow_null=True
+    )
+    selected_course_name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'mobile_number', 'first_name', 'last_name', 'full_name', 'password', 'settings', 'is_staff', 'is_superuser', 'subscription_tier', 'date_joined', 'last_login']
+        fields = [
+            'id', 'email', 'mobile_number', 'first_name', 'last_name', 'full_name', 
+            'password', 'settings', 'is_staff', 'is_superuser', 'subscription_tier', 
+            'date_joined', 'last_login', 'selected_course', 'selected_course_name'
+        ]
         extra_kwargs = {'password': {'write_only': True}}
     
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip()
+
+    def get_selected_course_name(self, obj):
+        return obj.selected_course.name if obj.selected_course else None
 
     def get_subscription_tier(self, obj):
         from subscriptions.models import UserSubscription
@@ -71,6 +85,7 @@ class UserSerializer(serializers.ModelSerializer):
             password=validated_data['password'],
             mobile_number=validated_data.get('mobile_number', ''),
             first_name=validated_data.get('first_name', ''),
-            last_name=validated_data.get('last_name', '')
+            last_name=validated_data.get('last_name', ''),
+            selected_course=validated_data.get('selected_course')
         )
         return user

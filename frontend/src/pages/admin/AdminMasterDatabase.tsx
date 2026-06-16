@@ -21,7 +21,8 @@ const AdminMasterDatabase = () => {
     const [selectedPaperId, setSelectedPaperId] = useState<number | null>(null);
 
     // Modal state managers
-    const [levelModal, setLevelModal] = useState<{ open: boolean; editId?: number; name: string; order: number }>({ open: false, name: '', order: 0 });
+    const [levelModal, setLevelModal] = useState<{ open: boolean; editId?: number; qualification: string; name: string; order: number }>({ open: false, qualification: 'CA', name: '', order: 0 });
+    const [selectedLevelNames, setSelectedLevelNames] = useState<string[]>([]);
     const [paperModal, setPaperModal] = useState<{ open: boolean; editId?: number; name: string; code: string; order: number }>({ open: false, name: '', code: '', order: 0 });
     const [chapterModal, setChapterModal] = useState<{ open: boolean; editId?: number; name: string; order: number }>({ open: false, name: '', order: 0 });
     const [topicModal, setTopicModal] = useState<{ open: boolean; editId?: number; chapterId?: number; name: string; order: number }>({ open: false, name: '', order: 0 });
@@ -43,6 +44,24 @@ const AdminMasterDatabase = () => {
         queryFn: async () => (await api.get('/master/tree/')).data,
     });
 
+    // Fetch dynamic Qualifications (Categories)
+    const { data: categories = [] } = useQuery({
+        queryKey: ['admin-categories'],
+        queryFn: async () => {
+            const res = await api.get('/courses/categories/');
+            return res.data.results || res.data || [];
+        },
+    });
+
+    // Fetch dynamic Course Levels (Courses)
+    const { data: courses = [] } = useQuery({
+        queryKey: ['admin-courses'],
+        queryFn: async () => {
+            const res = await api.get('/courses/courses/');
+            return res.data.results || res.data || [];
+        },
+    });
+
     // Invalidate master queries
     const invalidateMaster = () => {
         queryClient.invalidateQueries({ queryKey: ['master-tree'] });
@@ -51,18 +70,30 @@ const AdminMasterDatabase = () => {
 
     // Level mutations
     const saveLevelMutation = useMutation({
-        mutationFn: async (data: { name: string; order: number }) => {
+        mutationFn: async (data: { qualification: string; names: string[]; order: number }) => {
             if (levelModal.editId) {
-                return api.patch(`/master/levels/${levelModal.editId}/`, data);
+                return api.patch(`/master/levels/${levelModal.editId}/`, {
+                    qualification: data.qualification,
+                    name: data.names[0],
+                    order: data.order
+                });
             }
-            return api.post('/master/levels/', data);
+            const promises = data.names.map(name =>
+                api.post('/master/levels/', {
+                    qualification: data.qualification,
+                    name,
+                    order: data.order
+                })
+            );
+            return Promise.all(promises);
         },
         onSuccess: () => {
             invalidateMaster();
-            setLevelModal({ open: false, name: '', order: 0 });
-            show(levelModal.editId ? 'Level updated.' : 'Level created.');
+            setLevelModal({ open: false, qualification: categories[0]?.name || 'CA', name: '', order: 0 });
+            setSelectedLevelNames([]);
+            show(levelModal.editId ? 'Level updated.' : 'Level(s) created.');
         },
-        onError: (err) => show(getApiErrorMessage(err, 'Failed to save Level.'), 'error')
+        onError: (e) => show(getApiErrorMessage(e, 'Failed to save level(s).'), 'error'),
     });
 
     const deleteLevelMutation = useMutation({
@@ -178,6 +209,19 @@ const AdminMasterDatabase = () => {
             );
     }, [tree, search]);
 
+    const groupedTree = useMemo(() => {
+        const groups: { [key: string]: any[] } = {};
+        filteredTree.forEach((level: any) => {
+            const q = level.qualification || 'CA';
+            const upperQ = q.toUpperCase();
+            if (!groups[upperQ]) {
+                groups[upperQ] = [];
+            }
+            groups[upperQ].push(level);
+        });
+        return groups;
+    }, [filteredTree]);
+
     useEffect(() => {
         if (filteredTree.length && selectedLevelId === null) {
             const first = filteredTree[0];
@@ -217,7 +261,7 @@ const AdminMasterDatabase = () => {
                 </div>
                 <div className="header-actions flex gap-3">
                     <button 
-                        onClick={() => setLevelModal({ open: true, name: '', order: tree.length + 1 })}
+                        onClick={() => setLevelModal({ open: true, qualification: categories[0]?.name || 'CA', name: '', order: tree.length + 1 })}
                         className="secondary-btn flex-center gap-xs font-bold text-xs"
                     >
                         <Plus size={16} />
@@ -230,7 +274,7 @@ const AdminMasterDatabase = () => {
                 </div>
             </div>
 
-            <div className="master-stats-grid grid grid-cols-5 gap-4 mb-6">
+            <div className="master-stats-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 mb-6">
                 {statCards.map((s, i) => {
                     const Icon = s.icon;
                     return (
@@ -247,9 +291,9 @@ const AdminMasterDatabase = () => {
                 })}
             </div>
 
-            <div className="master-tree-layout grid grid-cols-[320px_1fr] gap-6">
+            <div className="master-tree-layout grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
                 <div className="master-tree-panel bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden flex flex-col h-full">
-                    <div className="master-tree-toolbar p-4 border-b border-slate-50">
+                    <div className="master-tree-toolbar p-4 border-b border-slate-50 flex flex-col gap-3">
                         <div className="search-box relative flex items-center">
                             <Search size={18} className="absolute left-3 text-slate-400" />
                             <input
@@ -260,6 +304,12 @@ const AdminMasterDatabase = () => {
                                 onChange={(e) => setSearch(e.target.value)}
                             />
                         </div>
+                        <button 
+                            onClick={() => setLevelModal({ open: true, qualification: categories[0]?.name || 'CA', name: '', order: tree.length + 1 })}
+                            className="w-full flex items-center justify-center gap-1.5 py-2 border border-dashed border-blue-200 rounded-lg text-xs font-bold text-blue-600 hover:bg-blue-50 hover:border-blue-300 transition-colors"
+                        >
+                            <Plus size={14} /> Add Course Level
+                        </button>
                     </div>
                     <div className="master-tree-scroll flex-1 overflow-y-auto p-3">
                         {treeLoading && (
@@ -267,74 +317,84 @@ const AdminMasterDatabase = () => {
                                 <Loader2 className="animate-spin mx-auto text-blue-600" />
                             </div>
                         )}
-                        {filteredTree.map((level: any) => (
-                            <div key={level.id} className="tree-level mb-3">
-                                <div
-                                    className={`tree-level-btn flex justify-between items-center px-3 py-2 rounded-lg text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 cursor-pointer transition-colors ${levelId === level.id ? 'bg-blue-50/70 text-blue-600 border border-blue-100' : ''}`}
-                                    onClick={() => {
-                                        setSelectedLevelId(level.id);
-                                        setSelectedPaperId(level.papers[0]?.id ?? null);
-                                    }}
-                                >
-                                    <span className="truncate max-w-[150px]">{level.name}</span>
-                                    <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                                        <button className="text-slate-400 hover:text-blue-600 transition-colors" onClick={() => setLevelModal({ open: true, editId: level.id, name: level.name, order: level.order })}><Edit size={12} /></button>
-                                        <button className="text-slate-400 hover:text-red-600 transition-colors" onClick={() => setConfirmDelete({
-                                            open: true,
-                                            title: 'Delete Course Level',
-                                            message: `Are you sure you want to delete the Course Level "${level.name}"? This will delete all papers, chapters, and topics within it.`,
-                                            onConfirm: () => {
-                                                deleteLevelMutation.mutate(level.id);
-                                                setConfirmDelete(prev => ({ ...prev, open: false }));
-                                            }
-                                        })}><Trash2 size={12} /></button>
-                                        <span className="tree-paper-meta text-[10px] text-slate-400 font-bold bg-white px-2 py-0.5 rounded border border-slate-100">{level.paper_count} papers</span>
-                                    </div>
+                        {Object.entries(groupedTree).map(([qualification, levels]) => (
+                            <div key={qualification} className="mb-4">
+                                <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 bg-slate-50/50 border border-slate-100 rounded-lg px-2.5 py-1 mb-2 flex items-center justify-between">
+                                    <span>{qualification} Levels</span>
+                                    <span className="bg-slate-200/50 text-slate-500 px-1 py-0.2 rounded-full font-bold text-[8px]">{levels.length}</span>
                                 </div>
-                                {levelId === level.id && (
-                                    <div className="mt-1 pl-3 flex flex-col gap-1 border-l border-slate-100 ml-3">
-                                        {level.papers.map((paper: any) => (
-                                            <div key={paper.id} className="flex flex-col gap-0.5">
-                                                <div
-                                                    className={`tree-paper-btn flex justify-between items-center px-3 py-1.5 rounded text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer transition-colors ${paperId === paper.id ? 'bg-teal-50 text-teal-700 font-bold' : ''}`}
-                                                    onClick={() => setSelectedPaperId(paper.id)}
-                                                >
-                                                    <div className="truncate max-w-[140px]">{paper.name}</div>
-                                                    <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                                                        <button className="text-slate-400 hover:text-blue-600 transition-colors" onClick={() => setPaperModal({ open: true, editId: paper.id, name: paper.name, code: paper.code || '', order: paper.order })}><Edit size={11} /></button>
-                                                        <button className="text-slate-400 hover:text-red-600 transition-colors" onClick={() => setConfirmDelete({
-                                                            open: true,
-                                                            title: 'Delete Paper',
-                                                            message: `Are you sure you want to delete the Paper "${paper.name}"? This will delete all chapters and topics within it.`,
-                                                            onConfirm: () => {
-                                                                deletePaperMutation.mutate(paper.id);
-                                                                setConfirmDelete(prev => ({ ...prev, open: false }));
-                                                            }
-                                                        })}><Trash2 size={11} /></button>
-                                                    </div>
+                                <div className="space-y-2 pl-0.5">
+                                    {levels.map((level: any) => (
+                                        <div key={level.id} className="tree-level mb-2">
+                                            <div
+                                                className={`tree-level-btn flex justify-between items-center px-3 py-2 rounded-lg text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 cursor-pointer transition-colors ${levelId === level.id ? 'bg-blue-50/70 text-blue-600 border border-blue-100' : ''}`}
+                                                onClick={() => {
+                                                    setSelectedLevelId(level.id);
+                                                    setSelectedPaperId(level.papers[0]?.id ?? null);
+                                                }}
+                                            >
+                                                <span className="truncate max-w-[150px]">{level.name}</span>
+                                                <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                                                    <button className="text-slate-400 hover:text-blue-600 transition-colors" onClick={() => setLevelModal({ open: true, editId: level.id, qualification: level.qualification || 'CA', name: level.name, order: level.order })}><Edit size={12} /></button>
+                                                    <button className="text-slate-400 hover:text-red-600 transition-colors" onClick={() => setConfirmDelete({
+                                                        open: true,
+                                                        title: 'Delete Course Level',
+                                                        message: `Are you sure you want to delete the Course Level "${level.name}"? This will delete all papers, chapters, and topics within it.`,
+                                                        onConfirm: () => {
+                                                            deleteLevelMutation.mutate(level.id);
+                                                            setConfirmDelete(prev => ({ ...prev, open: false }));
+                                                        }
+                                                    })}><Trash2 size={12} /></button>
+                                                    <span className="tree-paper-meta text-[10px] text-slate-400 font-bold bg-white px-2 py-0.5 rounded border border-slate-100">{level.paper_count} papers</span>
                                                 </div>
-                                                {paperId === paper.id && paper.chapters && paper.chapters.length > 0 && (
-                                                    <div className="mt-0.5 mb-1.5 pl-4 flex flex-col gap-0.5 border-l border-teal-200 ml-4">
-                                                        {paper.chapters.map((chapter: any) => (
-                                                            <div 
-                                                                key={chapter.id}
-                                                                className="flex items-center justify-between py-1 text-[11px] text-slate-500 hover:text-slate-700 transition-colors"
-                                                            >
-                                                                <span className="truncate max-w-[150px] font-medium">• {chapter.name}</span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
                                             </div>
-                                        ))}
-                                        <button 
-                                            onClick={() => setPaperModal({ open: true, name: '', code: '', order: level.papers.length + 1 })}
-                                            className="tree-paper-btn flex items-center gap-1 text-[11px] text-blue-600 font-bold hover:bg-blue-50 py-1"
-                                        >
-                                            <Plus size={11} /> Add Paper
-                                        </button>
-                                    </div>
-                                )}
+                                            {levelId === level.id && (
+                                                <div className="mt-1 pl-3 flex flex-col gap-1 border-l border-slate-100 ml-3">
+                                                    {level.papers.map((paper: any) => (
+                                                        <div key={paper.id} className="flex flex-col gap-0.5">
+                                                            <div
+                                                                className={`tree-paper-btn flex justify-between items-center px-3 py-1.5 rounded text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer transition-colors ${paperId === paper.id ? 'bg-teal-50 text-teal-700 font-bold' : ''}`}
+                                                                onClick={() => setSelectedPaperId(paper.id)}
+                                                            >
+                                                                <div className="truncate max-w-[140px]">{paper.name}</div>
+                                                                <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                                                                    <button className="text-slate-400 hover:text-blue-600 transition-colors" onClick={() => setPaperModal({ open: true, editId: paper.id, name: paper.name, code: paper.code || '', order: paper.order })}><Edit size={11} /></button>
+                                                                    <button className="text-slate-400 hover:text-red-600 transition-colors" onClick={() => setConfirmDelete({
+                                                                        open: true,
+                                                                        title: 'Delete Paper',
+                                                                        message: `Are you sure you want to delete the Paper "${paper.name}"? This will delete all chapters and topics within it.`,
+                                                                        onConfirm: () => {
+                                                                            deletePaperMutation.mutate(paper.id);
+                                                                            setConfirmDelete(prev => ({ ...prev, open: false }));
+                                                                        }
+                                                                    })}><Trash2 size={11} /></button>
+                                                                </div>
+                                                            </div>
+                                                            {paperId === paper.id && paper.chapters && paper.chapters.length > 0 && (
+                                                                <div className="mt-0.5 mb-1.5 pl-4 flex flex-col gap-0.5 border-l border-teal-200 ml-4">
+                                                                    {paper.chapters.map((chapter: any) => (
+                                                                        <div 
+                                                                            key={chapter.id}
+                                                                            className="flex items-center justify-between py-1 text-[11px] text-slate-500 hover:text-slate-700 transition-colors"
+                                                                        >
+                                                                            <span className="truncate max-w-[150px] font-medium">• {chapter.name}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                    <button 
+                                                        onClick={() => setPaperModal({ open: true, name: '', code: '', order: level.papers.length + 1 })}
+                                                        className="tree-paper-btn flex items-center gap-1 text-[11px] text-blue-600 font-bold hover:bg-blue-50 py-1"
+                                                    >
+                                                        <Plus size={11} /> Add Paper
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -367,6 +427,9 @@ const AdminMasterDatabase = () => {
                                         <div>
                                             <div className="flex justify-between items-start mb-3 gap-2">
                                                 <div className="flex flex-col gap-0.5">
+                                                    <span className="text-[9px] font-black text-indigo-500 uppercase tracking-wider mb-0.5">
+                                                        {displayLevel?.qualification} › {displayLevel?.name}
+                                                    </span>
                                                     <h4 className="text-xs font-bold text-slate-800 line-clamp-2">{chapter.name}</h4>
                                                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">
                                                         Paper: {displayPaper.name} {displayPaper.code ? `(${displayPaper.code})` : ''}
@@ -441,16 +504,26 @@ const AdminMasterDatabase = () => {
             {/* Level Modal */}
             <AdminModal
                 open={levelModal.open}
-                onClose={() => setLevelModal({ open: false, name: '', order: 0 })}
-                title={levelModal.editId ? "Edit Course Level" : "Add New Course Level"}
+                onClose={() => {
+                    setLevelModal({ open: false, qualification: categories[0]?.name || 'CA', name: '', order: 0 });
+                    setSelectedLevelNames([]);
+                }}
+                title={levelModal.editId ? "Edit Course Level" : "Add Course Level(s)"}
                 footer={
                     <>
-                        <button type="button" className="secondary-btn text-xs font-bold" onClick={() => setLevelModal({ open: false, name: '', order: 0 })}>Cancel</button>
+                        <button type="button" className="secondary-btn text-xs font-bold" onClick={() => {
+                            setLevelModal({ open: false, qualification: categories[0]?.name || 'CA', name: '', order: 0 });
+                            setSelectedLevelNames([]);
+                        }}>Cancel</button>
                         <button 
                             type="button" 
                             className="primary-btn flex-center gap-xs font-bold text-xs"
-                            onClick={() => saveLevelMutation.mutate({ name: levelModal.name, order: levelModal.order })}
-                            disabled={saveLevelMutation.isPending || !levelModal.name}
+                            onClick={() => saveLevelMutation.mutate({ 
+                                qualification: levelModal.qualification, 
+                                names: levelModal.editId ? [levelModal.name] : selectedLevelNames, 
+                                order: levelModal.order 
+                            })}
+                            disabled={saveLevelMutation.isPending || !levelModal.qualification || (levelModal.editId ? !levelModal.name : selectedLevelNames.length === 0)}
                         >
                             {saveLevelMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                             <span>Save Level</span>
@@ -459,13 +532,66 @@ const AdminMasterDatabase = () => {
                 }
             >
                 <div className="admin-form-group mb-4">
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">Qualification / Main CA Stream *</label>
+                    <select 
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm bg-white" 
+                        value={levelModal.qualification} 
+                        onChange={e => {
+                            setLevelModal({ ...levelModal, qualification: e.target.value, name: '' });
+                            setSelectedLevelNames([]);
+                        }} 
+                    >
+                        <option value="">Select Stream Qualification</option>
+                        {categories.map((cat: any) => (
+                            <option key={cat.id} value={cat.name}>{cat.name}</option>
+                        ))}
+                    </select>
+                </div>
+                <div className="admin-form-group mb-4">
                     <label className="text-xs font-bold text-slate-700 mb-1 block">Course Level Name *</label>
-                    <input 
-                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
-                        value={levelModal.name} 
-                        onChange={e => setLevelModal({ ...levelModal, name: e.target.value })} 
-                        placeholder="e.g. Intermediate" 
-                    />
+                    {levelModal.editId ? (
+                        <select 
+                            className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm bg-white" 
+                            value={levelModal.name} 
+                            onChange={e => setLevelModal({ ...levelModal, name: e.target.value })} 
+                            disabled={!levelModal.qualification}
+                        >
+                            <option value="">Select Course Level</option>
+                            {courses
+                                .filter((c: any) => c.category_name?.toString() === levelModal.qualification?.toString())
+                                .map((c: any) => (
+                                    <option key={c.id} value={c.name}>{c.name}</option>
+                                ))}
+                        </select>
+                    ) : (
+                        <div className="border border-slate-200 rounded-xl p-3 max-h-48 overflow-y-auto space-y-2 bg-slate-50">
+                            {courses
+                                .filter((c: any) => c.category_name?.toString() === levelModal.qualification?.toString())
+                                .map((c: any) => {
+                                    const isChecked = selectedLevelNames.includes(c.name);
+                                    return (
+                                        <label key={c.id} className="flex items-center gap-2.5 text-xs text-slate-700 font-semibold cursor-pointer hover:bg-slate-100/60 p-2 rounded-lg transition-colors">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={isChecked}
+                                                onChange={() => {
+                                                    if (isChecked) {
+                                                        setSelectedLevelNames(selectedLevelNames.filter(n => n !== c.name));
+                                                    } else {
+                                                        setSelectedLevelNames([...selectedLevelNames, c.name]);
+                                                    }
+                                                }}
+                                                className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+                                            />
+                                            {c.name}
+                                        </label>
+                                    );
+                                })}
+                            {courses.filter((c: any) => c.category_name?.toString() === levelModal.qualification?.toString()).length === 0 && (
+                                <p className="text-xs text-slate-400 text-center py-4">No levels found for this qualification.</p>
+                            )}
+                        </div>
+                    )}
                 </div>
                 <div className="admin-form-group">
                     <label className="text-xs font-bold text-slate-700 mb-1 block">Display Order</label>

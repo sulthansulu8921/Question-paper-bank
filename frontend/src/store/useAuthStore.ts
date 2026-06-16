@@ -8,7 +8,7 @@ interface AuthState {
     setAuth: (user: any, token: string) => void;
     logout: () => void;
     login: (email: string, password: string) => Promise<void>;
-    register: (name: string, mobile: string, email: string, password: string, otp: string) => Promise<void>;
+    register: (name: string, mobile: string, email: string, password: string, otp: string, selectedCourseId?: string) => Promise<void>;
     googleLogin: (credential: string) => Promise<void>;
     updateProfile: (data: any) => Promise<void>;
     hydrate: () => Promise<void>;
@@ -46,7 +46,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         localStorage.setItem('token', access);
         set({ user: profileResponse.data, token: access, isHydrating: false });
     },
-    register: async (full_name, mobile, email, password, otp) => {
+    register: async (full_name, mobile, email, password, otp, selectedCourseId) => {
         const parts = full_name.split(' ');
         const first_name = parts[0] || '';
         const last_name = parts.slice(1).join(' ') || '';
@@ -56,7 +56,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             mobile_number: mobile,
             email,
             password,
-            otp
+            otp,
+            selected_course: selectedCourseId ? parseInt(selectedCourseId) : undefined
         });
         const { access } = response.data;
 

@@ -10,6 +10,8 @@ interface Coupon {
     code: string;
     discount_percent: number;
     restricted_email?: string | null;
+    restricted_course?: number | null;
+    restricted_course_name?: string | null;
     is_active: boolean;
     created_at: string;
 }
@@ -17,12 +19,14 @@ interface Coupon {
 export default function AdminCouponManager() {
     const user = useAuthStore((s) => s.user);
     const [coupons, setCoupons] = useState<Coupon[]>([]);
+    const [courses, setCourses] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     
     // Form fields
     const [code, setCode] = useState('');
     const [discountPercent, setDiscountPercent] = useState<number>(10);
     const [restrictedEmail, setRestrictedEmail] = useState('');
+    const [restrictedCourse, setRestrictedCourse] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
@@ -49,8 +53,18 @@ export default function AdminCouponManager() {
         }
     };
 
+    const fetchCourses = async () => {
+        try {
+            const res = await api.get('/courses/courses/');
+            setCourses(res.data);
+        } catch (err) {
+            console.error('Failed to fetch courses:', err);
+        }
+    };
+
     useEffect(() => {
         fetchCoupons();
+        fetchCourses();
     }, [user]);
 
     const handleCreateCoupon = async (e: React.FormEvent) => {
@@ -76,12 +90,14 @@ export default function AdminCouponManager() {
                 code: code.trim().toUpperCase(),
                 discount_percent: discountPercent,
                 restricted_email: restrictedEmail.trim() ? restrictedEmail.trim() : null,
+                restricted_course: restrictedCourse ? parseInt(restrictedCourse, 10) : null,
                 is_active: true
             });
             setSuccessMsg(`Coupon ${res.data.code} created successfully!`);
             setCode('');
             setDiscountPercent(10);
             setRestrictedEmail('');
+            setRestrictedCourse('');
             fetchCoupons();
         } catch (err: any) {
             setErrorMsg(err.response?.data?.error || err.response?.data?.detail || 'Failed to create coupon.');
@@ -154,6 +170,7 @@ export default function AdminCouponManager() {
                                         <th style={{ padding: '1rem' }}>Code</th>
                                         <th style={{ padding: '1rem' }}>Discount</th>
                                         <th style={{ padding: '1rem' }}>Restricted Email</th>
+                                        <th style={{ padding: '1rem' }}>Restricted Course</th>
                                         <th style={{ padding: '1rem', textAlign: 'center' }}>Status</th>
                                         <th style={{ padding: '1rem', textAlign: 'center' }}>Actions</th>
                                     </tr>
@@ -176,6 +193,15 @@ export default function AdminCouponManager() {
                                                     </span>
                                                 ) : (
                                                     <span style={{ color: '#94A3B8', fontStyle: 'italic' }}>Public (Anyone)</span>
+                                                )}
+                                            </td>
+                                            <td style={{ padding: '1rem', fontSize: '0.875rem' }}>
+                                                {coupon.restricted_course_name ? (
+                                                    <span style={{ fontWeight: 600, color: '#4F46E5', background: '#EEF2FF', border: '1px solid #C7D2FE', padding: '0.25rem 0.5rem', borderRadius: '0.375rem' }}>
+                                                        {coupon.restricted_course_name}
+                                                    </span>
+                                                ) : (
+                                                    <span style={{ color: '#94A3B8', fontStyle: 'italic' }}>Public (All)</span>
                                                 )}
                                             </td>
                                             <td style={{ padding: '1rem', textAlign: 'center' }}>
@@ -272,6 +298,26 @@ export default function AdminCouponManager() {
                                 />
                                 <p style={{ fontSize: '0.6875rem', color: '#94A3B8', marginTop: '0.25rem', fontWeight: 500 }}>
                                     If specified, only the user with this email ID can use this coupon.
+                                </p>
+                            </div>
+
+                            <div className="form-group">
+                                <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#475569', marginBottom: '0.35rem' }}>Restricted Course (Optional)</label>
+                                <select
+                                    className="form-input"
+                                    value={restrictedCourse}
+                                    onChange={(e) => setRestrictedCourse(e.target.value)}
+                                    style={{ width: '100%', padding: '0.625rem', borderRadius: '0.5rem', border: '1px solid #E2E8F0', outline: 'none', background: '#FFF' }}
+                                >
+                                    <option value="">Public (All Courses)</option>
+                                    {courses.map((course) => (
+                                        <option key={course.id} value={course.id}>
+                                            {course.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p style={{ fontSize: '0.6875rem', color: '#94A3B8', marginTop: '0.25rem', fontWeight: 500 }}>
+                                    If specified, this coupon can only be applied to subscriptions in the selected course.
                                 </p>
                             </div>
 

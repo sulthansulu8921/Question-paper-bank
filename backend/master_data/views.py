@@ -135,6 +135,7 @@ class MasterDataTreeView(APIView):
                 'name': level.name,
                 'slug': level.slug,
                 'order': level.order,
+                'qualification': level.qualification,
                 'papers': papers_data,
                 'paper_count': len(papers_data),
             })

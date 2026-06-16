@@ -8,7 +8,20 @@ import AdminConfirmModal from '@/components/admin/AdminConfirmModal';
 import { useAdminToast, getApiErrorMessage } from '@/components/admin/useAdminToast';
 import '@/styles/admin/QuestionManagement.css';
 
-const emptyForm = { name: '', is_premium: true, is_active: true, thumbnail: '', banner: '' };
+const emptyForm = {
+    name: '',
+    short_description: '',
+    description: '',
+    is_premium: true,
+    is_active: true,
+    is_archived: false,
+    duration: '6 Months',
+    validity_days: 180,
+    monthly_price: '0.00',
+    yearly_price: '0.00',
+    thumbnail: '',
+    banner: ''
+};
 
 export default function AdminCourseManager() {
     const queryClient = useQueryClient();
@@ -18,77 +31,30 @@ export default function AdminCourseManager() {
     const [searchQuery, setSearchQuery] = useState('');
     const [formData, setFormData] = useState(emptyForm);
 
+    // Level Management states
+    const [selectedCourseForLevels, setSelectedCourseForLevels] = useState<any | null>(null);
+    const [levelForm, setLevelForm] = useState({ name: '', order: 0, description: '' });
+    const [editingLevelId, setEditingLevelId] = useState<number | null>(null);
+
     const [confirmDelete, setConfirmDelete] = useState<{
         open: boolean;
         title: string;
         message: string;
         onConfirm: () => void;
-    }>({ open: false, title: '', message: '', onConfirm: () => {} });
+    }>({ open: false, title: '', message: '', onConfirm: () => { } });
 
+    // Fetch all courses
     const { data: courses = [], isLoading } = useQuery({
         queryKey: ['admin-courses'],
         queryFn: async () => (await api.get('/courses/courses/')).data,
     });
 
-    const [newLevelName, setNewLevelName] = useState('');
-    const [editingLevelId, setEditingLevelId] = useState<number | null>(null);
-    const [editingLevelName, setEditingLevelName] = useState('');
-
-    const createLevelMutation = useMutation({
-        mutationFn: (data: { course: number; name: string }) => api.post('/courses/levels/', data),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['admin-courses'] });
-            setNewLevelName('');
-            show('Level created successfully.');
-        },
-        onError: (e) => show(getApiErrorMessage(e, 'Failed to create level.'), 'error'),
+    // Fetch all levels (to filter by selected course)
+    const { data: levels = [], isLoading: isLevelsLoading } = useQuery({
+        queryKey: ['admin-levels'],
+        queryFn: async () => (await api.get('/courses/levels/')).data,
+        enabled: !!selectedCourseForLevels,
     });
-
-    const updateLevelMutation = useMutation({
-        mutationFn: ({ id, name }: { id: number; name: string }) => api.patch(`/courses/levels/${id}/`, { name }),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['admin-courses'] });
-            setEditingLevelId(null);
-            show('Level updated successfully.');
-        },
-        onError: (e) => show(getApiErrorMessage(e, 'Failed to update level.'), 'error'),
-    });
-
-    const deleteLevelMutation = useMutation({
-        mutationFn: (id: number) => api.delete(`/courses/levels/${id}/`),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['admin-courses'] });
-            show('Level deleted.');
-        },
-        onError: (e) => show(getApiErrorMessage(e, 'Failed to delete level.'), 'error'),
-    });
-
-    const handleCreateLevel = () => {
-        if (!editId || !newLevelName.trim()) return;
-        createLevelMutation.mutate({ course: editId, name: newLevelName.trim() });
-    };
-
-    const handleUpdateLevel = (levelId: number) => {
-        if (!editingLevelName.trim()) return;
-        updateLevelMutation.mutate({ id: levelId, name: editingLevelName.trim() });
-    };
-
-    const handleDeleteLevel = (levelId: number) => {
-        setConfirmDelete({
-            open: true,
-            title: 'Delete Level',
-            message: 'Are you sure you want to delete this level? All subjects under it will also be affected.',
-            onConfirm: () => {
-                deleteLevelMutation.mutate(levelId);
-                setConfirmDelete(prev => ({ ...prev, open: false }));
-            }
-        });
-    };
-
-    const isMutatingLevel = createLevelMutation.isPending || updateLevelMutation.isPending || deleteLevelMutation.isPending;
-
-    const selectedCourse = courses.find((c: any) => c.id === editId);
-    const currentLevels = selectedCourse?.levels || [];
 
     const createMutation = useMutation({
         mutationFn: (newCourse: typeof emptyForm) => api.post('/courses/courses/', newCourse),
@@ -119,6 +85,40 @@ export default function AdminCourseManager() {
         onError: (e) => show(getApiErrorMessage(e, 'Failed to delete course.'), 'error'),
     });
 
+    // Level CRUD mutations
+    const createLevelMutation = useMutation({
+        mutationFn: (newLevel: any) => api.post('/courses/levels/', newLevel),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin-levels'] });
+            queryClient.invalidateQueries({ queryKey: ['admin-courses'] });
+            setLevelForm({ name: '', order: 0, description: '' });
+            show('Level added successfully.');
+        },
+        onError: (e) => show(getApiErrorMessage(e, 'Failed to create level.'), 'error'),
+    });
+
+    const editLevelMutation = useMutation({
+        mutationFn: ({ id, data }: { id: number; data: any }) => api.patch(`/courses/levels/${id}/`, data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin-levels'] });
+            queryClient.invalidateQueries({ queryKey: ['admin-courses'] });
+            setLevelForm({ name: '', order: 0, description: '' });
+            setEditingLevelId(null);
+            show('Level updated successfully.');
+        },
+        onError: (e) => show(getApiErrorMessage(e, 'Failed to update level.'), 'error'),
+    });
+
+    const deleteLevelMutation = useMutation({
+        mutationFn: (id: number) => api.delete(`/courses/levels/${id}/`),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin-levels'] });
+            queryClient.invalidateQueries({ queryKey: ['admin-courses'] });
+            show('Level deleted successfully.');
+        },
+        onError: (e) => show(getApiErrorMessage(e, 'Failed to delete level.'), 'error'),
+    });
+
     const closeModal = () => {
         setModalMode(null);
         setEditId(null);
@@ -134,8 +134,15 @@ export default function AdminCourseManager() {
         setEditId(course.id);
         setFormData({
             name: course.name || '',
+            short_description: course.short_description || '',
+            description: course.description || '',
             is_premium: course.is_premium ?? true,
             is_active: course.is_active ?? true,
+            is_archived: course.is_archived ?? false,
+            duration: course.duration || '6 Months',
+            validity_days: course.validity_days ?? 180,
+            monthly_price: course.monthly_price || '0.00',
+            yearly_price: course.yearly_price || '0.00',
             thumbnail: course.thumbnail || '',
             banner: course.banner || '',
         });
@@ -154,9 +161,27 @@ export default function AdminCourseManager() {
         }
     };
 
+    const handleLevelSave = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!levelForm.name.trim()) return;
+
+        const payload = {
+            ...levelForm,
+            course: selectedCourseForLevels.id
+        };
+
+        if (editingLevelId) {
+            editLevelMutation.mutate({ id: editingLevelId, data: payload });
+        } else {
+            createLevelMutation.mutate(payload);
+        }
+    };
+
     const filteredCourses = courses.filter((c: any) =>
         c.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
+
+    const filteredLevels = levels.filter((l: any) => l.course === selectedCourseForLevels?.id);
 
     const isSaving = createMutation.isPending || editMutation.isPending;
 
@@ -165,8 +190,8 @@ export default function AdminCourseManager() {
             {Toast}
             <div className="qm-header">
                 <div>
-                    <h1 className="page-title">Course Manager</h1>
-                    <p className="page-subtitle">Manage all educational tracks and masterclasses.</p>
+                    <h1 className="page-title">Course Selection Control</h1>
+                    <p className="page-subtitle">Configure CA courses, validity periods, access limits, and student study tracks.</p>
                 </div>
                 <button type="button" onClick={openAdd} className="primary-btn flex-center gap-sm">
                     <Plus size={20} />
@@ -195,7 +220,9 @@ export default function AdminCourseManager() {
                             <tr>
                                 <th>Thumbnail</th>
                                 <th>Course Name</th>
-                                <th>Subjects</th>
+                                <th>Duration / Validity</th>
+                                <th>Price (INR)</th>
+                                <th>Levels count</th>
                                 <th>Status</th>
                                 <th>Access</th>
                                 <th>Actions</th>
@@ -204,20 +231,20 @@ export default function AdminCourseManager() {
                         <tbody>
                             {isLoading && (
                                 <tr>
-                                    <td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>
+                                    <td colSpan={8} style={{ textAlign: 'center', padding: '2rem' }}>
                                         <Loader2 className="animate-spin" style={{ margin: '0 auto', color: 'var(--color-primary-light)' }} />
                                     </td>
                                 </tr>
                             )}
                             {!isLoading && filteredCourses.length === 0 && (
                                 <tr>
-                                    <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--color-text-muted)' }}>
+                                    <td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: 'var(--color-text-muted)' }}>
                                         No courses found.
                                     </td>
                                 </tr>
                             )}
                             {filteredCourses.map((course: any) => (
-                                <tr key={course.id}>
+                                <tr key={course.id} className={course.is_archived ? 'opacity-60 bg-slate-50' : ''}>
                                     <td>
                                         {course.thumbnail ? (
                                             <img src={course.thumbnail} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover' }} />
@@ -238,11 +265,26 @@ export default function AdminCourseManager() {
                                             </div>
                                         )}
                                     </td>
-                                    <td className="font-bold text-main">{course.name}</td>
                                     <td>
-                                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
-                                            <Layers size={14} /> {course.subjects_count ?? 0} Subjects
-                                        </span>
+                                        <div className="font-bold text-main">{course.name}</div>
+                                        {course.is_archived && <span className="text-[9px] font-black uppercase text-amber-600 bg-amber-50 px-1 rounded">Archived</span>}
+                                    </td>
+                                    <td>
+                                        <div className="text-xs font-semibold text-slate-700">{course.duration || '—'}</div>
+                                        <div className="text-[10px] text-slate-400 font-bold">{course.validity_days} Days validity</div>
+                                    </td>
+                                    <td>
+                                        <div className="text-xs font-bold text-slate-800">M: ₹{course.monthly_price}</div>
+                                        <div className="text-[10px] text-slate-500">Y: ₹{course.yearly_price}</div>
+                                    </td>
+                                    <td>
+                                        <button 
+                                            onClick={() => setSelectedCourseForLevels(course)}
+                                            className="px-2.5 py-1 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold border border-indigo-200 flex items-center gap-1"
+                                        >
+                                            <Layers size={13} />
+                                            <span>{(course.levels || []).length} Levels</span>
+                                        </button>
                                     </td>
                                     <td>
                                         <span className={`status-dot ${course.is_active ? 'status-active' : 'status-inactive'}`}></span>
@@ -259,12 +301,13 @@ export default function AdminCourseManager() {
                                     </td>
                                     <td>
                                         <div className="action-buttons">
-                                            <button type="button" className="action-btn" title="Edit" onClick={() => openEdit(course)}>
+                                            <button type="button" className="action-btn" title="Edit Course" onClick={() => openEdit(course)}>
                                                 <Edit size={16} />
                                             </button>
                                             <button
                                                 type="button"
                                                 className="action-btn danger"
+                                                title="Delete Course"
                                                 onClick={() => setConfirmDelete({
                                                     open: true,
                                                     title: 'Delete Course',
@@ -286,6 +329,7 @@ export default function AdminCourseManager() {
                 </div>
             </div>
 
+            {/* Course Form Modal */}
             <AdminModal
                 open={modalMode !== null}
                 onClose={closeModal}
@@ -293,138 +337,275 @@ export default function AdminCourseManager() {
                 size="lg"
                 footer={
                     <>
-                        <button type="button" className="secondary-btn" onClick={closeModal}>
+                        <button type="button" className="secondary-btn text-xs font-bold" onClick={closeModal}>
                             Cancel
                         </button>
-                        <button type="button" className="primary-btn flex-center gap-sm" onClick={handleSave} disabled={isSaving}>
+                        <button type="button" className="primary-btn flex-center gap-sm text-xs font-black uppercase tracking-wider" onClick={handleSave} disabled={isSaving}>
                             {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                             <span>{modalMode === 'edit' ? 'Save Changes' : 'Save Course'}</span>
                         </button>
                     </>
                 }
             >
-                <div className="admin-form-group">
-                    <label>Course Name *</label>
-                    <input
-                        className="admin-form-input"
-                        placeholder="e.g. CA Intermediate Masterclass"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '0.75rem', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12 }}>
+                <div className="space-y-4">
+                    <div className="admin-form-group">
+                        <label className="text-xs font-bold text-slate-700">Course Name *</label>
                         <input
-                            type="checkbox"
-                            checked={formData.is_premium}
-                            onChange={(e) => setFormData({ ...formData, is_premium: e.target.checked })}
+                            className="admin-form-input"
+                            placeholder="e.g. CA Intermediate Masterclass"
+                            value={formData.name}
+                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         />
-                        <span style={{ fontWeight: 700, fontSize: '0.875rem' }}>Premium</span>
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '0.75rem', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12 }}>
-                        <input
-                            type="checkbox"
-                            checked={formData.is_active}
-                            onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                        />
-                        <span style={{ fontWeight: 700, fontSize: '0.875rem' }}>Live</span>
-                    </label>
-                </div>
-                <div className="admin-form-group">
-                    <label>Thumbnail</label>
-                    <FileUploadZone
-                        onFileUploaded={(url) => setFormData({ ...formData, thumbnail: url })}
-                        accept="image/*"
-                        label="Upload Thumbnail"
-                        existingUrl={formData.thumbnail}
-                    />
-                </div>
+                    </div>
 
-                {modalMode === 'edit' && editId && (
-                    <div className="pt-6 mt-6 border-t border-border space-y-4">
-                        <h4 className="text-sm font-black text-text-primary uppercase tracking-widest">Manage Levels / Groups</h4>
-                        
-                        {/* Levels List */}
-                        <div className="space-y-2">
-                            {currentLevels.length === 0 ? (
-                                <p className="text-xs text-text-muted italic">No levels created yet. Create one below.</p>
-                            ) : (
-                                currentLevels.map((lvl: any) => (
-                                    <div key={lvl.id} className="flex items-center justify-between p-3 bg-bg border border-border rounded-xl">
-                                        {editingLevelId === lvl.id ? (
-                                            <div className="flex items-center gap-2 flex-1 mr-4">
-                                                <input
-                                                    type="text"
-                                                    className="admin-form-input py-1 text-xs"
-                                                    value={editingLevelName}
-                                                    onChange={(e) => setEditingLevelName(e.target.value)}
-                                                />
-                                                <button
-                                                    type="button"
-                                                    className="primary-btn py-1 px-3 text-xs"
-                                                    onClick={() => handleUpdateLevel(lvl.id)}
-                                                    disabled={isMutatingLevel}
-                                                >
-                                                    Save
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    className="secondary-btn py-1 px-3 text-xs"
-                                                    onClick={() => setEditingLevelId(null)}
-                                                >
-                                                    Cancel
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <>
-                                                <span className="text-sm font-bold text-text-primary">{lvl.name}</span>
-                                                <div className="flex items-center gap-2">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setEditingLevelId(lvl.id);
-                                                            setEditingLevelName(lvl.name);
-                                                        }}
-                                                        className="action-btn"
-                                                    >
-                                                        <Edit size={14} />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleDeleteLevel(lvl.id)}
-                                                        className="action-btn danger"
-                                                    >
-                                                        <Trash2 size={14} />
-                                                    </button>
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-                                ))
-                            )}
-                        </div>
-
-                        {/* Add Level Form */}
-                        <div className="flex gap-2">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="admin-form-group">
+                            <label className="text-xs font-bold text-slate-700">Short Description</label>
                             <input
-                                type="text"
-                                className="admin-form-input flex-1 py-2 text-xs"
-                                placeholder="e.g. Group 1"
-                                value={newLevelName}
-                                onChange={(e) => setNewLevelName(e.target.value)}
+                                className="admin-form-input"
+                                placeholder="Brief overview text"
+                                value={formData.short_description}
+                                onChange={(e) => setFormData({ ...formData, short_description: e.target.value })}
                             />
-                            <button
-                                type="button"
-                                className="primary-btn py-2 px-4 text-xs flex items-center gap-1 shrink-0"
-                                onClick={handleCreateLevel}
-                                disabled={isMutatingLevel || !newLevelName.trim()}
-                            >
-                                <Plus size={14} /> Add Level
-                            </button>
+                        </div>
+                        <div className="admin-form-group">
+                            <label className="text-xs font-bold text-slate-700">Duration (e.g. 6 Months)</label>
+                            <input
+                                className="admin-form-input"
+                                placeholder="6 Months"
+                                value={formData.duration}
+                                onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
+                            />
                         </div>
                     </div>
-                )}
+
+                    <div className="admin-form-group">
+                        <label className="text-xs font-bold text-slate-700">Full Description</label>
+                        <textarea
+                            className="admin-form-input min-h-[80px]"
+                            placeholder="Provide deep details of the educational material covered..."
+                            value={formData.description}
+                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4">
+                        <div className="admin-form-group">
+                            <label className="text-xs font-bold text-slate-700">Validity days</label>
+                            <input
+                                type="number"
+                                className="admin-form-input"
+                                value={formData.validity_days}
+                                onChange={(e) => setFormData({ ...formData, validity_days: parseInt(e.target.value) || 180 })}
+                            />
+                        </div>
+                        <div className="admin-form-group">
+                            <label className="text-xs font-bold text-slate-700">Monthly Price (₹)</label>
+                            <input
+                                className="admin-form-input"
+                                value={formData.monthly_price}
+                                onChange={(e) => setFormData({ ...formData, monthly_price: e.target.value })}
+                            />
+                        </div>
+                        <div className="admin-form-group">
+                            <label className="text-xs font-bold text-slate-700">Yearly Price (₹)</label>
+                            <input
+                                className="admin-form-input"
+                                value={formData.yearly_price}
+                                onChange={(e) => setFormData({ ...formData, yearly_price: e.target.value })}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex gap-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <label className="flex items-center gap-2 cursor-pointer flex-1 justify-center p-2 rounded bg-white shadow-sm border border-slate-200">
+                            <input
+                                type="checkbox"
+                                checked={formData.is_premium}
+                                onChange={(e) => setFormData({ ...formData, is_premium: e.target.checked })}
+                            />
+                            <span className="font-bold text-xs text-slate-700">Premium Course</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer flex-1 justify-center p-2 rounded bg-white shadow-sm border border-slate-200">
+                            <input
+                                type="checkbox"
+                                checked={formData.is_active}
+                                onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                            />
+                            <span className="font-bold text-xs text-slate-700">Live (Active)</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer flex-1 justify-center p-2 rounded bg-white shadow-sm border border-slate-200">
+                            <input
+                                type="checkbox"
+                                checked={formData.is_archived}
+                                onChange={(e) => setFormData({ ...formData, is_archived: e.target.checked })}
+                            />
+                            <span className="font-bold text-xs text-slate-700">Archived</span>
+                        </label>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="admin-form-group">
+                            <label className="text-xs font-bold text-slate-700">Thumbnail Image</label>
+                            <FileUploadZone
+                                onFileUploaded={(url) => setFormData({ ...formData, thumbnail: url })}
+                                accept="image/*"
+                                label="Upload Thumbnail"
+                                existingUrl={formData.thumbnail}
+                            />
+                        </div>
+                        <div className="admin-form-group">
+                            <label className="text-xs font-bold text-slate-700">Banner Image</label>
+                            <FileUploadZone
+                                onFileUploaded={(url) => setFormData({ ...formData, banner: url })}
+                                accept="image/*"
+                                label="Upload Banner"
+                                existingUrl={formData.banner}
+                            />
+                        </div>
+                    </div>
+                </div>
             </AdminModal>
+
+            {/* Level Management Modal */}
+            {selectedCourseForLevels && (
+                <AdminModal
+                    open={!!selectedCourseForLevels}
+                    onClose={() => { setSelectedCourseForLevels(null); setEditingLevelId(null); setLevelForm({ name: '', order: 0, description: '' }); }}
+                    title={`Manage Levels: ${selectedCourseForLevels.name}`}
+                    size="lg"
+                    footer={
+                        <button type="button" className="secondary-btn text-xs font-bold" onClick={() => setSelectedCourseForLevels(null)}>
+                            Close
+                        </button>
+                    }
+                >
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        {/* Level Form */}
+                        <form onSubmit={handleLevelSave} className="lg:col-span-5 bg-slate-50/50 p-5 rounded-xl border border-slate-200/50 space-y-4 h-fit">
+                            <h3 className="text-xs font-black uppercase text-slate-700 tracking-wider">
+                                {editingLevelId ? 'Edit Level' : 'Add New Level'}
+                            </h3>
+
+                            <div className="admin-form-group">
+                                <label className="text-xs font-bold text-slate-700">Level Name *</label>
+                                <input
+                                    className="admin-form-input"
+                                    placeholder="e.g. Foundation, Intermediate, Final"
+                                    required
+                                    value={levelForm.name}
+                                    onChange={(e) => setLevelForm({ ...levelForm, name: e.target.value })}
+                                />
+                            </div>
+
+                            <div className="admin-form-group">
+                                <label className="text-xs font-bold text-slate-700">Sort Order</label>
+                                <input
+                                    type="number"
+                                    className="admin-form-input"
+                                    required
+                                    value={levelForm.order}
+                                    onChange={(e) => setLevelForm({ ...levelForm, order: parseInt(e.target.value) || 0 })}
+                                />
+                            </div>
+
+                            <div className="admin-form-group">
+                                <label className="text-xs font-bold text-slate-700">Description</label>
+                                <textarea
+                                    className="admin-form-input min-h-[60px]"
+                                    placeholder="Optional description"
+                                    value={levelForm.description}
+                                    onChange={(e) => setLevelForm({ ...levelForm, description: e.target.value })}
+                                />
+                            </div>
+
+                            <div className="flex gap-2 justify-end pt-2">
+                                {editingLevelId && (
+                                    <button 
+                                        type="button" 
+                                        className="secondary-btn text-[11px] font-bold py-1.5 px-3" 
+                                        onClick={() => { setEditingLevelId(null); setLevelForm({ name: '', order: 0, description: '' }); }}
+                                    >
+                                        Cancel Edit
+                                    </button>
+                                )}
+                                <button 
+                                    type="submit" 
+                                    className="primary-btn text-[11px] font-black uppercase tracking-wide py-1.5 px-4"
+                                    disabled={createLevelMutation.isPending || editLevelMutation.isPending}
+                                >
+                                    {(createLevelMutation.isPending || editLevelMutation.isPending) ? (
+                                        <Loader2 size={12} className="animate-spin" />
+                                    ) : (
+                                        <Save size={12} className="inline mr-1" />
+                                    )}
+                                    <span>{editingLevelId ? 'Save Changes' : 'Add Level'}</span>
+                                </button>
+                            </div>
+                        </form>
+
+                        {/* Levels List */}
+                        <div className="lg:col-span-7 space-y-4">
+                            <h3 className="text-xs font-black uppercase text-slate-700 tracking-wider">Configured Levels</h3>
+                            {isLevelsLoading ? (
+                                <div className="flex justify-center p-10"><Loader2 className="animate-spin text-indigo-600" /></div>
+                            ) : filteredLevels.length === 0 ? (
+                                <div className="p-8 text-center text-xs text-slate-400 font-bold bg-slate-50 rounded-xl border border-dashed">
+                                    No levels added yet. Create one on the left (e.g. Intermediate).
+                                </div>
+                            ) : (
+                                <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm bg-white">
+                                    <table className="w-full text-left text-xs border-collapse">
+                                        <thead className="bg-slate-50 border-b border-slate-100 font-bold text-slate-600">
+                                            <tr>
+                                                <th className="p-3">Order</th>
+                                                <th className="p-3">Level Name</th>
+                                                <th className="p-3 text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {filteredLevels.sort((a: any, b: any) => a.order - b.order).map((l: any) => (
+                                                <tr key={l.id} className="hover:bg-slate-50/50">
+                                                    <td className="p-3 font-mono font-bold text-indigo-600">{l.order}</td>
+                                                    <td className="p-3">
+                                                        <div className="font-bold text-slate-800">{l.name}</div>
+                                                        {l.description && <div className="text-[10px] text-slate-400 mt-0.5">{l.description}</div>}
+                                                    </td>
+                                                    <td className="p-3 text-right">
+                                                        <div className="flex justify-end gap-1.5">
+                                                            <button 
+                                                                onClick={() => {
+                                                                    setEditingLevelId(l.id);
+                                                                    setLevelForm({ name: l.name, order: l.order, description: l.description || '' });
+                                                                }}
+                                                                className="p-1 border border-slate-200 rounded text-slate-500 hover:text-indigo-600 hover:bg-slate-50"
+                                                                title="Edit"
+                                                            >
+                                                                <Edit size={12} />
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => {
+                                                                    if (confirm(`Delete level "${l.name}"? All subjects inside this level will be orphaned.`)) {
+                                                                        deleteLevelMutation.mutate(l.id);
+                                                                    }
+                                                                }}
+                                                                className="p-1 border border-red-200 rounded text-red-500 hover:text-red-700 hover:bg-red-50"
+                                                                title="Delete"
+                                                            >
+                                                                <Trash2 size={12} />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </AdminModal>
+            )}
 
             <AdminConfirmModal
                 open={confirmDelete.open}

@@ -12,24 +12,30 @@ import PaperViewer from '@/pages/dashboard/PaperViewer';
 import AdminLayout from '@/layouts/AdminLayout';
 import AdminDashboard from '@/pages/admin/AdminDashboard';
 import AdminQuestionBank from '@/pages/admin/AdminQuestionBank';
-import AdminCourseManager from '@/pages/admin/AdminCourseManager';
 import AdminAnalytics from '@/pages/admin/AdminAnalytics';
 import AddQuestion from '@/pages/admin/AddQuestion';
 import AdminSubjectManager from '@/pages/admin/AdminSubjectManager';
 import AdminPaperManager from '@/pages/admin/AdminPaperManager';
 import AdminAnswerManager from '@/pages/admin/AdminAnswerManager';
 import AdminNotesManager from '@/pages/admin/AdminNotesManager';
-import AdminVideoManager from '@/pages/admin/AdminVideoManager';
 import AdminUserManager from '@/pages/admin/AdminUserManager';
 import AdminSettings from '@/pages/admin/AdminSettings';
 import AdminMasterDatabase from '@/pages/admin/AdminMasterDatabase';
 import AdminCouponManager from '@/pages/admin/AdminCouponManager';
 import AdminPricingManager from '@/pages/admin/AdminPricingManager';
 import AdminPaymentManager from '@/pages/admin/AdminPaymentManager';
+import AdminNotificationManager from '@/pages/admin/AdminNotificationManager';
 import DashboardComingSoon from '@/pages/dashboard/DashboardComingSoon';
 import NotesPage from '@/pages/dashboard/NotesPage';
-import CourseSelection from '@/pages/dashboard/CourseSelection';
 import CourseDetailPage from '@/pages/dashboard/CourseDetailPage';
+import AdminClassroomHub from '@/pages/admin/AdminClassroomHub';
+import StudentClassroomHub from '@/pages/dashboard/StudentClassroomHub';
+
+import AdminProgramManager from '@/pages/admin/AdminProgramManager';
+import AdminMCQBank from '@/pages/admin/AdminMCQBank';
+import AdminAddMCQ from '@/pages/admin/AdminAddMCQ';
+import AdminAssessmentMonitor from '@/pages/admin/AdminAssessmentMonitor';
+import AdminMockTestManager from '@/pages/admin/AdminMockTestManager';
 
 import QuestionPapersHub from '@/pages/dashboard/QuestionPapersHub';
 import SavedQuestionsPage from '@/pages/dashboard/SavedQuestionsPage';
@@ -40,6 +46,11 @@ import AssistantPage from '@/pages/dashboard/AssistantPage';
 import AnalyticsPage from '@/pages/dashboard/AnalyticsPage';
 import LeaderboardPage from '@/pages/dashboard/LeaderboardPage';
 import AdminGamification from '@/pages/admin/AdminGamification';
+import PracticeHub from '@/pages/dashboard/PracticeHub';
+import PracticeSession from '@/pages/dashboard/PracticeSession';
+import MockTestHub from '@/pages/dashboard/MockTestHub';
+import MockTestSession from '@/pages/dashboard/MockTestSession';
+import AIStudyPlanner from '@/pages/dashboard/AIStudyPlanner';
 import { useAuthStore } from '@/store/useAuthStore';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -112,11 +123,14 @@ export default function AppRouter() {
                 >
                     <Route index element={<DashboardHome />} />
                     <Route path="account" element={<AccountPage />} />
-                    <Route path="courses" element={<CourseSelection />} />
+                    <Route path="classroom" element={<StudentClassroomHub />} />
+                    <Route path="courses" element={<Navigate to="/dashboard/classroom?tab=courses" replace />} />
                     <Route path="courses/:id" element={<CourseDetailPage />} />
                     <Route path="papers" element={<QuestionPapersHub />} />
                     <Route path="papers/subject/:id" element={<PaperViewer />} />
                     <Route path="notes" element={<NotesPage />} />
+                    <Route path="live-classes" element={<Navigate to="/dashboard/classroom?tab=live" replace />} />
+                    <Route path="videos" element={<Navigate to="/dashboard/classroom?tab=recorded" replace />} />
                     <Route path="downloads" element={<DashboardComingSoon title="Downloads" />} />
                     <Route path="saved" element={<SavedQuestionsPage />} />
                     <Route path="subscription" element={<SubscriptionPage />} />
@@ -124,6 +138,11 @@ export default function AppRouter() {
                     <Route path="assistant" element={<AssistantPage />} />
                     <Route path="analytics" element={<AnalyticsPage />} />
                     <Route path="leaderboard" element={<LeaderboardPage />} />
+                    <Route path="practice" element={<PracticeHub />} />
+                    <Route path="practice/session/:sessionId" element={<PracticeSession />} />
+                    <Route path="mock" element={<MockTestHub />} />
+                    <Route path="mock/session/:sessionId" element={<MockTestSession />} />
+                    <Route path="planner" element={<AIStudyPlanner />} />
                 </Route>
 
                 <Route
@@ -136,13 +155,17 @@ export default function AppRouter() {
                 >
                     <Route index element={<SuperAdminRoute><AdminDashboard /></SuperAdminRoute>} />
                     <Route path="master" element={<AdminMasterDatabase />} />
-                    <Route path="courses" element={<AdminCourseManager />} />
+                    <Route path="programs" element={<AdminProgramManager />} />
+                    <Route path="classroom" element={<AdminClassroomHub />} />
+                    <Route path="courses" element={<Navigate to="/admin/classroom?tab=courses" replace />} />
                     <Route path="questions" element={<AdminQuestionBank />} />
                     <Route path="subjects" element={<AdminSubjectManager />} />
                     <Route path="papers" element={<AdminPaperManager />} />
                     <Route path="answers" element={<AdminAnswerManager />} />
                     <Route path="notes" element={<AdminNotesManager />} />
-                    <Route path="videos" element={<AdminVideoManager />} />
+                    <Route path="videos" element={<Navigate to="/admin/classroom?tab=recorded" replace />} />
+                    <Route path="live-classes" element={<Navigate to="/admin/classroom?tab=live" replace />} />
+                    <Route path="notifications" element={<SuperAdminRoute><AdminNotificationManager /></SuperAdminRoute>} />
                     <Route path="questions/new" element={<AddQuestion />} />
                     <Route path="questions/:id/edit" element={<AddQuestion />} />
                     <Route path="analytics" element={<SuperAdminRoute><AdminAnalytics /></SuperAdminRoute>} />
@@ -152,6 +175,11 @@ export default function AppRouter() {
                     <Route path="pricing" element={<SuperAdminRoute><AdminPricingManager /></SuperAdminRoute>} />
                     <Route path="payments" element={<SuperAdminRoute><AdminPaymentManager /></SuperAdminRoute>} />
                     <Route path="gamification" element={<AdminGamification />} />
+                     <Route path="mcq-bank" element={<AdminMCQBank />} />
+                    <Route path="mcq-bank/new" element={<AdminAddMCQ />} />
+                    <Route path="mcq-bank/:id/edit" element={<AdminAddMCQ />} />
+                    <Route path="sessions" element={<AdminAssessmentMonitor />} />
+                    <Route path="mock-templates" element={<AdminMockTestManager />} />
                 </Route>
             </Routes>
         </BrowserRouter>

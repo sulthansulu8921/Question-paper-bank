@@ -259,7 +259,7 @@ export default function PortalHomePage() {
                         </div>
                         <p className="text-slate-500 text-sm font-medium leading-relaxed">Trusted professional exam preparation platform featuring premium suggested answers and structured learning.</p>
                         <div className="flex gap-3 pt-2">
-                            <a href="https://www.instagram.com/p/DYrVIdHEqWf/?igsh=MTBiNGphbHV3bGNneA==" target="_blank" rel="noopener noreferrer" className="w-10 h-10 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center hover:bg-[#E1306C] hover:text-white transition-colors text-slate-400" aria-label="Instagram">
+                            <a href="https://www.instagram.com/qubook.in?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==" target="_blank" rel="noopener noreferrer" className="w-10 h-10 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center hover:bg-[#E1306C] hover:text-white transition-colors text-slate-400" aria-label="Instagram">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
                                     <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />

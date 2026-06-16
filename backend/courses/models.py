@@ -23,6 +23,9 @@ class Course(models.Model):
     monthly_price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     yearly_price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True)
+    is_archived = models.BooleanField(default=False)
+    duration = models.CharField(max_length=100, blank=True, default='')
+    validity_days = models.IntegerField(default=365)
 
     seo_title = models.CharField(max_length=200, blank=True)
     seo_description = models.TextField(blank=True)
@@ -34,6 +37,32 @@ class Course(models.Model):
         if not self.slug:
             self.slug = slugify(self.name)
         super().save(*args, **kwargs)
+        try:
+            from master_data.models import CALevel
+            qualification_name = self.category.name if self.category else 'CA'
+            calevel_qs = CALevel.objects.filter(name=self.name)
+            if calevel_qs.exists():
+                calevel_qs.update(
+                    qualification=qualification_name,
+                    is_active=self.is_active
+                )
+            else:
+                CALevel.objects.create(
+                    name=self.name,
+                    qualification=qualification_name,
+                    is_active=self.is_active,
+                )
+        except Exception:
+            pass
+
+    def delete(self, *args, **kwargs):
+        name = self.name
+        super().delete(*args, **kwargs)
+        try:
+            from master_data.models import CALevel
+            CALevel.objects.filter(name=name).delete()
+        except Exception:
+            pass
 
     def __str__(self):
         return self.name
@@ -63,6 +92,7 @@ class Subject(models.Model):
     slug = models.SlugField(max_length=200, blank=True)
     code = models.CharField(max_length=50, blank=True)
     description = models.TextField(blank=True)
+    order = models.IntegerField(default=0)
 
     def save(self, *args, **kwargs):
         if not self.slug:

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from subscriptions.models import SubscriptionPlan, UserSubscription, Payment, Coupon
+from subscriptions.models import SubscriptionPlan, UserSubscription, Payment, Coupon, PlatformSetting
 
 class SubscriptionPlanSerializer(serializers.ModelSerializer):
     class Meta:
@@ -7,8 +7,14 @@ class SubscriptionPlanSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class CouponSerializer(serializers.ModelSerializer):
+    restricted_course_name = serializers.ReadOnlyField(source='restricted_course.name')
     class Meta:
         model = Coupon
+        fields = '__all__'
+
+class PlatformSettingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PlatformSetting
         fields = '__all__'
 
 class UserSubscriptionSerializer(serializers.ModelSerializer):

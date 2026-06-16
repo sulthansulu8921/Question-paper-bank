@@ -249,6 +249,16 @@ class ProfileView(APIView):
                 user.username = new_email
         if 'mobile_number' in request.data:
             user.mobile_number = request.data['mobile_number']
+        if 'selected_course' in request.data:
+            selected_course_id = request.data['selected_course']
+            if selected_course_id:
+                from courses.models import Course
+                try:
+                    user.selected_course = Course.objects.get(id=selected_course_id)
+                except Course.DoesNotExist:
+                    return Response({'error': 'Selected course does not exist.'}, status=400)
+            else:
+                user.selected_course = None
         
         user.save()
 
@@ -289,6 +299,48 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         return super().destroy(request, *args, **kwargs)
+
+
+class UserSuspendView(APIView):
+    permission_classes = [IsSuperUser]
+
+    def post(self, request, pk):
+        try:
+            user = User.objects.get(pk=pk)
+            user.is_active = False
+            user.save()
+            return Response({'status': 'suspended', 'message': f'User {user.email} suspended successfully.'})
+        except User.DoesNotExist:
+            return Response({'error': 'User not found.'}, status=404)
+
+
+class UserActivateView(APIView):
+    permission_classes = [IsSuperUser]
+
+    def post(self, request, pk):
+        try:
+            user = User.objects.get(pk=pk)
+            user.is_active = True
+            user.save()
+            return Response({'status': 'activated', 'message': f'User {user.email} activated successfully.'})
+        except User.DoesNotExist:
+            return Response({'error': 'User not found.'}, status=404)
+
+
+class UserResetPasswordView(APIView):
+    permission_classes = [IsSuperUser]
+
+    def post(self, request, pk):
+        new_password = request.data.get('password')
+        if not new_password:
+            return Response({'error': 'New password is required.'}, status=400)
+        try:
+            user = User.objects.get(pk=pk)
+            user.set_password(new_password)
+            user.save()
+            return Response({'message': f'Password for {user.email} reset successfully.'})
+        except User.DoesNotExist:
+            return Response({'error': 'User not found.'}, status=404)
 
 
 class GrantAdminView(APIView):

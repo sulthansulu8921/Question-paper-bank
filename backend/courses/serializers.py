@@ -9,6 +9,7 @@ class CategorySerializer(serializers.ModelSerializer):
 class SubjectSerializer(serializers.ModelSerializer):
     course_name = serializers.CharField(source='course.name', read_only=True)
     level_name = serializers.CharField(source='level.name', read_only=True)
+    qualification_name = serializers.CharField(source='course.category.name', read_only=True)
 
     class Meta:
         model = Subject
@@ -18,7 +19,7 @@ class LevelSerializer(serializers.ModelSerializer):
     subjects = SubjectSerializer(many=True, read_only=True)
     class Meta:
         model = Level
-        fields = ['id', 'name', 'slug', 'description', 'order', 'subjects']
+        fields = ['id', 'course', 'name', 'slug', 'description', 'order', 'subjects']
 
 class CourseSerializer(serializers.ModelSerializer):
     category_name = serializers.ReadOnlyField(source='category.name')
@@ -31,7 +32,8 @@ class CourseSerializer(serializers.ModelSerializer):
             'id', 'name', 'slug', 'short_description', 'description',
             'thumbnail', 'banner', 'icon', 'color',
             'is_premium', 'monthly_price', 'yearly_price', 'is_active',
-            'seo_title', 'seo_description', 'category_name', 'levels',
+            'is_archived', 'duration', 'validity_days',
+            'seo_title', 'seo_description', 'category', 'category_name', 'levels',
             'subjects_count',
         ]
 

@@ -1,9 +1,13 @@
 from rest_framework import viewsets, permissions
 from rest_framework.pagination import PageNumberPagination
-from materials.models import QuestionPaper, AnswerPaper, Notes, Video, MCQ, Bookmark, SubjectiveQuestion, Feedback
+from materials.models import (
+    QuestionPaper, AnswerPaper, Notes, Video, MCQ, Bookmark, SubjectiveQuestion, Feedback,
+    AssessmentSession, AssessmentAnswer, MockTestTemplate
+)
 from materials.serializers import (
     QuestionPaperSerializer, AnswerPaperSerializer, NotesSerializer, 
-    VideoSerializer, MCQSerializer, BookmarkSerializer, SubjectiveQuestionSerializer, FeedbackSerializer
+    VideoSerializer, MCQSerializer, BookmarkSerializer, SubjectiveQuestionSerializer, FeedbackSerializer,
+    AssessmentSessionSerializer, AssessmentAnswerSerializer, MockTestTemplateSerializer
 )
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -62,6 +66,10 @@ class SubjectiveQuestionViewSet(viewsets.ModelViewSet):
         paper_id = params.get('paper_id')
         if paper_id:
             queryset = queryset.filter(icai_topic__chapter__paper_id=paper_id)
+
+        level_id = params.get('level_id')
+        if level_id:
+            queryset = queryset.filter(icai_topic__chapter__paper__level_id=level_id)
 
         status = params.get('status')
         if status:
@@ -171,6 +179,9 @@ class SubjectiveQuestionViewSet(viewsets.ModelViewSet):
             'has_full_access': has_full_access,
         })
 
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
 class QuestionPaperViewSet(viewsets.ModelViewSet):
     queryset = QuestionPaper.objects.all()
     serializer_class = QuestionPaperSerializer
@@ -230,12 +241,15 @@ class AdminDashboardStatsView(APIView):
         from django.utils import timezone
         from subscriptions.models import Payment, UserSubscription
         from authentication.models import User
+        from courses.models import Course, Subject
+        from materials.models import MaterialDownload, Notes, Video, QuestionPaper, SubjectiveQuestion, MCQ, Feedback
 
         # Calculate revenue & active subscriptions
         revenue_data = Payment.objects.filter(status='SUCCESS').aggregate(total=Sum('amount'))
         total_revenue = float(revenue_data['total'] or 0.0)
         
         active_subs_count = UserSubscription.objects.filter(is_active=True, end_date__gte=timezone.now()).count()
+        expired_subs_count = UserSubscription.objects.filter(is_active=True, end_date__lt=timezone.now()).count()
         
         # Unpaid student users (no active subscription)
         active_sub_user_ids = UserSubscription.objects.filter(
@@ -278,53 +292,90 @@ class AdminDashboardStatsView(APIView):
                 "users": users
             })
 
-        stats = {
-            "total_questions": SubjectiveQuestion.objects.count(),
-            "total_subjects": Subject.objects.count(),
-            "mcq_questions": MCQ.objects.count(),
-            "theory_questions": SubjectiveQuestion.objects.count(),
-            "total_users": User.objects.count(),
-            "total_uploads": QuestionPaper.objects.count() + SubjectiveQuestion.objects.count(),
-            "total_revenue": total_revenue,
-            "active_subscriptions": active_subs_count,
-            "unpaid_students": unpaid_students_count,
-            "recent_activity": [],
-            "monthly_charts": monthly_stats
-        }
-
-        # Add recent questions to activity
-        recent_questions = SubjectiveQuestion.objects.order_by('-created_at')[:5]
-        for q in recent_questions:
-            stats["recent_activity"].append({
-                "type": "question",
-                "text": f"New question added for {q.topic.name if q.topic else 'Subject'}",
-                "user": "System",
-                "time": q.created_at
+        # Recent Registrations list
+        recent_registrations = []
+        for u in User.objects.filter(is_staff=False).order_by('-date_joined')[:10]:
+            recent_registrations.append({
+                "id": u.id,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "email": u.email,
+                "mobile_number": u.mobile_number,
+                "date_joined": u.date_joined
             })
 
-        # Add recent feedbacks to activity
-        recent_feedbacks = Feedback.objects.order_by('-created_at')[:5]
-        for f in recent_feedbacks:
-            stats["recent_activity"].append({
+        # Recent Payments list
+        recent_payments = []
+        for p in Payment.objects.order_by('-created_at')[:10]:
+            recent_payments.append({
+                "id": p.id,
+                "user_email": p.user.email,
+                "amount": float(p.amount),
+                "transaction_id": p.transaction_id,
+                "status": p.status,
+                "created_at": p.created_at
+            })
+
+        # Course-wise Analytics
+        course_wise_analytics = []
+        for c in Course.objects.all():
+            active_count = UserSubscription.objects.filter(
+                plan__course_specific=c,
+                is_active=True,
+                end_date__gte=timezone.now()
+            ).count()
+            course_wise_analytics.append({
+                "course_name": c.name,
+                "active_students": active_count
+            })
+
+        # Student Activity Logs
+        activity_logs = []
+        for dl in MaterialDownload.objects.order_by('-downloaded_at')[:10]:
+            activity_logs.append({
+                "type": "download",
+                "text": f"Downloaded {dl.material_title} ({dl.material_type})",
+                "user": dl.user.email,
+                "time": dl.downloaded_at
+            })
+        for f in Feedback.objects.order_by('-created_at')[:10]:
+            activity_logs.append({
                 "type": "feedback",
-                "text": f"New feedback: {f.message[:50]}...",
+                "text": f.message,
                 "user": f.user.email,
                 "time": f.created_at
             })
-
-        # Add recent user signups to activity
-        recent_users = User.objects.order_by('-date_joined')[:5]
-        for u in recent_users:
-            stats["recent_activity"].append({
+        for u in User.objects.filter(is_staff=False).order_by('-date_joined')[:10]:
+            activity_logs.append({
                 "type": "user",
-                "text": f"New user registered: {u.first_name} {u.last_name}",
+                "text": f"Registered new student account",
                 "user": u.email,
                 "time": u.date_joined
             })
+        activity_logs.sort(key=lambda x: x["time"], reverse=True)
+        activity_logs = activity_logs[:15]
 
-        # Sort combined activity by time
-        stats["recent_activity"].sort(key=lambda x: x["time"], reverse=True)
-        stats["recent_activity"] = stats["recent_activity"][:10]
+        stats = {
+            "total_questions": SubjectiveQuestion.objects.count(),
+            "total_subjects": Subject.objects.count(),
+            "total_users": User.objects.count(),
+            "total_students": User.objects.filter(is_staff=False).count(),
+            "total_uploads": QuestionPaper.objects.count() + SubjectiveQuestion.objects.count(),
+            "total_revenue": total_revenue,
+            "active_subscriptions": active_subs_count,
+            "expired_subscriptions": expired_subs_count,
+            "unpaid_students": unpaid_students_count,
+            "total_courses": Course.objects.count(),
+            "total_question_papers": QuestionPaper.objects.count(),
+            "total_notes": Notes.objects.count(),
+            "total_videos": Video.objects.count(),
+            "total_downloads": MaterialDownload.objects.count(),
+            "recent_registrations": recent_registrations,
+            "recent_payments": recent_payments,
+            "course_wise_analytics": course_wise_analytics,
+            "recent_activity": activity_logs,
+            "monthly_charts": monthly_stats
+        }
 
         return Response(stats)
 
@@ -368,9 +419,9 @@ class ExportQuestionsExcelView(APIView):
             "Question Type", "Marks", "Difficulty", "Status",
             "Question Text", "Correct Answer",
             "Subject", "Topic", "ICAI Path",
-            "Tags", "Is Important", "Created At"
+            "Tags", "Is Important", "Added By", "Created At"
         ]
-        col_widths = [6, 10, 6, 8, 8, 8, 12, 7, 10, 10, 60, 60, 20, 20, 30, 20, 12, 18]
+        col_widths = [6, 10, 6, 8, 8, 8, 12, 7, 10, 10, 60, 60, 20, 20, 30, 20, 12, 20, 18]
 
         for col_idx, (header, width) in enumerate(zip(headers, col_widths), start=1):
             cell = ws.cell(row=1, column=col_idx, value=header)
@@ -386,6 +437,14 @@ class ExportQuestionsExcelView(APIView):
         # ── Data rows ──
         for row_idx, q in enumerate(questions, start=2):
             fill = alt_fill if row_idx % 2 == 0 else PatternFill()
+            
+            created_by_str = "System"
+            if q.created_by:
+                if q.created_by.first_name or q.created_by.last_name:
+                    created_by_str = f"{q.created_by.first_name} {q.created_by.last_name}".strip()
+                else:
+                    created_by_str = q.created_by.email or q.created_by.username
+
             values = [
                 q.id,
                 q.source,
@@ -404,6 +463,7 @@ class ExportQuestionsExcelView(APIView):
                 q.icai_path    if q.icai_topic_id else "",
                 q.tags or "",
                 "Yes" if q.is_important else "No",
+                created_by_str,
                 q.created_at.strftime("%Y-%m-%d %H:%M") if q.created_at else "",
             ]
             for col_idx, value in enumerate(values, start=1):
@@ -503,6 +563,7 @@ class ImportQuestionsExcelView(APIView):
                     is_important   = val('is_important', 'no').lower() in ('yes', 'true', '1'),
                     status         = 'ACTIVE',
                     subject        = subject,
+                    created_by     = request.user,
                 )
                 created.append(q.id)
             except Exception as e:
@@ -1506,4 +1567,716 @@ class GenericFileUploadView(APIView):
             'file_path': file_path,
             'name': uploaded_file.name,
         }, status=200)
+
+
+from rest_framework.decorators import action
+from materials.models import VideoProgress, MaterialDownload, LiveClass, Notification
+from materials.serializers import VideoProgressSerializer, MaterialDownloadSerializer, LiveClassSerializer, NotificationSerializer
+
+class VideoProgressViewSet(viewsets.ModelViewSet):
+    serializer_class = VideoProgressSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return VideoProgress.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+    @action(detail=False, methods=['post'], url_path='update')
+    def update_progress(self, request):
+        video_id = request.data.get('video_id')
+        position = request.data.get('position', 0)
+        duration = request.data.get('duration', 0)
+        if not video_id:
+            return Response({'error': 'video_id is required'}, status=400)
+        
+        percent = 0
+        if duration > 0:
+            percent = int((float(position) / float(duration)) * 100)
+            if percent > 100: percent = 100
+
+        is_completed = percent >= 90 # Mark as completed if 90%+ is watched
+
+        progress, created = VideoProgress.objects.update_or_create(
+            user=request.user,
+            video_id=video_id,
+            defaults={
+                'last_position_seconds': int(position),
+                'completion_percentage': percent,
+                'is_completed': is_completed
+            }
+        )
+        return Response(VideoProgressSerializer(progress).data)
+
+
+class MaterialDownloadViewSet(viewsets.ModelViewSet):
+    serializer_class = MaterialDownloadSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.is_staff:
+            return MaterialDownload.objects.all().order_by('-downloaded_at')
+        return MaterialDownload.objects.filter(user=self.request.user).order_by('-downloaded_at')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class LiveClassViewSet(viewsets.ModelViewSet):
+    serializer_class = LiveClassSerializer
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
+
+    def get_queryset(self):
+        course_id = self.request.query_params.get('course_id')
+        qs = LiveClass.objects.all().order_by('scheduled_time')
+        if course_id:
+            qs = qs.filter(course_id=course_id)
+        return qs
+
+
+class NotificationViewSet(viewsets.ModelViewSet):
+    serializer_class = NotificationSerializer
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
+
+    def get_queryset(self):
+        return Notification.objects.all().order_by('-created_at')
+
+
+from rest_framework.decorators import action
+from django.utils import timezone
+import random
+
+class MockTestTemplateViewSet(viewsets.ModelViewSet):
+    queryset = MockTestTemplate.objects.all().prefetch_related('questions')
+    serializer_class = MockTestTemplateSerializer
+    
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
+
+
+class AssessmentSessionViewSet(viewsets.ModelViewSet):
+    serializer_class = AssessmentSessionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        # Staff/admins can see all sessions; students see only their own
+        if user.is_staff:
+            qs = AssessmentSession.objects.all()
+        else:
+            qs = AssessmentSession.objects.filter(user=user)
+        return qs.prefetch_related(
+            'answers', 'answers__question', 'answers__question__options'
+        ).select_related('user')
+
+    def perform_create(self, serializer):
+        pass
+
+    def create(self, request, *args, **kwargs):
+        user = request.user
+        data = request.data
+        
+        mock_template_id = data.get('mock_template_id')
+        selected_questions = []
+        
+        session_type = data.get('session_type', 'PRACTICE')
+        title = data.get('title', 'Practice Session')
+        qualification = data.get('qualification', '')
+        course_level = data.get('course_level', '')
+        subject = data.get('subject', '')
+        chapter = data.get('chapter', '')
+        topic = data.get('topic', '')
+        
+        total_questions = int(data.get('total_questions', 10))
+        difficulty = data.get('difficulty', 'MIXED')
+        mode = data.get('mode', 'LEARNING')
+        
+        if mock_template_id:
+            try:
+                template = MockTestTemplate.objects.get(id=mock_template_id)
+                title = template.title
+                session_type = 'MOCK'
+                qualification = template.qualification
+                course_level = template.course_level
+                difficulty = template.difficulty
+                total_questions = template.total_questions
+                mode = 'CHALLENGE'
+                
+                template_qs = list(template.questions.all())
+                if len(template_qs) > 0:
+                    selected_questions = template_qs
+                else:
+                    # Try 1: Exact match (qualification, level, difficulty)
+                    questions_qs = SubjectiveQuestion.objects.filter(
+                        status__in=['ACTIVE', 'PUBLISHED'],
+                        question_type='MCQ'
+                    )
+                    if qualification:
+                        questions_qs = questions_qs.filter(icai_topic__chapter__paper__level__qualification__iexact=qualification)
+                    if course_level:
+                        questions_qs = questions_qs.filter(icai_topic__chapter__paper__level__name__iexact=course_level)
+                    if difficulty != 'MIXED':
+                        questions_qs = questions_qs.filter(difficulty=difficulty)
+                    questions_list = list(questions_qs)
+                    
+                    # Try 2: Ignore difficulty
+                    if len(questions_list) == 0 and difficulty != 'MIXED':
+                        questions_qs = SubjectiveQuestion.objects.filter(
+                            status__in=['ACTIVE', 'PUBLISHED'],
+                            question_type='MCQ'
+                        )
+                        if qualification:
+                            questions_qs = questions_qs.filter(icai_topic__chapter__paper__level__qualification__iexact=qualification)
+                        if course_level:
+                            questions_qs = questions_qs.filter(icai_topic__chapter__paper__level__name__iexact=course_level)
+                        questions_list = list(questions_qs)
+                        
+                    # Try 3: Ignore level (match qualification only)
+                    if len(questions_list) == 0:
+                        questions_qs = SubjectiveQuestion.objects.filter(
+                            status__in=['ACTIVE', 'PUBLISHED'],
+                            question_type='MCQ'
+                        )
+                        if qualification:
+                            questions_qs = questions_qs.filter(icai_topic__chapter__paper__level__qualification__iexact=qualification)
+                        questions_list = list(questions_qs)
+                        
+                    # Try 4: Ignore qualification (any MCQs)
+                    if len(questions_list) == 0:
+                        questions_list = list(SubjectiveQuestion.objects.filter(
+                            status__in=['ACTIVE', 'PUBLISHED'],
+                            question_type='MCQ'
+                        ))
+                        
+                    # Try 5: Any active/published questions (even subjective/theory/normal)
+                    if len(questions_list) == 0:
+                        questions_list = list(SubjectiveQuestion.objects.filter(
+                            status__in=['ACTIVE', 'PUBLISHED']
+                        ))
+                        
+                    if len(questions_list) > 0:
+                        selected_questions = random.sample(questions_list, min(total_questions, len(questions_list)))
+            except MockTestTemplate.DoesNotExist:
+                return Response({"error": "Mock template not found."}, status=400)
+                
+        if not selected_questions:
+            # Build query to select questions
+            questions_qs = SubjectiveQuestion.objects.filter(status__in=['ACTIVE', 'PUBLISHED'])
+            
+            # Apply hierarchical filters if provided
+            if qualification:
+                questions_qs = questions_qs.filter(icai_topic__chapter__paper__level__qualification__iexact=qualification)
+            if course_level:
+                questions_qs = questions_qs.filter(icai_topic__chapter__paper__level__name__iexact=course_level)
+            if subject:
+                questions_qs = questions_qs.filter(icai_topic__chapter__paper__name__iexact=subject)
+            if chapter:
+                questions_qs = questions_qs.filter(icai_topic__chapter__name__iexact=chapter)
+            if topic:
+                questions_qs = questions_qs.filter(icai_topic__name__iexact=topic)
+                
+            # Apply difficulty filter
+            if difficulty != 'MIXED':
+                questions_qs = questions_qs.filter(difficulty=difficulty)
+                
+            # Prioritize MCQ
+            questions_qs = questions_qs.filter(question_type='MCQ')
+            
+            questions_list = list(questions_qs)
+            
+            # Fallbacks for manual settings
+            if len(questions_list) == 0:
+                # Try 1: Ignore difficulty
+                questions_qs = SubjectiveQuestion.objects.filter(
+                    status__in=['ACTIVE', 'PUBLISHED'],
+                    question_type='MCQ'
+                )
+                if qualification:
+                    questions_qs = questions_qs.filter(icai_topic__chapter__paper__level__qualification__iexact=qualification)
+                if course_level:
+                    questions_qs = questions_qs.filter(icai_topic__chapter__paper__level__name__iexact=course_level)
+                if subject:
+                    questions_qs = questions_qs.filter(icai_topic__chapter__paper__name__iexact=subject)
+                questions_list = list(questions_qs)
+                
+            if len(questions_list) == 0:
+                # Try 2: Ignore level (qualification only)
+                questions_qs = SubjectiveQuestion.objects.filter(
+                    status__in=['ACTIVE', 'PUBLISHED'],
+                    question_type='MCQ'
+                )
+                if qualification:
+                    questions_qs = questions_qs.filter(icai_topic__chapter__paper__level__qualification__iexact=qualification)
+                questions_list = list(questions_qs)
+
+            if len(questions_list) == 0:
+                # Try 3: Ignore qualification (any MCQs)
+                questions_list = list(SubjectiveQuestion.objects.filter(
+                    status__in=['ACTIVE', 'PUBLISHED'],
+                    question_type='MCQ'
+                ))
+                
+            if len(questions_list) == 0:
+                # Try 4: Any active/published questions (even subjective/theory/normal)
+                questions_list = list(SubjectiveQuestion.objects.filter(
+                    status__in=['ACTIVE', 'PUBLISHED']
+                ))
+                
+            if len(questions_list) == 0:
+                return Response({"error": "No questions found matching your filter criteria."}, status=400)
+                
+            # Select random subset
+            selected_questions = random.sample(questions_list, min(total_questions, len(questions_list)))
+        
+        # Create session
+        session = AssessmentSession.objects.create(
+            user=user,
+            session_type=session_type,
+            title=title,
+            qualification=qualification,
+            course_level=course_level,
+            subject=subject,
+            chapter=chapter,
+            topic=topic,
+            total_questions=len(selected_questions),
+            difficulty=difficulty,
+            mode=mode
+        )
+        
+        # Create answers
+        for q in selected_questions:
+            AssessmentAnswer.objects.create(
+                session=session,
+                question=q
+            )
+            
+        serializer = self.get_serializer(session)
+        return Response(serializer.data, status=201)
+
+    @action(detail=True, methods=['POST'])
+    def submit(self, request, pk=None):
+        session = self.get_object()
+        if session.is_completed:
+            return Response({"error": "Session is already completed."}, status=400)
+            
+        data = request.data
+        answers_data = data.get('answers', [])
+        duration_seconds = int(data.get('duration_seconds', 0))
+        
+        total_score = 0
+        total_max_score = 0
+        correct_count = 0
+        
+        # Map of answers provided by client: {question_id: {selected_option_id, typed_answer}}
+        answers_map = {int(ans['question_id']): ans for ans in answers_data if 'question_id' in ans}
+        
+        session_answers = session.answers.all().select_related('question')
+        for sa in session_answers:
+            q = sa.question
+            total_max_score += q.marks
+            
+            client_ans = answers_map.get(q.id)
+            if client_ans:
+                selected_opt_id = client_ans.get('selected_option_id')
+                typed_answer = client_ans.get('typed_answer', '')
+                
+                sa.typed_answer = typed_answer
+                if selected_opt_id:
+                    sa.selected_option_id = selected_opt_id
+                    
+                # Evaluate MCQ
+                if q.question_type == 'MCQ' and selected_opt_id:
+                    # check correctness
+                    correct_opt = q.options.filter(is_correct=True).first()
+                    if correct_opt and correct_opt.id == int(selected_opt_id):
+                        sa.is_correct = True
+                        sa.score_obtained = q.marks
+                        correct_count += 1
+                    else:
+                        sa.is_correct = False
+                        sa.score_obtained = 0
+                else:
+                    # For subjective/theory, auto-mark correct if it matches correct_answer or non-empty
+                    if typed_answer.strip():
+                        sa.is_correct = True
+                        sa.score_obtained = q.marks
+                        correct_count += 1
+                    else:
+                        sa.is_correct = False
+                        sa.score_obtained = 0
+            else:
+                sa.is_correct = False
+                sa.score_obtained = 0
+                
+            sa.save()
+            total_score += sa.score_obtained
+            
+        # Update session
+        session.score = total_score
+        session.max_score = total_max_score
+        session.accuracy = (correct_count / session.total_questions * 100) if session.total_questions > 0 else 0
+        session.duration_seconds = duration_seconds
+        session.is_completed = True
+        session.completed_at = timezone.now()
+        session.save()
+        
+        # Trigger streak/gamification update
+        try:
+            from gamification.models import UserStats
+            xp_gained = correct_count * 10
+            coins_gained = correct_count
+            
+            stats, _ = UserStats.objects.get_or_create(user=session.user)
+            stats.xp_points += xp_gained
+            stats.coins += coins_gained
+            stats.save()
+        except Exception:
+            pass
+            
+        serializer = self.get_serializer(session)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['GET'], url_path='weaknesses')
+    def weaknesses(self, request):
+        user = request.user
+        completed_sessions = AssessmentSession.objects.filter(user=user, is_completed=True)
+        
+        # Aggregate performance by topic/chapter
+        topic_stats = {}
+        for session in completed_sessions:
+            sa_qs = session.answers.all().select_related('question')
+            for sa in sa_qs:
+                q = sa.question
+                topic_name = q.icai_topic.name if q.icai_topic else (session.topic or 'General')
+                chapter_name = q.icai_topic.chapter.name if (q.icai_topic and q.icai_topic.chapter) else (session.chapter or 'General')
+                subject_name = q.icai_topic.chapter.paper.name if (q.icai_topic and q.icai_topic.chapter and q.icai_topic.chapter.paper) else (session.subject or 'General')
+                level_name = q.icai_topic.chapter.paper.level.name if (q.icai_topic and q.icai_topic.chapter and q.icai_topic.chapter.paper and q.icai_topic.chapter.paper.level) else (session.course_level or 'General')
+                qual_name = q.icai_topic.chapter.paper.level.qualification if (q.icai_topic and q.icai_topic.chapter and q.icai_topic.chapter.paper and q.icai_topic.chapter.paper.level) else (session.qualification or 'General')
+                
+                key = (qual_name, level_name, subject_name, chapter_name, topic_name)
+                if key not in topic_stats:
+                    topic_stats[key] = {'attempted': 0, 'correct': 0}
+                
+                topic_stats[key]['attempted'] += 1
+                if sa.is_correct:
+                    topic_stats[key]['correct'] += 1
+                    
+        weaknesses_list = []
+        for key, stats in topic_stats.items():
+            attempted = stats['attempted']
+            correct = stats['correct']
+            accuracy = (correct / attempted * 100) if attempted > 0 else 0
+            
+            # If accuracy is below 60%, it's classified as a weakness
+            if accuracy < 60:
+                qual_name, level_name, subject_name, chapter_name, topic_name = key
+                recommended_questions = 40 if accuracy < 35 else 25
+                weaknesses_list.append({
+                    'qualification': qual_name,
+                    'course_level': level_name,
+                    'subject': subject_name,
+                    'chapter': chapter_name,
+                    'topic': topic_name,
+                    'accuracy': round(accuracy, 1),
+                    'attempted': attempted,
+                    'recommended_questions': recommended_questions
+                })
+                
+        weaknesses_list.sort(key=lambda x: x['accuracy'])
+        
+        return Response({
+            "weaknesses": weaknesses_list
+        })
+
+    @action(detail=False, methods=['POST'], url_path='generate-planner')
+    def generate_planner(self, request):
+        user = request.user
+        data = request.data
+        
+        target_exam = data.get('target_exam', 'NEET')
+        exam_date = data.get('exam_date', '')
+        study_hours = float(data.get('study_hours', 4))
+        
+        # Calculate days remaining
+        days_remaining = 30
+        if exam_date:
+            try:
+                from datetime import datetime
+                delta = datetime.strptime(exam_date, "%Y-%m-%d").date() - datetime.now().date()
+                days_remaining = max(0, delta.days)
+            except Exception:
+                pass
+                
+        # 1. Fetch user's weaknesses
+        completed_sessions = AssessmentSession.objects.filter(user=user, is_completed=True)
+        topic_stats = {}
+        for session in completed_sessions:
+            sa_qs = session.answers.all().select_related('question')
+            for sa in sa_qs:
+                q = sa.question
+                topic_name = q.icai_topic.name if q.icai_topic else (session.topic or 'General')
+                chapter_name = q.icai_topic.chapter.name if (q.icai_topic and q.icai_topic.chapter) else (session.chapter or 'General')
+                subject_name = q.icai_topic.chapter.paper.name if (q.icai_topic and q.icai_topic.chapter and q.icai_topic.chapter.paper) else (session.subject or 'General')
+                level_name = q.icai_topic.chapter.paper.level.name if (q.icai_topic and q.icai_topic.chapter and q.icai_topic.chapter.paper and q.icai_topic.chapter.paper.level) else (session.course_level or 'General')
+                qual_name = q.icai_topic.chapter.paper.level.qualification if (q.icai_topic and q.icai_topic.chapter and q.icai_topic.chapter.paper and q.icai_topic.chapter.paper.level) else (session.qualification or 'General')
+                
+                key = (qual_name, level_name, subject_name, chapter_name, topic_name)
+                if key not in topic_stats:
+                    topic_stats[key] = {'attempted': 0, 'correct': 0}
+                
+                topic_stats[key]['attempted'] += 1
+                if sa.is_correct:
+                    topic_stats[key]['correct'] += 1
+                    
+        weaknesses_list = []
+        for key, stats in topic_stats.items():
+            attempted = stats['attempted']
+            correct = stats['correct']
+            accuracy = (correct / attempted * 100) if attempted > 0 else 0
+            if accuracy < 60:
+                qual_name, level_name, subject_name, chapter_name, topic_name = key
+                recommended_questions = 40 if accuracy < 35 else 25
+                weaknesses_list.append({
+                    'qualification': qual_name,
+                    'course_level': level_name,
+                    'subject': subject_name,
+                    'chapter': chapter_name,
+                    'topic': topic_name,
+                    'accuracy': round(accuracy, 1),
+                    'attempted': attempted,
+                    'recommended_questions': recommended_questions
+                })
+                
+        weaknesses_list.sort(key=lambda x: x['accuracy'])
+        
+        # 2. Build study plan using Gemini API or Fallback
+        gemini_api_key = os.environ.get('GEMINI_API_KEY')
+        plan = None
+        
+        if gemini_api_key:
+            # Construct description of weaknesses for the prompt
+            weakness_info = ""
+            if weaknesses_list:
+                weakness_info = "Here are the student's top weaknesses (where their accuracy is below 60%):\n"
+                for w in weaknesses_list[:5]:
+                    weakness_info += f"- {w['topic']} in {w['subject']} ({w['chapter']}) under level {w['course_level']} ({w['qualification']}): accuracy {w['accuracy']}%\n"
+            else:
+                weakness_info = "The student has no recorded weaknesses yet (perfect accuracy or no sessions completed)."
+                
+            system_instruction = (
+                "You are 'qubook.in AI Study Planner', an advanced, professional AI scheduling engine.\n"
+                "Your task is to generate a highly personalized 7-day study plan for a student preparing for an exam.\n"
+                "Based on the input parameters (target exam, days remaining, daily study hours budget, and weakness profile), "
+                "generate a JSON array containing exactly 7 objects, representing Day 1 to Day 7.\n"
+                "Each object must have the following keys:\n"
+                "- 'day': String (e.g., 'Day 1', 'Day 2', etc.)\n"
+                "- 'title': String (e.g., 'Targeted Concept Review', 'MCQ Challenge', etc.)\n"
+                "- 'duration': String (e.g., '2.5 hrs')\n"
+                "- 'focus': String (the subject or topic name they should focus on)\n"
+                "- 'description': String (actionable guidance on what to review or practice)\n"
+                "- 'type': String (must be one of: 'LEARN', 'PRACTICE', 'MOCK', 'ANALYZE')\n"
+                "- 'weaknessData': Object or null. If this task is a PRACTICE task focusing on one of the student's weaknesses, fill this with the weakness object (having keys: qualification, course_level, subject, chapter, topic). Otherwise set it to null.\n"
+                "Your output must be valid JSON only. Do not wrap in markdown tags."
+            )
+            
+            prompt = f"""
+Student is preparing for the '{target_exam}' exam which is in {days_remaining} days.
+Daily study goal: {study_hours} hours.
+{weakness_info}
+
+Please generate a highly customized 7-day study plan matching the schema.
+"""
+            
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_api_key}"
+            payload = {
+                "contents": [{
+                    "parts": [{"text": system_instruction + "\n\nUser request:\n" + prompt}]
+                }],
+                "generationConfig": {
+                    "responseMimeType": "application/json"
+                }
+            }
+            
+            try:
+                import requests
+                response = requests.post(url, json=payload, timeout=15)
+                if response.status_code == 200:
+                    res_data = response.json()
+                    raw_text = res_data['candidates'][0]['content']['parts'][0]['text']
+                    import json
+                    plan = json.loads(raw_text)
+            except Exception as e:
+                # Log or ignore error, fallback will handle it
+                pass
+                
+        # 3. Fallback generator if Gemini is missing or failed
+        if not plan or not isinstance(plan, list):
+            plan = []
+            for i in range(1, 8):
+                day_name = f"Day {i}"
+                if i == 1:
+                    w = weaknesses_list[0] if len(weaknesses_list) > 0 else None
+                    plan.append({
+                        "day": day_name,
+                        "title": "Core Concept & Theory Review",
+                        "duration": f"{round(study_hours * 0.6, 1)} hrs",
+                        "focus": w['topic'] if w else "Syllabus foundations",
+                        "description": f"Deep dive into notes for {w['topic'] if w else 'high-weightage areas'} in {w['subject'] if w else 'your course'}. Use Learn mode to check key formulas.",
+                        "type": "LEARN",
+                        "weaknessData": w
+                    })
+                elif i == 2:
+                    w = weaknesses_list[0] if len(weaknesses_list) > 0 else None
+                    plan.append({
+                        "day": day_name,
+                        "title": "Targeted Practice Session",
+                        "duration": f"{round(study_hours * 0.8, 1)} hrs",
+                        "focus": w['topic'] if w else "General practice",
+                        "description": f"Take a 20-question Practice Session on {w['topic'] if w else 'this area'}. Target >75% accuracy.",
+                        "type": "PRACTICE",
+                        "weaknessData": w
+                    })
+                elif i == 3:
+                    w = weaknesses_list[1] if len(weaknesses_list) > 1 else (weaknesses_list[0] if len(weaknesses_list) > 0 else None)
+                    plan.append({
+                        "day": day_name,
+                        "title": "Secondary Weakness Overhaul",
+                        "duration": f"{round(study_hours * 0.5, 1)} hrs",
+                        "focus": w['topic'] if w else "Secondary concepts",
+                        "description": f"Read explanation guides for {w['topic'] if w else 'secondary key chapters'}. Focus on related concepts.",
+                        "type": "LEARN",
+                        "weaknessData": w
+                    })
+                elif i == 4:
+                    w = weaknesses_list[1] if len(weaknesses_list) > 1 else (weaknesses_list[0] if len(weaknesses_list) > 0 else None)
+                    plan.append({
+                        "day": day_name,
+                        "title": "Subjective Practice Check",
+                        "duration": f"{round(study_hours * 0.7, 1)} hrs",
+                        "focus": w['topic'] if w else "Formulas & Definitions",
+                        "description": f"Complete a practice set of 15 questions for {w['topic'] if w else 'topics'}. Review incorrect options.",
+                        "type": "PRACTICE",
+                        "weaknessData": w
+                    })
+                elif i == 5:
+                    plan.append({
+                        "day": day_name,
+                        "title": "High-Fidelity Challenge Simulation",
+                        "duration": f"{round(study_hours * 1.0, 1)} hrs",
+                        "focus": "Full Subject Mock",
+                        "description": "Start a Custom Mock Test with timer enabled. Simulate actual test environment.",
+                        "type": "MOCK",
+                        "weaknessData": None
+                    })
+                elif i == 6:
+                    plan.append({
+                        "day": day_name,
+                        "title": "Weak Areas Re-evaluation",
+                        "duration": f"{round(study_hours * 0.4, 1)} hrs",
+                        "focus": "Weaknesses Review",
+                        "description": "Analyze mock scores. Go over bookmark saved questions from challenge mode.",
+                        "type": "ANALYZE",
+                        "weaknessData": None
+                    })
+                elif i == 7:
+                    plan.append({
+                        "day": day_name,
+                        "title": "Revision & Milestone Mock",
+                        "duration": f"{round(study_hours * 0.9, 1)} hrs",
+                        "focus": "Full Course Milestone",
+                        "description": "Take a standard 50-question mock test to measure progress benchmark.",
+                        "type": "MOCK",
+                        "weaknessData": None
+                    })
+                    
+        return Response({
+            "plan": plan,
+            "real_time_ai": gemini_api_key is not None
+        })
+
+    @action(detail=False, methods=['GET'], url_path='platform-stats', permission_classes=[permissions.IsAuthenticated])
+    def platform_stats(self, request):
+        """Admin-only endpoint: platform-wide assessment analytics."""
+        if not request.user.is_staff:
+            return Response({'error': 'Admin access required.'}, status=403)
+
+        from django.db.models import Avg, Count, Sum
+
+        all_completed = AssessmentSession.objects.filter(is_completed=True)
+        total_sessions = all_completed.count()
+        total_students = all_completed.values('user').distinct().count()
+        avg_accuracy = all_completed.aggregate(avg=Avg('accuracy'))['avg'] or 0
+
+        # Sessions by type
+        practice_count = all_completed.filter(session_type='PRACTICE').count()
+        mock_count = all_completed.filter(session_type='MOCK').count()
+
+        # Sessions per day (last 30 days)
+        from django.utils import timezone as tz
+        from datetime import timedelta
+        from django.db.models.functions import TruncDate
+        thirty_days_ago = tz.now() - timedelta(days=30)
+        sessions_per_day = (
+            all_completed
+            .filter(created_at__gte=thirty_days_ago)
+            .annotate(date=TruncDate('created_at'))
+            .values('date')
+            .annotate(count=Count('id'))
+            .order_by('date')
+        )
+
+        # Chapter-wise weakness (avg accuracy per chapter across all students)
+        chapter_stats = {}
+        all_answers = AssessmentAnswer.objects.filter(
+            session__is_completed=True
+        ).select_related('question__icai_topic__chapter')
+
+        for ans in all_answers:
+            q = ans.question
+            chapter = None
+            if q.icai_topic and q.icai_topic.chapter:
+                chapter = q.icai_topic.chapter.name
+            if not chapter:
+                chapter = 'Uncategorized'
+            if chapter not in chapter_stats:
+                chapter_stats[chapter] = {'attempted': 0, 'correct': 0}
+            chapter_stats[chapter]['attempted'] += 1
+            if ans.is_correct:
+                chapter_stats[chapter]['correct'] += 1
+
+        chapter_list = []
+        for ch, s in chapter_stats.items():
+            acc = round((s['correct'] / s['attempted'] * 100), 1) if s['attempted'] > 0 else 0
+            chapter_list.append({'chapter': ch, 'accuracy': acc, 'attempted': s['attempted']})
+        chapter_list.sort(key=lambda x: x['accuracy'])
+
+        # Top students by accuracy
+        top_students = (
+            all_completed
+            .values('user__email', 'user__first_name', 'user__last_name')
+            .annotate(avg_acc=Avg('accuracy'), total=Count('id'))
+            .order_by('-avg_acc')[:10]
+        )
+
+        return Response({
+            'total_sessions': total_sessions,
+            'total_students': total_students,
+            'avg_accuracy': round(avg_accuracy, 1),
+            'practice_count': practice_count,
+            'mock_count': mock_count,
+            'sessions_per_day': list(sessions_per_day),
+            'chapter_weakness': chapter_list[:20],
+            'top_students': list(top_students),
+        })
 

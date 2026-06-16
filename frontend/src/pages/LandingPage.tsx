@@ -274,7 +274,7 @@ export default function LandingPage() {
                             <div className="text-3xl font-black mb-6">qubook.in</div>
                             <p className="text-white/60 text-sm leading-relaxed mb-8">Empowering students across India with premium learning resources, suggested answers, and handwritten notes.</p>
                             <div className="flex gap-4">
-                                <a href="https://www.instagram.com/p/DYrVIdHEqWf/?igsh=MTBiNGphbHV3bGNneA==" target="_blank" rel="noopener noreferrer" className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center hover:bg-[#E1306C] hover:text-white transition-colors text-white/70" aria-label="Instagram">
+                                <a href="https://www.instagram.com/qubook.in?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==" target="_blank" rel="noopener noreferrer" className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center hover:bg-[#E1306C] hover:text-white transition-colors text-white/70" aria-label="Instagram">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                         <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
                                         <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />

@@ -153,7 +153,7 @@
 }
 
 /* ── Mobile Topbar ── */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
     .menu-toggle-btn {
         display: flex;
     }

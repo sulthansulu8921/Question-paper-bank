@@ -25,6 +25,8 @@ const AdminPaperManager = () => {
     }>({ open: false, title: '', message: '', onConfirm: () => {} });
     const [formData, setFormData] = useState(emptyForm);
     const [showUploadPdf, setShowUploadPdf] = useState(false);
+    const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+    const [selectedCourseId, setSelectedCourseId] = useState<string>('');
 
     const { data: papers = [], isLoading } = useQuery({
         queryKey: ['admin-papers'],
@@ -34,6 +36,22 @@ const AdminPaperManager = () => {
     const { data: subjects = [] } = useQuery({
         queryKey: ['admin-subjects-tiny'],
         queryFn: async () => (await api.get('/courses/subjects/')).data,
+    });
+
+    const { data: categories = [] } = useQuery({
+        queryKey: ['admin-categories'],
+        queryFn: async () => {
+            const res = await api.get('/courses/categories/');
+            return res.data.results || res.data || [];
+        },
+    });
+
+    const { data: courses = [] } = useQuery({
+        queryKey: ['admin-courses'],
+        queryFn: async () => {
+            const res = await api.get('/courses/courses/');
+            return res.data.results || res.data || [];
+        },
     });
 
     const buildPayload = () => ({
@@ -79,23 +97,58 @@ const AdminPaperManager = () => {
         setModalMode(null);
         setEditId(null);
         setFormData(emptyForm);
+        setSelectedCategoryId('');
+        setSelectedCourseId('');
     };
 
     const openAdd = () => {
         setFormData(emptyForm);
+        const firstCat = categories[0]?.id?.toString() || '';
+        setSelectedCategoryId(firstCat);
+        const filteredCourses = courses.filter((c: any) => c.category?.toString() === firstCat);
+        const firstCourse = filteredCourses[0]?.id?.toString() || '';
+        setSelectedCourseId(firstCourse);
+        const filteredSubjects = subjects.filter((s: any) => s.course?.toString() === firstCourse);
+        const firstSubject = filteredSubjects[0]?.id?.toString() || '';
+        setFormData({ ...emptyForm, subject: firstSubject });
         setModalMode('add');
     };
 
     const openEdit = (item: any) => {
+        const subId = item.subject?.toString() || '';
+        const subjectObj = subjects.find((s: any) => s.id?.toString() === subId);
+        const courseId = subjectObj?.course?.toString() || '';
+        const courseObj = courses.find((c: any) => c.id?.toString() === courseId);
+        const categoryId = courseObj?.category?.toString() || '';
+
+        setSelectedCategoryId(categoryId);
+        setSelectedCourseId(courseId);
         setEditId(item.id);
         setFormData({
             title: item.title || '',
             year: item.year?.toString() || '',
             source: item.source || '',
-            subject: item.subject?.toString() || '',
+            subject: subId,
             file_url: item.file_url || '',
         });
         setModalMode('edit');
+    };
+
+    const handleCategoryChange = (catId: string) => {
+        setSelectedCategoryId(catId);
+        const filteredCourses = courses.filter((c: any) => c.category?.toString() === catId);
+        const firstCourse = filteredCourses[0]?.id?.toString() || '';
+        setSelectedCourseId(firstCourse);
+        const filteredSubjects = subjects.filter((s: any) => s.course?.toString() === firstCourse);
+        const firstSubject = filteredSubjects[0]?.id?.toString() || '';
+        setFormData(prev => ({ ...prev, subject: firstSubject }));
+    };
+
+    const handleCourseChange = (courseId: string) => {
+        setSelectedCourseId(courseId);
+        const filteredSubjects = subjects.filter((s: any) => s.course?.toString() === courseId);
+        const firstSubject = filteredSubjects[0]?.id?.toString() || '';
+        setFormData(prev => ({ ...prev, subject: firstSubject }));
     };
 
     const handleSave = () => {
@@ -158,9 +211,10 @@ const AdminPaperManager = () => {
                         <thead>
                             <tr>
                                 <th>Title</th>
+                                <th>Program</th>
+                                <th>Subject</th>
                                 <th>Year</th>
                                 <th>Source</th>
-                                <th>Subject</th>
                                 <th>PDF</th>
                                 <th>Actions</th>
                             </tr>
@@ -168,14 +222,14 @@ const AdminPaperManager = () => {
                         <tbody>
                             {isLoading && (
                                 <tr>
-                                    <td colSpan={6} style={{ textAlign: 'center', padding: '3rem' }}>
+                                    <td colSpan={8} style={{ textAlign: 'center', padding: '3rem' }}>
                                         <Loader2 className="animate-spin" style={{ margin: '0 auto', color: 'var(--color-primary-light)' }} />
                                     </td>
                                 </tr>
                             )}
                             {!isLoading && filtered.length === 0 && (
                                 <tr>
-                                    <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: 'var(--color-text-muted)' }}>
+                                    <td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: 'var(--color-text-muted)' }}>
                                         No papers found. Click &quot;Add Paper&quot; to create one.
                                     </td>
                                 </tr>
@@ -183,9 +237,19 @@ const AdminPaperManager = () => {
                             {filtered.map((item: any) => (
                                 <tr key={item.id}>
                                     <td className="font-bold text-main">{item.title}</td>
+                                    <td>
+                                        <div className="flex flex-col gap-0.5">
+                                            <span className="text-[10px] font-black uppercase text-indigo-500 tracking-wider">
+                                                {item.qualification_name || '—'}
+                                            </span>
+                                            <span className="text-xs text-slate-700 font-bold">
+                                                {item.course_name || '—'}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td className="text-muted">{item.subject_name || '—'}</td>
                                     <td className="text-muted">{item.year || '—'}</td>
                                     <td className="text-muted">{item.source || '—'}</td>
-                                    <td className="text-muted">{item.subject_name || '—'}</td>
                                     <td>
                                         {item.file_url ? (
                                             <a href={item.file_url} target="_blank" rel="noreferrer" className="action-btn" title="Open PDF">
@@ -280,20 +344,58 @@ const AdminPaperManager = () => {
                         />
                     </div>
                 </div>
-                <div className="admin-form-group">
-                    <label>Subject *</label>
-                    <select
-                        className="admin-form-input"
-                        value={formData.subject}
-                        onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                    >
-                        <option value="">Select Subject...</option>
-                        {subjects.map((sub: any) => (
-                            <option key={sub.id} value={sub.id}>
-                                {sub.name}
-                            </option>
-                        ))}
-                    </select>
+                <div className="admin-form-grid-3">
+                    <div className="admin-form-group">
+                        <label>Qualification Stream *</label>
+                        <select
+                            className="admin-form-input"
+                            value={selectedCategoryId}
+                            onChange={(e) => handleCategoryChange(e.target.value)}
+                        >
+                            <option value="">Select Qualification...</option>
+                            {categories.map((cat: any) => (
+                                <option key={cat.id} value={cat.id}>
+                                    {cat.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="admin-form-group">
+                        <label>Course Level *</label>
+                        <select
+                            className="admin-form-input"
+                            value={selectedCourseId}
+                            onChange={(e) => handleCourseChange(e.target.value)}
+                            disabled={!selectedCategoryId}
+                        >
+                            <option value="">Select Course Level...</option>
+                            {courses
+                                .filter((c: any) => c.category?.toString() === selectedCategoryId?.toString())
+                                .map((c: any) => (
+                                    <option key={c.id} value={c.id}>
+                                        {c.name}
+                                    </option>
+                                ))}
+                        </select>
+                    </div>
+                    <div className="admin-form-group">
+                        <label>Subject *</label>
+                        <select
+                            className="admin-form-input"
+                            value={formData.subject}
+                            onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                            disabled={!selectedCourseId}
+                        >
+                            <option value="">Select Subject...</option>
+                            {subjects
+                                .filter((s: any) => s.course?.toString() === selectedCourseId?.toString())
+                                .map((sub: any) => (
+                                    <option key={sub.id} value={sub.id}>
+                                        {sub.name}
+                                    </option>
+                                ))}
+                        </select>
+                    </div>
                 </div>
                 <div className="admin-form-group">
                     <label>PDF Document</label>

@@ -270,3 +270,157 @@ class SubscriptionPermissionTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
+class CourseRestrictedCouponAndGstTests(APITestCase):
+    def setUp(self):
+        from courses.models import Course
+        self.superuser = User.objects.create_superuser(
+            username='admin_test',
+            email='admin@example.com',
+            password='password123'
+        )
+        self.student = User.objects.create_user(
+            username='student_test',
+            email='student@example.com',
+            password='password123'
+        )
+        # Create courses
+        self.course_intermediate = Course.objects.create(name="CA Intermediate", description="Intermediate Course")
+        self.course_final = Course.objects.create(name="CA Final", description="Final Course")
+        
+        # Create Subscription Plans
+        self.plan_intermediate = SubscriptionPlan.objects.create(
+            name='Intermediate Plan',
+            price=100.00,
+            duration_days=30,
+            billing_cycle='MONTHLY',
+            course_specific=self.course_intermediate
+        )
+        self.plan_final = SubscriptionPlan.objects.create(
+            name='Final Plan',
+            price=200.00,
+            duration_days=30,
+            billing_cycle='MONTHLY',
+            course_specific=self.course_final
+        )
+        
+        # Create restricted coupon
+        self.restricted_coupon = Coupon.objects.create(
+            code='INTERONLY',
+            discount_percent=50,
+            restricted_course=self.course_intermediate,
+            is_active=True
+        )
+        # Create public/global coupon
+        self.global_coupon = Coupon.objects.create(
+            code='GLOBALALL',
+            discount_percent=10,
+            is_active=True
+        )
+
+    def test_coupon_course_restriction_validation(self):
+        self.client.force_authenticate(user=self.student)
+        
+        # 1. Validation fails if restricted coupon is applied without plan_id
+        url = '/api/subscriptions/coupons/validate/'
+        response = self.client.post(url, {'code': 'INTERONLY'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data['valid'])
+        self.assertIn('restricted', response.data['error'])
+
+        # 2. Validation fails if restricted coupon is applied to an unmatched plan_id (Final plan)
+        response = self.client.post(url, {'code': 'INTERONLY', 'plan_id': self.plan_final.id})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data['valid'])
+        self.assertIn('only valid for subscriptions in the course', response.data['error'])
+
+        # 3. Validation succeeds if restricted coupon is applied to matched plan_id (Intermediate plan)
+        response = self.client.post(url, {'code': 'INTERONLY', 'plan_id': self.plan_intermediate.id})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['valid'])
+        self.assertEqual(response.data['discount_percent'], 50)
+
+        # 4. Validation of global/unrestricted coupon succeeds without plan_id
+        response = self.client.post(url, {'code': 'GLOBALALL'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['valid'])
+
+    def test_coupon_course_restriction_checkout(self):
+        self.client.force_authenticate(user=self.student)
+        url = '/api/subscriptions/my-subscriptions/'
+        
+        # Checkout fails if using unmatched restricted coupon
+        payload = {
+            'plan_id': self.plan_final.id,
+            'coupon_code': 'INTERONLY',
+            'calendar_month': 'january',
+            'year': 2026
+        }
+        response = self.client.post(url, payload)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('only valid for subscriptions in the course', response.data['error'])
+
+        # Checkout succeeds if using matched restricted coupon
+        payload['plan_id'] = self.plan_intermediate.id
+        response = self.client.post(url, payload)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_global_gst_toggle_endpoints_and_checkout_calculation(self):
+        from subscriptions.models import PlatformSetting, Payment
+        # Verify get_gst_status default (defaults to True in models/views if not exists)
+        self.client.force_authenticate(user=self.student)
+        url_status = '/api/subscriptions/settings/get_gst_status/'
+        response = self.client.get(url_status)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['enabled'])
+
+        # Non-superuser cannot toggle GST status
+        url_toggle = '/api/subscriptions/settings/toggle_gst/'
+        response = self.client.post(url_toggle, {'enabled': False})
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Superuser can toggle GST status to False
+        self.client.force_authenticate(user=self.superuser)
+        response = self.client.post(url_toggle, {'enabled': False})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data['enabled'])
+
+        # Verify status is now False
+        self.client.force_authenticate(user=self.student)
+        response = self.client.get(url_status)
+        self.assertEqual(response.data['enabled'], False)
+
+        # Checkout with GST disabled should have gst_amount = 0.0
+        url_checkout = '/api/subscriptions/my-subscriptions/'
+        payload = {
+            'plan_id': self.plan_final.id,
+            'calendar_month': 'january',
+            'year': 2026
+        }
+        response = self.client.post(url_checkout, payload)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        
+        # Verify Payment record
+        payment = Payment.objects.filter(user=self.student, plan=self.plan_final).order_by('-created_at').first()
+        self.assertIsNotNone(payment)
+        self.assertEqual(float(payment.gst_amount), 0.0)
+        self.assertEqual(float(payment.amount), 200.0)  # No GST added
+
+        # Superuser toggles GST status back to True
+        self.client.force_authenticate(user=self.superuser)
+        response = self.client.post(url_toggle, {'enabled': True})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['enabled'])
+
+        # Checkout with GST enabled should have gst_amount = 18% of price (18% of 100 = 18.0)
+        self.client.force_authenticate(user=self.student)
+        payload['plan_id'] = self.plan_intermediate.id
+        response = self.client.post(url_checkout, payload)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        
+        # Verify Payment record
+        payment = Payment.objects.filter(user=self.student, plan=self.plan_intermediate).order_by('-created_at').first()
+        self.assertIsNotNone(payment)
+        self.assertEqual(float(payment.gst_amount), 18.0)
+        self.assertEqual(float(payment.amount), 118.0)  # Base 100 + 18 GST
+
+

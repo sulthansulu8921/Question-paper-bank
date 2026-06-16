@@ -254,12 +254,12 @@ export default function AdminQuestionBank() {
                                 <th>Source</th>
                                 <th>Attempt</th>
                                 <th>Year</th>
-                                <th>Section</th>
                                 <th>Q.No</th>
                                 <th>Type</th>
                                 <th>Marks</th>
                                 <th>Difficulty</th>
                                 <th>Status</th>
+                                <th>Added By</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -272,7 +272,6 @@ export default function AdminQuestionBank() {
                                     <td><Badge text={q.source} color="#2563eb" bg="#eff6ff" /></td>
                                     <td>{q.attempt}</td>
                                     <td>{q.year}</td>
-                                    <td>{q.section}</td>
                                     <td>
                                         {q.q_no?.startsWith('CS') ? (
                                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-150 text-indigo-700 border border-indigo-200">
@@ -293,6 +292,11 @@ export default function AdminQuestionBank() {
                                             const s = STATUSES.find(x => x.value === q.status) || STATUSES[0];
                                             return <Badge text={s.label} color={s.color} bg={s.bg} />;
                                         })()}
+                                    </td>
+                                    <td>
+                                        <span className="text-xs font-semibold text-slate-600">
+                                            {q.created_by_name || 'System'}
+                                        </span>
                                     </td>
                                     <td>
                                         <div className="action-buttons">

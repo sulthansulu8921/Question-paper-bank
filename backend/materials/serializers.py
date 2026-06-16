@@ -1,7 +1,9 @@
 from rest_framework import serializers
 from materials.models import (
     QuestionPaper, AnswerPaper, Notes, Video, MCQ, 
-    Bookmark, SubjectiveQuestion, Feedback, SubQuestion, QuestionOption
+    Bookmark, SubjectiveQuestion, Feedback, SubQuestion, QuestionOption,
+    VideoProgress, MaterialDownload, LiveClass, Notification,
+    AssessmentSession, AssessmentAnswer, MockTestTemplate
 )
 
 def check_is_locked(instance, context):
@@ -146,10 +148,19 @@ class SubjectiveQuestionSerializer(serializers.ModelSerializer):
     icai_level_name = serializers.CharField(source='icai_topic.chapter.paper.level.name', read_only=True, allow_null=True)
     parts = SubQuestionSerializer(many=True, required=False)
     options = QuestionOptionSerializer(many=True, required=False)
+    created_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = SubjectiveQuestion
         fields = '__all__'
+
+    def get_created_by_name(self, obj):
+        if not obj.created_by:
+            return "System"
+        user = obj.created_by
+        if user.first_name or user.last_name:
+            return f"{user.first_name} {user.last_name}".strip()
+        return user.email or user.username
 
     def create(self, validated_data):
         parts_data = validated_data.pop('parts', [])
@@ -289,6 +300,8 @@ class SubjectiveQuestionSerializer(serializers.ModelSerializer):
 
 class QuestionPaperSerializer(serializers.ModelSerializer):
     subject_name = serializers.CharField(source='subject.name', read_only=True)
+    course_name = serializers.CharField(source='subject.course.name', read_only=True)
+    qualification_name = serializers.CharField(source='subject.course.category.name', read_only=True)
 
     class Meta:
         model = QuestionPaper
@@ -305,6 +318,8 @@ class QuestionPaperSerializer(serializers.ModelSerializer):
 
 class AnswerPaperSerializer(serializers.ModelSerializer):
     subject_name = serializers.CharField(source='subject.name', read_only=True)
+    course_name = serializers.CharField(source='subject.course.name', read_only=True)
+    qualification_name = serializers.CharField(source='subject.course.category.name', read_only=True)
     question_paper_title = serializers.CharField(source='question_paper.title', read_only=True)
 
     class Meta:
@@ -322,6 +337,8 @@ class AnswerPaperSerializer(serializers.ModelSerializer):
 
 class NotesSerializer(serializers.ModelSerializer):
     subject_name = serializers.CharField(source='subject.name', read_only=True)
+    course_name = serializers.CharField(source='subject.course.name', read_only=True)
+    qualification_name = serializers.CharField(source='subject.course.category.name', read_only=True)
     topic_name = serializers.CharField(source='topic.name', read_only=True)
 
     class Meta:
@@ -338,9 +355,6 @@ class NotesSerializer(serializers.ModelSerializer):
         return ret
 
 class VideoSerializer(serializers.ModelSerializer):
-    subject_name = serializers.CharField(source='subject.name', read_only=True)
-    topic_name = serializers.CharField(source='topic.name', read_only=True)
-
     class Meta:
         model = Video
         fields = '__all__'
@@ -378,3 +392,72 @@ class FeedbackSerializer(serializers.ModelSerializer):
         model = Feedback
         fields = '__all__'
         read_only_fields = ('user',)
+
+
+class VideoProgressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VideoProgress
+        fields = '__all__'
+        read_only_fields = ('user',)
+
+
+class MaterialDownloadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MaterialDownload
+        fields = '__all__'
+        read_only_fields = ('user',)
+
+
+class LiveClassSerializer(serializers.ModelSerializer):
+    course_name = serializers.ReadOnlyField(source='course.name')
+    subject_name = serializers.ReadOnlyField(source='subject.name')
+
+    class Meta:
+        model = LiveClass
+        fields = '__all__'
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    course_name = serializers.ReadOnlyField(source='target_course.name')
+
+    class Meta:
+        model = Notification
+        fields = '__all__'
+
+
+class AssessmentAnswerSerializer(serializers.ModelSerializer):
+    question_text = serializers.ReadOnlyField(source='question.question_text')
+    options = QuestionOptionSerializer(source='question.options', many=True, read_only=True)
+    correct_option_id = serializers.SerializerMethodField()
+    explanation = serializers.ReadOnlyField(source='question.explanation')
+    related_concept = serializers.ReadOnlyField(source='question.related_concept')
+    marks = serializers.ReadOnlyField(source='question.marks')
+    difficulty = serializers.ReadOnlyField(source='question.difficulty')
+
+    class Meta:
+        model = AssessmentAnswer
+        fields = '__all__'
+
+    def get_correct_option_id(self, obj):
+        correct_opt = obj.question.options.filter(is_correct=True).first()
+        return correct_opt.id if correct_opt else None
+
+
+class AssessmentSessionSerializer(serializers.ModelSerializer):
+    answers = AssessmentAnswerSerializer(many=True, read_only=True)
+    user_email = serializers.ReadOnlyField(source='user.email')
+
+    class Meta:
+        model = AssessmentSession
+        fields = '__all__'
+        read_only_fields = ('user', 'score', 'accuracy', 'is_completed', 'completed_at')
+
+
+class MockTestTemplateSerializer(serializers.ModelSerializer):
+    question_details = SubjectiveQuestionSerializer(source='questions', many=True, read_only=True)
+
+    class Meta:
+        model = MockTestTemplate
+        fields = '__all__'
+
+

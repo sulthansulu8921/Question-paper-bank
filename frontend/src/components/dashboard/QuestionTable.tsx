@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Eye, Home, Search, Star, X, Lock } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
 import QuestionModal from './QuestionModal';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useParams, Link } from 'react-router-dom';
@@ -137,15 +138,15 @@ export default function QuestionTable({
     return (
         <div className="w-full bg-card rounded-xl overflow-hidden shadow-sm border border-border font-sans">
             {/* Legend & Stats Bar */}
-            <div className="flex items-center justify-between px-6 py-4 bg-card border-b border-border">
-                <div className="flex items-center gap-4">
-                    <button className="px-5 py-2.5 bg-[#5C6BC0] text-white text-[11px] font-black uppercase tracking-widest rounded-lg shadow-lg shadow-indigo-100 hover:scale-105 transition-all">
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between px-4 md:px-6 py-4 bg-card border-b border-border gap-4">
+                <div className="flex flex-wrap items-center gap-3">
+                    <button className="px-5 py-2.5 bg-primary text-white text-[11px] font-black uppercase tracking-widest rounded-lg shadow-lg shadow-indigo-100 hover:scale-105 transition-all">
                         MY PERFORMANCE
                     </button>
                     {!showSearch ? (
                         <button
                             onClick={() => setShowSearch(true)}
-                            className="w-10 h-10 flex items-center justify-center bg-[#5C6BC0] text-white rounded-lg shadow-md hover:bg-[#4A59B0] transition-colors"
+                            className="w-10 h-10 flex items-center justify-center bg-primary text-white rounded-lg shadow-md hover:bg-primary/95 transition-colors"
                         >
                             <Search size={16} />
                         </button>
@@ -167,8 +168,8 @@ export default function QuestionTable({
                     )}
                 </div>
 
-                <div className="flex items-center gap-8">
-                    <div className="flex items-center gap-5 text-[10px] font-black text-text-muted">
+                <div className="flex flex-wrap items-center justify-between lg:justify-end gap-4 sm:gap-8 w-full lg:w-auto">
+                    <div className="flex flex-wrap items-center gap-3 sm:gap-5 text-[10px] font-black text-text-muted">
                         <span className="flex items-center gap-1.5 uppercase tracking-widest">
                             ( <Eye size={14} className="text-blue-500" /> READ
                         </span>
@@ -179,7 +180,7 @@ export default function QuestionTable({
                             <Star size={14} className="text-amber-400 fill-amber-400" /> IMPORTANT )
                         </span>
                     </div>
-                    <div className="text-[11px] font-black text-text-primary uppercase tracking-widest">
+                    <div className="text-[11px] font-black text-text-primary uppercase tracking-widest shrink-0">
                         TOTAL RECORDS : - <span className="text-2xl ml-2 align-middle">{filteredQuestions.length || 0}</span>
                     </div>
                 </div>
@@ -187,32 +188,44 @@ export default function QuestionTable({
 
             {/* Sub Navigation Bar */}
             {!hideTabs && (
-                <div className="flex items-center justify-between px-6 py-3 bg-card border-b border-border">
-                    <div className="flex items-center gap-2">
-                        <button className="w-10 h-10 flex items-center justify-center bg-[#5C6BC0] text-white rounded-lg shadow-sm">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between px-4 md:px-6 py-3 bg-card border-b border-border gap-3">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                        <button className="w-10 h-10 flex items-center justify-center bg-primary text-white rounded-lg shadow-sm hover:bg-primary/90 transition-colors shrink-0">
                             <Home size={18} />
                         </button>
                         <button
                             onClick={() => setFilter('subjective')}
-                            className={`px-8 py-2.5 text-xs font-black rounded-lg transition-all border ${filter === 'subjective' ? 'bg-primary/10 text-primary border-primary/20 shadow-inner' : 'bg-[#5C6BC0] text-white border-transparent shadow-sm'}`}
+                            className={`px-4 sm:px-8 py-2 sm:py-2.5 text-xs font-black rounded-lg transition-all border ${
+                                filter === 'subjective'
+                                    ? 'bg-primary text-white border-primary shadow-md shadow-primary/10'
+                                    : 'bg-bg hover:bg-slate-100 text-text-secondary border-border shadow-sm'
+                            }`}
                         >
                             Subjective
                         </button>
                         <button
                             onClick={() => setFilter('mcq')}
-                            className={`px-8 py-2.5 text-xs font-black rounded-lg transition-all border ${filter === 'mcq' ? 'bg-primary/10 text-primary border-primary/20 shadow-inner' : 'bg-[#5C6BC0] text-white border-transparent shadow-sm'}`}
+                            className={`px-4 sm:px-8 py-2 sm:py-2.5 text-xs font-black rounded-lg transition-all border ${
+                                filter === 'mcq'
+                                    ? 'bg-primary text-white border-primary shadow-md shadow-primary/10'
+                                    : 'bg-bg hover:bg-slate-100 text-text-secondary border-border shadow-sm'
+                            }`}
                         >
                             MCQs
                         </button>
                         <button
                             onClick={() => setFilter('important')}
-                            className={`px-8 py-2.5 text-xs font-black rounded-lg transition-all border ${filter === 'important' ? 'bg-primary/10 text-primary border-primary/20 shadow-inner' : 'bg-[#5C6BC0] text-white border-transparent shadow-sm'}`}
+                            className={`px-4 sm:px-8 py-2 sm:py-2.5 text-xs font-black rounded-lg transition-all border ${
+                                filter === 'important'
+                                    ? 'bg-primary text-white border-primary shadow-md shadow-primary/10'
+                                    : 'bg-bg hover:bg-slate-100 text-text-secondary border-border shadow-sm'
+                            }`}
                         >
                             Important
                         </button>
                     </div>
 
-                    <button className="px-8 py-2.5 bg-[#5C6BC0] text-white text-xs font-black rounded-lg uppercase tracking-widest shadow-md hover:bg-[#4A59B0] transition-all">
+                    <button className="px-4 sm:px-8 py-2 sm:py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-black rounded-lg uppercase tracking-widest shadow-md transition-all text-center sm:text-left shrink-0">
                         QUICK CONCEPTS
                     </button>
                 </div>
@@ -321,15 +334,19 @@ export default function QuestionTable({
             </div>
 
             {/* Embedded Modal for Full Work Mode Consistency */}
-            <QuestionModal
-                isOpen={isViewerOpen}
-                onClose={() => setIsViewerOpen(false)}
-                question={viewerQuestion}
-                onNext={handleNext}
-                onPrev={handlePrev}
-                currentIndex={currentIdx}
-                totalCount={filteredQuestions.length}
-            />
+            <AnimatePresence>
+                {isViewerOpen && viewerQuestion && (
+                    <QuestionModal
+                        isOpen={isViewerOpen}
+                        onClose={() => setIsViewerOpen(false)}
+                        question={viewerQuestion}
+                        onNext={handleNext}
+                        onPrev={handlePrev}
+                        currentIndex={currentIdx}
+                        totalCount={filteredQuestions.length}
+                    />
+                )}
+            </AnimatePresence>
         </div>
     );
 }

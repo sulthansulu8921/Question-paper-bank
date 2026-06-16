@@ -15,48 +15,54 @@ interface QuestionModalProps {
     totalCount?: number;
 }
 
-// Helper to render JSON table data safely
-const DynamicTable = ({ tableJson, title }: { tableJson: string; title: string }) => {
-    if (!tableJson) return null;
-    try {
-        const parsed = JSON.parse(tableJson);
-        if (!parsed.headers || !parsed.rows || parsed.headers.length === 0) return null;
+// Helper to render a single parsed table object safely
+const DynamicTable = ({ parsedTable }: { parsedTable: any }) => {
+    if (!parsedTable || !parsedTable.headers || !parsedTable.rows || parsedTable.headers.length === 0) return null;
 
-        return (
-            <div className="bg-bg rounded-2xl border border-border shadow-sm overflow-hidden my-4">
-                <div className="px-4 py-2 bg-[var(--table-header)] border-b border-border text-[10px] font-black uppercase tracking-wider text-white">
-                    {title}
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-xs font-bold border-collapse">
-                        <thead>
-                            <tr className="bg-[var(--table-header)] text-white">
-                                {parsed.headers.map((h: string, i: number) => (
-                                    <th key={i} className="px-4 py-3 text-left font-black uppercase tracking-wider border-r border-white/10 last:border-none">
-                                        {h}
-                                    </th>
+    return (
+        <div className="bg-bg rounded-2xl border border-border shadow-sm overflow-hidden my-4">
+            <div className="overflow-x-auto">
+                <table className="w-full text-xs font-bold border-collapse">
+                    <thead>
+                        <tr className="bg-[var(--table-header)] text-white">
+                            {parsedTable.headers.map((h: string, i: number) => (
+                                <th key={i} className="px-4 py-3 text-left font-black uppercase tracking-wider border-r border-white/10 last:border-none">
+                                    {h}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                        {parsedTable.rows.map((row: string[], rIdx: number) => (
+                            <tr key={rIdx} className="hover:bg-[var(--table-hover)] transition-colors text-text-primary">
+                                {row.map((cell: string, cIdx: number) => (
+                                    <td key={cIdx} className="px-4 py-3 border-r border-border last:border-none">
+                                        {cell}
+                                    </td>
                                 ))}
                             </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border">
-                            {parsed.rows.map((row: string[], rIdx: number) => (
-                                <tr key={rIdx} className="hover:bg-[var(--table-hover)] transition-colors text-text-primary">
-                                    {row.map((cell: string, cIdx: number) => (
-                                        <td key={cIdx} className="px-4 py-3 border-r border-border last:border-none">
-                                            {cell}
-                                        </td>
-                                    ))}
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                        ))}
+                    </tbody>
+                </table>
             </div>
-        );
+        </div>
+    );
+};
+
+const parseMultipleTables = (tableJson: string): any[] => {
+    if (!tableJson) return [];
+    try {
+        const parsed = JSON.parse(tableJson);
+        if (Array.isArray(parsed)) {
+            return parsed;
+        }
+        if (parsed.headers && parsed.rows) {
+            return [{ ...parsed, type: parsed.type || 'normal' }];
+        }
     } catch (e) {
-        console.error("Failed to parse table JSON in modal", e);
-        return null;
+        console.error("Failed to parse tables JSON", e);
     }
+    return [];
 };
 
 const parseFormattingTags = (text: string): React.ReactNode => {
@@ -129,24 +135,66 @@ const parseFormattingTags = (text: string): React.ReactNode => {
     return currentChildren;
 };
 
-const renderTextWithInlineTables = (text: string, tableJson: string, title: string, placeholder = '[TABLE]') => {
+const renderTextWithInlineTables = (text: string, tableJson: string) => {
     if (!text) return null;
-    if (!tableJson || !text.includes(placeholder)) {
+    const tables = parseMultipleTables(tableJson);
+    const cursorTables = tables.filter(t => t.type === 'cursor');
+    
+    // Fallback for legacy format: if no cursor tables explicitly defined, but tables exist and text has placeholders, treat them as cursor tables
+    const activeCursorTables = cursorTables.length > 0 
+        ? cursorTables 
+        : (text.includes('[TABLE]') ? tables : []);
+
+    if (activeCursorTables.length === 0 || !text.includes('[TABLE')) {
         return <div className="white-space-pre-wrap">{parseFormattingTags(text)}</div>;
     }
 
-    const parts = text.split(placeholder);
+    const regex = /(\[TABLE(?:_\d+)?\])/g;
+    const parts = text.split(regex);
+    let generalCursorIndex = 0;
+
     return (
-        <div>
-            {parts.map((part, index) => (
-                <div key={index}>
-                    {part && <div className="white-space-pre-wrap">{parseFormattingTags(part)}</div>}
-                    {index < parts.length - 1 && (
-                        <DynamicTable tableJson={tableJson} title={title} />
-                    )}
-                </div>
-            ))}
+        <div className="white-space-pre-wrap">
+            {parts.map((part, index) => {
+                if (part.startsWith('[TABLE')) {
+                    let targetTable = null;
+                    const match = part.match(/\[TABLE_(\d+)\]/);
+                    if (match) {
+                        const tableNum = parseInt(match[1], 10);
+                        targetTable = activeCursorTables[tableNum - 1];
+                    } else {
+                        targetTable = activeCursorTables[generalCursorIndex];
+                        generalCursorIndex++;
+                    }
+                    
+                    if (targetTable) {
+                        return <DynamicTable key={index} parsedTable={targetTable} />;
+                    }
+                    return null;
+                } else {
+                    return part ? <span key={index}>{parseFormattingTags(part)}</span> : null;
+                }
+            })}
         </div>
+    );
+};
+
+const RenderNormalTables = ({ tableJson, text }: { tableJson: string; text: string }) => {
+    const tables = parseMultipleTables(tableJson);
+    const cursorTables = tables.filter(t => t.type === 'cursor');
+    
+    // Fallback for legacy format: if no cursor tables exist and text has [TABLE], they were treated as cursor tables.
+    // So normal tables should be empty.
+    const activeNormalTables = cursorTables.length > 0
+        ? tables.filter(t => t.type !== 'cursor')
+        : (text && text.includes('[TABLE]') ? [] : tables);
+
+    return (
+        <>
+            {activeNormalTables.map((t, idx) => (
+                <DynamicTable key={idx} parsedTable={t} />
+            ))}
+        </>
     );
 };
 
@@ -177,7 +225,13 @@ export default function QuestionModal({
         setSelectedOptionIdx(null);
         setPartSelections({});
         setRevealedPartSolutions({});
-    }, [question?.id]);
+        if (question?.question_type === 'MCQ') {
+            setTab('question');
+            setIsSplitView(false);
+        } else {
+            setTab('both');
+        }
+    }, [question?.id, question?.question_type]);
 
     // Solved Question State Tracking
     const [isSolved, setIsSolved] = useState(false);
@@ -276,7 +330,7 @@ export default function QuestionModal({
         }
     });
 
-    if (!isOpen || !question) return null;
+    if (!question) return null;
 
     const handleSubmitFeedback = () => {
         if (feedback.trim()) submitFeedback.mutate(feedback);
@@ -301,6 +355,18 @@ export default function QuestionModal({
     const handleOptionSelect = (idx: number) => {
         if (selectedOptionIdx !== null) return; // Answer locked once selected
         setSelectedOptionIdx(idx);
+
+        // Auto mark solved if correct
+        if (question?.options?.[idx]?.is_correct) {
+            const solvedStr = localStorage.getItem('qubook_solved_questions');
+            let solvedList = solvedStr ? JSON.parse(solvedStr) : [];
+            if (!solvedList.includes(question.id)) {
+                solvedList.push(question.id);
+                localStorage.setItem('qubook_solved_questions', JSON.stringify(solvedList));
+                setIsSolved(true);
+                window.dispatchEvent(new Event('solvedQuestionsChanged'));
+            }
+        }
     };
 
     const handlePartOptionSelect = (partIdx: number, optIdx: number) => {
@@ -313,8 +379,7 @@ export default function QuestionModal({
     };
 
     return (
-        <AnimatePresence>
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                 {/* Cinematic Glass Backdrop */}
                 <motion.div
                     initial={{ opacity: 0 }}
@@ -336,16 +401,18 @@ export default function QuestionModal({
                     <div className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between md:pl-10 md:pr-12 md:py-5 bg-card border-b border-border shrink-0">
                         <div className="flex items-center justify-between gap-3 w-full md:w-auto">
                             {/* Layout Toggle */}
-                            <button
-                                onClick={() => setIsSplitView(!isSplitView)}
-                                className={`hidden md:flex w-12 h-12 rounded-2xl items-center justify-center transition-all duration-300 ${isSplitView ? 'bg-primary text-white shadow-xl rotate-90' : 'bg-bg text-text-muted hover:bg-bg-secondary hover:text-primary'}`}
-                                title="Split View Mode"
-                            >
-                                <Copy size={22} className={isSplitView ? 'animate-pulse' : ''} />
-                            </button>
+                            {question.question_type !== 'MCQ' && (
+                                <button
+                                    onClick={() => setIsSplitView(!isSplitView)}
+                                    className={`hidden md:flex w-12 h-12 rounded-2xl items-center justify-center transition-all duration-300 ${isSplitView ? 'bg-primary text-white shadow-xl rotate-90' : 'bg-bg text-text-muted hover:bg-bg-secondary hover:text-primary'}`}
+                                    title="Split View Mode"
+                                >
+                                    <Copy size={22} className={isSplitView ? 'animate-pulse' : ''} />
+                                </button>
+                            )}
 
                             {/* Tab System - Glassmorphism style */}
-                            {!isSplitView && (
+                            {!isSplitView && (question.question_type !== 'MCQ' || selectedOptionIdx !== null) && (
                                 <div className="flex bg-bg p-1 rounded-xl md:p-1.5 md:rounded-2xl border border-border w-full md:w-auto justify-around md:justify-start">
                                     {(['both', 'question', 'answer'] as const).map((t) => (
                                         <button
@@ -443,7 +510,7 @@ export default function QuestionModal({
                     </AnimatePresence>
 
                     {/* Main Workspace */}
-                    <div className={`flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar ${isSplitView ? 'grid grid-cols-2 gap-10 divide-x divide-border' : 'max-w-4xl mx-auto w-full'}`}>
+                    <div className={`flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar ${isSplitView ? 'grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 md:divide-x divide-border' : 'max-w-4xl mx-auto w-full'}`}>
 
                         {/* Question Column */}
                         {(isSplitView || tab === 'both' || tab === 'question') && (
@@ -474,7 +541,7 @@ export default function QuestionModal({
                                 {/* Main Text and Media */}
                                 {question.question_type !== 'CASE_SCENARIO' && (question.question_text || (!question.image_url && !question.pdf_url)) && (
                                     <div className="bg-bg border border-border rounded-2xl p-5 text-sm font-semibold text-text-primary leading-relaxed">
-                                        {renderTextWithInlineTables(question.question_text || 'No question text provided.', question.table_data, "Question Data Table")}
+                                        {renderTextWithInlineTables(question.question_text || 'No question text provided.', question.table_data)}
                                     </div>
                                 )}
                                 
@@ -493,9 +560,7 @@ export default function QuestionModal({
                                 )}
 
                                 {/* Main Table */}
-                                {!question.question_text?.includes('[TABLE]') && (
-                                    <DynamicTable tableJson={question.table_data} title="Question Data Table" />
-                                )}
+                                <RenderNormalTables tableJson={question.table_data} text={question.question_text || ''} />
 
                                 {/* MCQ Options (Top Level) */}
                                 {question.question_type === 'MCQ' && question.options && question.options.length > 0 && (
@@ -507,7 +572,7 @@ export default function QuestionModal({
                                                 const isSelected = selectedOptionIdx === oIdx;
                                                 const isCorrect = opt.is_correct;
                                                 const isLocked = selectedOptionIdx !== null;
-
+ 
                                                 let btnStyle = "bg-bg hover:bg-bg-secondary border-border text-text-secondary";
                                                 if (isSelected) {
                                                     btnStyle = isCorrect
@@ -516,7 +581,7 @@ export default function QuestionModal({
                                                 } else if (isLocked && isCorrect) {
                                                     btnStyle = "bg-green-500/20 border-green-500/30 text-green-600 dark:text-green-400";
                                                 }
-
+ 
                                                 return (
                                                     <button
                                                         key={oIdx}
@@ -531,12 +596,45 @@ export default function QuestionModal({
                                                         {isSelected && (
                                                             <span>
                                                                 {isCorrect ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-                                                            </span>
+                                                             </span>
                                                         )}
                                                     </button>
                                                 );
                                             })}
                                         </div>
+
+                                        {/* Show Answer details below options if answered */}
+                                        {selectedOptionIdx !== null && (
+                                            <motion.div
+                                                initial={{ opacity: 0, y: 10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                className="mt-6 p-6 rounded-[24px] border border-emerald-500/20 bg-emerald-500/10 space-y-4 text-text-primary"
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <span className="px-3 py-1 bg-emerald-500 text-white text-[9px] font-black rounded-full uppercase tracking-wider shadow-sm">
+                                                        Correct Answer
+                                                    </span>
+                                                    <span className={`px-3 py-1 text-[9px] font-black rounded-full uppercase tracking-wider shadow-sm ${
+                                                        question.options[selectedOptionIdx].is_correct 
+                                                            ? 'bg-green-600 text-white' 
+                                                            : 'bg-red-600 text-white'
+                                                    }`}>
+                                                        {question.options[selectedOptionIdx].is_correct ? 'Correct' : 'Incorrect'}
+                                                    </span>
+                                                </div>
+                                                <div className="text-emerald-800 dark:text-emerald-300 font-bold text-lg">
+                                                    Option {String.fromCharCode(65 + question.options.findIndex((o: any) => o.is_correct))} - {parseFormattingTags(question.options.find((o: any) => o.is_correct)?.text)}
+                                                </div>
+                                                <div className="text-xs font-semibold text-text-secondary leading-relaxed pt-4 border-t border-emerald-500/20">
+                                                    <div className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-wider mb-2">Explanation:</div>
+                                                    {renderTextWithInlineTables(
+                                                        question.correct_answer || 'No additional explanation provided.',
+                                                        question.answer_table_data
+                                                    )}
+                                                </div>
+                                                <RenderNormalTables tableJson={question.answer_table_data} text={question.correct_answer || ''} />
+                                            </motion.div>
+                                        )}
                                     </div>
                                 )}
 
@@ -559,12 +657,10 @@ export default function QuestionModal({
                                                     </div>
 
                                                     <div className="text-xs font-bold text-text-primary">
-                                                        {renderTextWithInlineTables(part.question_text, part.table_data, `Part ${part.identifier} Table`)}
+                                                        {renderTextWithInlineTables(part.question_text, part.table_data)}
                                                     </div>
 
-                                                    {!part.question_text?.includes('[TABLE]') && (
-                                                        <DynamicTable tableJson={part.table_data} title={`Part ${part.identifier} Table`} />
-                                                    )}
+                                                    <RenderNormalTables tableJson={part.table_data} text={part.question_text || ''} />
 
                                                     {/* Part MCQ */}
                                                     {part.question_type === 'MCQ' && part.options && part.options.length > 0 && (
@@ -620,11 +716,9 @@ export default function QuestionModal({
                                                         >
                                                             <div className="text-[10px] font-black uppercase text-teal-600 tracking-wider">Suggested Solution:</div>
                                                             <div>
-                                                                {renderTextWithInlineTables(part.correct_answer || 'No solution text provided.', part.answer_table_data, `Part ${part.identifier} Solution Table`)}
+                                                                {renderTextWithInlineTables(part.correct_answer || 'No solution text provided.', part.answer_table_data)}
                                                             </div>
-                                                            {!part.correct_answer?.includes('[TABLE]') && (
-                                                                <DynamicTable tableJson={part.answer_table_data} title={`Part ${part.identifier} Solution Table`} />
-                                                            )}
+                                                            <RenderNormalTables tableJson={part.answer_table_data} text={part.correct_answer || ''} />
                                                         </motion.div>
                                                     )}
                                                 </div>
@@ -636,7 +730,7 @@ export default function QuestionModal({
                         )}
 
                         {/* Answer Column */}
-                        {(isSplitView || tab === 'both' || tab === 'answer') && (
+                        {(isSplitView || tab === 'both' || tab === 'answer') && (question.question_type !== 'MCQ' || selectedOptionIdx !== null) && (
                             <motion.div
                                 key={`a-${question.id}`}
                                 initial={{ opacity: 0, x: 20 }}
@@ -666,13 +760,10 @@ export default function QuestionModal({
                                             )}
                                             {renderTextWithInlineTables(
                                                 question.correct_answer || (question.question_type === 'MCQ' ? 'No additional explanation provided.' : 'No suggested answer or key is entered.'),
-                                                question.answer_table_data,
-                                                "Answer Details Table"
+                                                question.answer_table_data
                                             )}
                                         </div>
-                                        {!question.correct_answer?.includes('[TABLE]') && question.answer_table_data && (
-                                            <DynamicTable tableJson={question.answer_table_data} title="Answer Details Table" />
-                                        )}
+                                        <RenderNormalTables tableJson={question.answer_table_data} text={question.correct_answer || ''} />
                                     </div>
                                 ) : (
                                     <div className="p-6 border-2 border-dashed border-border rounded-3xl text-center text-xs font-bold text-text-muted italic">
@@ -714,6 +805,5 @@ export default function QuestionModal({
                     </div>
                 </motion.div>
             </div>
-        </AnimatePresence>
     );
 }

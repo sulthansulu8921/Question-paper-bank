@@ -2,7 +2,8 @@ from django.urls import path
 from authentication.views import (
     RegisterView, RegisterRequestOTPView, ProfileView, EmailTokenObtainPairView,
     UserListView, UserDetailView, ChangePasswordView, ForgotPasswordRequestOTPView,
-    ForgotPasswordResetView, GoogleAuthView, GrantAdminView
+    ForgotPasswordResetView, GoogleAuthView, GrantAdminView,
+    UserSuspendView, UserActivateView, UserResetPasswordView
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -14,6 +15,9 @@ urlpatterns = [
     path('profile/', ProfileView.as_view(), name='auth_profile'),
     path('users/', UserListView.as_view(), name='user_list'),
     path('users/<int:pk>/', UserDetailView.as_view(), name='user_detail'),
+    path('users/<int:pk>/suspend/', UserSuspendView.as_view(), name='user_suspend'),
+    path('users/<int:pk>/activate/', UserActivateView.as_view(), name='user_activate'),
+    path('users/<int:pk>/reset-password/', UserResetPasswordView.as_view(), name='user_reset_password'),
     path('users/grant-admin/', GrantAdminView.as_view(), name='grant_admin'),
     path('change-password/', ChangePasswordView.as_view(), name='change_password'),
     path('forgot-password/request-otp/', ForgotPasswordRequestOTPView.as_view(), name='forgot_password_request_otp'),

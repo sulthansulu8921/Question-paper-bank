@@ -1,16 +1,19 @@
 import { Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { LayoutDashboard, BookOpen, FileText, Download, Bookmark, CreditCard, LogOut, FileSearch, Settings, Database, Sparkles, BarChart3, Trophy } from 'lucide-react';
+import { LayoutDashboard, FileText, Download, Bookmark, CreditCard, LogOut, FileSearch, Settings, Database, Sparkles, BarChart3, Trophy, MonitorPlay, BookOpen, Award, Calendar } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import Logo from '@/components/Logo';
 
 const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-    { icon: FileSearch, label: 'Question Papers', path: '/dashboard/papers' },
+    { icon: FileSearch, label: 'Question', path: '/dashboard/papers' },
+    { icon: BookOpen, label: 'Practice Hub', path: '/dashboard/practice' },
+    { icon: Award, label: 'Mock Test Simulator', path: '/dashboard/mock' },
+    { icon: Calendar, label: 'AI Planner', path: '/dashboard/planner' },
+    { icon: MonitorPlay, label: 'Classroom Hub', path: '/dashboard/classroom' },
     { icon: Sparkles, label: 'AI Assistant', path: '/dashboard/assistant' },
     { icon: BarChart3, label: 'Analytics', path: '/dashboard/analytics' },
     { icon: Trophy, label: 'Leaderboard', path: '/dashboard/leaderboard' },
-    { icon: BookOpen, label: 'Courses', path: '/dashboard/courses' },
     { icon: FileText, label: 'Notes', path: '/dashboard/notes' },
     { icon: Download, label: 'Downloads', path: '/dashboard/downloads' },
     { icon: Bookmark, label: 'Saved', path: '/dashboard/saved' },

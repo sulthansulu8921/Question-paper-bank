@@ -62,6 +62,19 @@ export default function SubscriptionPage() {
     const [couponError, setCouponError] = useState('');
     const [couponSuccess, setCouponSuccess] = useState('');
     const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
+    const [isGstEnabled, setIsGstEnabled] = useState(true);
+
+    useEffect(() => {
+        const fetchGstConfig = async () => {
+            try {
+                const res = await api.get('/subscriptions/settings/get_gst_status/');
+                setIsGstEnabled(res.data.enabled);
+            } catch (err) {
+                console.error('Failed to fetch GST config:', err);
+            }
+        };
+        fetchGstConfig();
+    }, []);
 
     // Checkout / Processing state
     const [isProcessing, setIsProcessing] = useState(false);
@@ -189,11 +202,11 @@ export default function SubscriptionPage() {
         p.billing_cycle === selectedCycle
     );
 
-    // Cost Breakdown Calculation (GST 18%)
+    // Cost Breakdown Calculation (GST 18% if enabled)
     const basePrice = matchingPlan ? parseFloat(matchingPlan.price) : 0;
     const discountAmount = appliedCoupon ? roundToTwo((basePrice * appliedCoupon.discountPercent) / 100) : 0;
     const subtotal = Math.max(0, basePrice - discountAmount);
-    const gstAmount = roundToTwo(subtotal * 0.18);
+    const gstAmount = isGstEnabled ? roundToTwo(subtotal * 0.18) : 0;
     const finalPrice = roundToTwo(subtotal + gstAmount);
 
     function roundToTwo(num: number) {
@@ -209,7 +222,8 @@ export default function SubscriptionPage() {
 
         try {
             const res = await api.post('/subscriptions/coupons/validate/', {
-                code: couponCodeInput.trim()
+                code: couponCodeInput.trim(),
+                plan_id: matchingPlan?.id || null
             });
 
             if (res.data.valid) {
@@ -794,10 +808,12 @@ export default function SubscriptionPage() {
                                                     <span>-₹{discountAmount.toFixed(2)}</span>
                                                 </div>
                                             )}
-                                            <div className="flex justify-between text-xs font-semibold text-text-secondary border-b border-border pb-2">
-                                                <span>GST (18%)</span>
-                                                <span>₹{gstAmount.toFixed(2)}</span>
-                                            </div>
+                                            {isGstEnabled && (
+                                                <div className="flex justify-between text-xs font-semibold text-text-secondary border-b border-border pb-2">
+                                                    <span>GST (18%)</span>
+                                                    <span>₹{gstAmount.toFixed(2)}</span>
+                                                </div>
+                                            )}
                                             <div className="flex justify-between items-baseline pt-2">
                                                 <span className="text-sm font-black text-text-primary">Final Amount</span>
                                                 <span className="text-2xl font-black text-primary">₹{finalPrice.toFixed(2)}</span>

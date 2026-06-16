@@ -4,6 +4,7 @@ from django.utils.text import slugify
 
 class CALevel(models.Model):
     """CA Foundation | CA Intermediate | CA Final"""
+    qualification = models.CharField(max_length=50, default='CA', db_index=True)
     name = models.CharField(max_length=120, unique=True)
     slug = models.SlugField(max_length=120, unique=True, blank=True)
     description = models.TextField(blank=True)
@@ -20,6 +21,35 @@ class CALevel(models.Model):
         if not self.slug:
             self.slug = slugify(self.name)
         super().save(*args, **kwargs)
+        try:
+            from courses.models import Category, Course
+            category_obj, _ = Category.objects.get_or_create(
+                name=self.qualification
+            )
+            course_qs = Course.objects.filter(name=self.name)
+            if course_qs.exists():
+                course_qs.update(
+                    category=category_obj,
+                    is_active=self.is_active
+                )
+            else:
+                Course.objects.create(
+                    name=self.name,
+                    category=category_obj,
+                    is_active=self.is_active,
+                    short_description=f"{self.qualification} Stream - {self.name}",
+                )
+        except Exception:
+            pass
+
+    def delete(self, *args, **kwargs):
+        name = self.name
+        super().delete(*args, **kwargs)
+        try:
+            from courses.models import Course
+            Course.objects.filter(name=name).delete()
+        except Exception:
+            pass
 
     def __str__(self):
         return self.name

@@ -25,6 +25,7 @@ class QuestionPaper(MaterialBase):
     year = models.IntegerField(null=True, blank=True)
     marks = models.IntegerField(null=True, blank=True)
     source = models.CharField(max_length=100, blank=True)
+    exam_type = models.CharField(max_length=100, blank=True, default='')
 
 
 class AnswerPaper(MaterialBase):
@@ -94,7 +95,7 @@ class SubjectiveQuestion(models.Model):
 
     # ICAI master hierarchy (primary)
     icai_topic = models.ForeignKey(
-        'master_data.ICAITopic', on_delete=models.SET_NULL,
+        'master_data.ICAITopic', on_delete=models.CASCADE,
         null=True, blank=True, related_name='questions'
     )
 
@@ -120,6 +121,12 @@ class SubjectiveQuestion(models.Model):
     pdf_url = models.URLField(blank=True, null=True)
     image_url = models.URLField(blank=True, null=True)
     tags = models.TextField(blank=True, null=True)
+    explanation = models.TextField(blank=True, default='')
+    related_concept = models.TextField(blank=True, default='')
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='created_questions'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -238,3 +245,125 @@ class Feedback(models.Model):
 
     def __str__(self):
         return f"Feedback by {self.user.email} on {self.material_type} #{self.material_id}"
+
+
+class VideoProgress(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    video = models.ForeignKey('Video', on_delete=models.CASCADE)
+    last_position_seconds = models.IntegerField(default=0)
+    completion_percentage = models.IntegerField(default=0)
+    is_completed = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('user', 'video')
+
+    def __str__(self):
+        return f"{self.user.email} - {self.video.title} ({self.completion_percentage}%)"
+
+
+class MaterialDownload(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    material_title = models.CharField(max_length=200)
+    material_type = models.CharField(max_length=50) # 'paper', 'notes'
+    downloaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.email} downloaded {self.material_title} ({self.material_type})"
+
+
+class LiveClass(models.Model):
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    course = models.ForeignKey('courses.Course', on_delete=models.CASCADE)
+    subject = models.ForeignKey('courses.Subject', on_delete=models.CASCADE)
+    scheduled_time = models.DateTimeField()
+    duration_minutes = models.IntegerField(default=60)
+    meeting_platform = models.CharField(max_length=50, choices=[('ZOOM', 'Zoom'), ('MEET', 'Google Meet'), ('JITSI', 'Jitsi Meet')])
+    meeting_link = models.URLField()
+    recording_link = models.URLField(blank=True, null=True)
+    status = models.CharField(max_length=20, default='SCHEDULED', choices=[('SCHEDULED', 'Scheduled'), ('LIVE', 'Live'), ('ENDED', 'Ended')])
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Live: {self.title} ({self.status})"
+
+
+class Notification(models.Model):
+    title = models.CharField(max_length=200)
+    message = models.TextField()
+    target_audience = models.CharField(max_length=50, choices=[('ALL', 'All Students'), ('COURSE', 'Course-wise'), ('SELECTED', 'Selected Students')])
+    target_course = models.ForeignKey('courses.Course', on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.title
+
+
+class AssessmentSession(models.Model):
+    SESSION_TYPE_CHOICES = [
+        ('PRACTICE', 'Practice Session'),
+        ('MOCK', 'Mock Test'),
+    ]
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='assessment_sessions')
+    session_type = models.CharField(max_length=20, choices=SESSION_TYPE_CHOICES, default='PRACTICE')
+    
+    # Metadata for custom/templates
+    title = models.CharField(max_length=200, blank=True)
+    qualification = models.CharField(max_length=100, blank=True)
+    course_level = models.CharField(max_length=100, blank=True)
+    subject = models.CharField(max_length=200, blank=True)
+    chapter = models.CharField(max_length=200, blank=True)
+    topic = models.CharField(max_length=200, blank=True)
+    
+    # Configuration settings
+    total_questions = models.IntegerField(default=10)
+    difficulty = models.CharField(max_length=20, default='MIXED')
+    mode = models.CharField(max_length=20, default='LEARNING') # LEARNING or CHALLENGE
+    
+    # Performance
+    score = models.IntegerField(default=0)
+    max_score = models.IntegerField(default=0)
+    accuracy = models.FloatField(default=0.0) # percentage
+    duration_seconds = models.IntegerField(default=0) # time taken
+    
+    is_completed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.email} - {self.session_type} - {self.score}/{self.max_score} ({self.accuracy}%)"
+
+
+class AssessmentAnswer(models.Model):
+    session = models.ForeignKey(AssessmentSession, on_delete=models.CASCADE, related_name='answers')
+    question = models.ForeignKey(SubjectiveQuestion, on_delete=models.CASCADE)
+    selected_option = models.ForeignKey(QuestionOption, on_delete=models.SET_NULL, null=True, blank=True)
+    typed_answer = models.TextField(blank=True, default='')
+    is_correct = models.BooleanField(default=False)
+    score_obtained = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Q{self.question.id} in Session {self.session.id} - Correct: {self.is_correct}"
+
+
+class MockTestTemplate(models.Model):
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default='')
+    qualification = models.CharField(max_length=100)
+    course_level = models.CharField(max_length=100, blank=True, default='')
+    duration_minutes = models.IntegerField(default=60)
+    total_questions = models.IntegerField(default=50)
+    difficulty = models.CharField(max_length=20, default='MIXED')
+    is_published = models.BooleanField(default=True)
+    questions = models.ManyToManyField(SubjectiveQuestion, blank=True, related_name='mock_templates')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.title
+
+

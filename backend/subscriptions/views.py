@@ -16,9 +16,16 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-from subscriptions.models import SubscriptionPlan, UserSubscription, Payment, Coupon
-from subscriptions.serializers import SubscriptionPlanSerializer, UserSubscriptionSerializer, PaymentSerializer, CouponSerializer
+from subscriptions.models import SubscriptionPlan, UserSubscription, Payment, Coupon, PlatformSetting
+from subscriptions.serializers import SubscriptionPlanSerializer, UserSubscriptionSerializer, PaymentSerializer, CouponSerializer, PlatformSettingSerializer
 from authentication.permissions import IsSuperUser
+
+def is_gst_enabled():
+    try:
+        setting = PlatformSetting.objects.get(key="ENABLE_GST")
+        return setting.value.lower() == "true"
+    except PlatformSetting.DoesNotExist:
+        return True
 
 # Safe Razorpay configuration
 RAZORPAY_KEY_ID = getattr(settings, 'RAZORPAY_KEY_ID', 'rzp_test_placeholder_key')
@@ -46,6 +53,7 @@ class CouponViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def validate(self, request):
         code = request.data.get('code')
+        plan_id = request.data.get('plan_id')
         if not code:
             return Response({'valid': False, 'error': 'Code is required'}, status=400)
         
@@ -53,6 +61,20 @@ class CouponViewSet(viewsets.ModelViewSet):
             coupon = Coupon.objects.get(code__iexact=code.strip(), is_active=True)
             if coupon.restricted_email and coupon.restricted_email.strip().lower() != request.user.email.strip().lower():
                 return Response({'valid': False, 'error': 'This coupon code is restricted to a different email address.'}, status=200)
+            
+            if coupon.restricted_course_id:
+                if not plan_id:
+                    return Response({'valid': False, 'error': 'This coupon is restricted to a specific course subscription.'}, status=200)
+                try:
+                    plan = SubscriptionPlan.objects.get(id=plan_id)
+                    if plan.course_specific_id != coupon.restricted_course_id:
+                        return Response({
+                            'valid': False, 
+                            'error': f'This coupon is only valid for subscriptions in the course "{coupon.restricted_course.name}".'
+                        }, status=200)
+                except SubscriptionPlan.DoesNotExist:
+                    return Response({'valid': False, 'error': 'Selected subscription plan not found.'}, status=200)
+
             return Response({
                 'valid': True,
                 'code': coupon.code,
@@ -66,7 +88,7 @@ class UserSubscriptionViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        if self.request.user and self.request.user.is_staff and self.request.query_params.get('all') == 'true':
+        if self.request.user and (self.request.user.is_staff or self.request.user.is_superuser):
             return UserSubscription.objects.all().order_by('-start_date')
         return UserSubscription.objects.filter(user=self.request.user).order_by('-start_date')
 
@@ -96,6 +118,8 @@ class UserSubscriptionViewSet(viewsets.ModelViewSet):
                 coupon = Coupon.objects.get(code__iexact=coupon_code.strip(), is_active=True)
                 if coupon.restricted_email and coupon.restricted_email.strip().lower() != request.user.email.strip().lower():
                     return Response({'error': 'This coupon code is restricted to a different email address.'}, status=400)
+                if coupon.restricted_course_id and plan.course_specific_id != coupon.restricted_course_id:
+                    return Response({'error': f'This coupon is only valid for subscriptions in the course "{coupon.restricted_course.name}".'}, status=400)
                 discount_percent = coupon.discount_percent
                 discount_amount = round((float(plan.price) * discount_percent) / 100, 2)
             except Coupon.DoesNotExist:
@@ -158,7 +182,7 @@ class UserSubscriptionViewSet(viewsets.ModelViewSet):
 
         # Create payment
         subtotal = max(0.0, float(plan.price) - discount_amount)
-        gst_amount = round(subtotal * 0.18, 2)
+        gst_amount = round(subtotal * 0.18, 2) if is_gst_enabled() else 0.0
         total_amount = round(subtotal + gst_amount, 2)
 
         Payment.objects.create(
@@ -303,13 +327,17 @@ class PaymentViewSet(viewsets.ModelViewSet):
             try:
                 coupon = Coupon.objects.get(code__iexact=coupon_code.strip(), is_active=True)
                 if not coupon.restricted_email or coupon.restricted_email.strip().lower() == request.user.email.strip().lower():
-                    discount_percent = coupon.discount_percent
-                    discount_amount = round((base_price * discount_percent) / 100, 2)
+                    if not coupon.restricted_course_id or plan.course_specific_id == coupon.restricted_course_id:
+                        discount_percent = coupon.discount_percent
+                        discount_amount = round((base_price * discount_percent) / 100, 2)
             except Coupon.DoesNotExist:
                 pass
 
         subtotal = max(0.0, base_price - discount_amount)
-        gst_amount = round(subtotal * 0.18, 2)
+        if is_gst_enabled():
+            gst_amount = round(subtotal * 0.18, 2)
+        else:
+            gst_amount = 0.0
         total_amount = round(subtotal + gst_amount, 2)
 
         # Generate a mock failed transaction ID if none provided
@@ -352,13 +380,17 @@ class PaymentViewSet(viewsets.ModelViewSet):
             try:
                 coupon = Coupon.objects.get(code__iexact=coupon_code.strip(), is_active=True)
                 if not coupon.restricted_email or coupon.restricted_email.strip().lower() == request.user.email.strip().lower():
-                    discount_percent = coupon.discount_percent
-                    discount_amount = round((base_price * discount_percent) / 100, 2)
+                    if not coupon.restricted_course_id or plan.course_specific_id == coupon.restricted_course_id:
+                        discount_percent = coupon.discount_percent
+                        discount_amount = round((base_price * discount_percent) / 100, 2)
             except Coupon.DoesNotExist:
                 pass
 
         subtotal = max(0.0, base_price - discount_amount)
-        gst_amount = round(subtotal * 0.18, 2)
+        if is_gst_enabled():
+            gst_amount = round(subtotal * 0.18, 2)
+        else:
+            gst_amount = 0.0
         total_amount = round(subtotal + gst_amount, 2)
         amount_in_paise = int(total_amount * 100)
 
@@ -460,13 +492,17 @@ class PaymentViewSet(viewsets.ModelViewSet):
             try:
                 coupon = Coupon.objects.get(code__iexact=coupon_code.strip(), is_active=True)
                 if not coupon.restricted_email or coupon.restricted_email.strip().lower() == request.user.email.strip().lower():
-                    discount_percent = coupon.discount_percent
-                    discount_amount = round((base_price * discount_percent) / 100, 2)
+                    if not coupon.restricted_course_id or plan.course_specific_id == coupon.restricted_course_id:
+                        discount_percent = coupon.discount_percent
+                        discount_amount = round((base_price * discount_percent) / 100, 2)
             except Coupon.DoesNotExist:
                 pass
 
         subtotal = max(0.0, base_price - discount_amount)
-        gst_amount = round(subtotal * 0.18, 2)
+        if is_gst_enabled():
+            gst_amount = round(subtotal * 0.18, 2)
+        else:
+            gst_amount = 0.0
         total_amount = round(subtotal + gst_amount, 2)
 
         if plan.billing_cycle == 'ATTEMPT_WISE' and exam_attempt:
@@ -635,3 +671,30 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
         doc.build(story)
         return response
+
+class PlatformSettingViewSet(viewsets.ModelViewSet):
+    queryset = PlatformSetting.objects.all()
+    serializer_class = PlatformSettingSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'toggle_gst']:
+            return [permissions.IsAuthenticated(), IsSuperUser()]
+        return [permissions.IsAuthenticated()]
+
+    @action(detail=False, methods=['get'])
+    def get_gst_status(self, request):
+        enabled = is_gst_enabled()
+        return Response({'enabled': enabled})
+
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsSuperUser])
+    def toggle_gst(self, request):
+        enabled = request.data.get('enabled')
+        if enabled is None:
+            return Response({'error': 'enabled is required'}, status=400)
+        if isinstance(enabled, str):
+            enabled = enabled.lower() in ['true', '1', 'yes']
+        setting, _ = PlatformSetting.objects.get_or_create(key="ENABLE_GST")
+        setting.value = "true" if enabled else "false"
+        setting.save()
+        return Response({'enabled': setting.value.lower() == "true"})

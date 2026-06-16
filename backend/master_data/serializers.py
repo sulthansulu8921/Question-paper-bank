@@ -59,7 +59,7 @@ class CALevelSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CALevel
-        fields = ['id', 'name', 'slug', 'description', 'order', 'is_active', 'papers', 'paper_count']
+        fields = ['id', 'qualification', 'name', 'slug', 'description', 'order', 'is_active', 'papers', 'paper_count']
 
     def get_paper_count(self, obj):
         return obj.papers.count()
@@ -72,4 +72,4 @@ class CALevelListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CALevel
-        fields = ['id', 'name', 'slug', 'order', 'is_active', 'paper_count', 'chapter_count', 'topic_count']
+        fields = ['id', 'qualification', 'name', 'slug', 'order', 'is_active', 'paper_count', 'chapter_count', 'topic_count']

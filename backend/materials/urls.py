@@ -5,6 +5,8 @@ from materials.views import (
     VideoViewSet, MCQViewSet, BookmarkViewSet, SubjectiveQuestionViewSet, FeedbackViewSet,
     AdminDashboardStatsView, ExportQuestionsExcelView, ImportQuestionsExcelView,
     PDFQuestionExtractView, UploadPDFView, GenericFileUploadView, ParseTextOnlyView,
+    VideoProgressViewSet, MaterialDownloadViewSet, LiveClassViewSet, NotificationViewSet,
+    AssessmentSessionViewSet, MockTestTemplateViewSet,
 )
 
 router = DefaultRouter()
@@ -16,6 +18,13 @@ router.register(r'mcqs', MCQViewSet)
 router.register(r'subjective-questions', SubjectiveQuestionViewSet, basename='subjective-question')
 router.register(r'bookmarks', BookmarkViewSet, basename='bookmark')
 router.register(r'feedback', FeedbackViewSet, basename='feedback')
+router.register(r'video-progress', VideoProgressViewSet, basename='video-progress')
+router.register(r'downloads', MaterialDownloadViewSet, basename='download')
+router.register(r'live-classes', LiveClassViewSet, basename='live-class')
+router.register(r'notifications', NotificationViewSet, basename='notification')
+router.register(r'assessment-sessions', AssessmentSessionViewSet, basename='assessment-session')
+router.register(r'mock-templates', MockTestTemplateViewSet, basename='mock-template')
+
 
 urlpatterns = [
     path('', include(router.urls)),

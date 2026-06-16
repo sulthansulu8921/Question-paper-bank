@@ -19,6 +19,22 @@ from .serializers import (
 
 User = get_user_model()
 
+def safe_get_or_create_achievement(name, defaults):
+    achievements = Achievement.objects.filter(name=name)
+    if achievements.exists():
+        ach = achievements.first()
+        if achievements.count() > 1:
+            Achievement.objects.filter(name=name).exclude(id=ach.id).delete()
+        return ach, False
+    else:
+        try:
+            return Achievement.objects.get_or_create(name=name, defaults=defaults)
+        except Achievement.MultipleObjectsReturned:
+            ach = Achievement.objects.filter(name=name).first()
+            Achievement.objects.filter(name=name).exclude(id=ach.id).delete()
+            return ach, False
+
+
 class StudentStatsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -147,7 +163,7 @@ class StreakView(APIView):
         ]
         for ach_data in achievements_to_check:
             if current_streak >= ach_data['req']:
-                ach, _ = Achievement.objects.get_or_create(
+                ach, _ = safe_get_or_create_achievement(
                     name=ach_data['name'],
                     defaults={
                         'description': f"Maintain a study streak of {ach_data['req']} days.",
@@ -230,7 +246,7 @@ class AchievementsView(APIView):
             ('Perfect Score', 'Score 100% on any mock test.', 'sparkles', 200, 100),
         ]
         for name, desc, icon, xp, coins in defaults:
-            Achievement.objects.get_or_create(
+            safe_get_or_create_achievement(
                 name=name,
                 defaults={
                     'description': desc,

@@ -180,6 +180,155 @@ const TableBuilder = ({
     );
 };
 
+// Helper to parse multiple tables or single table safely
+const parseTablesHelper = (val: string): any[] => {
+    if (!val) return [];
+    try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed.headers && parsed.rows) {
+            return [{ ...parsed, type: parsed.type || 'normal' }];
+        }
+    } catch (e) {}
+    return [];
+};
+
+// ─── Multi Table Manager Component ────────────────────────────────
+const MultiTableManager = ({
+    value,
+    onChange,
+    label,
+    textareaId,
+    insertTextAtCursor,
+    onUpdateText
+}: {
+    value: string;
+    onChange: (val: string) => void;
+    label: string;
+    textareaId?: string;
+    insertTextAtCursor?: (elementId: string, textToInsert: string, onUpdate: (newVal: string) => void) => void;
+    onUpdateText?: (newVal: string) => void;
+}) => {
+    const [tables, setTables] = useState<any[]>(() => parseTablesHelper(value));
+
+    useEffect(() => {
+        const parsed = parseTablesHelper(value);
+        if (JSON.stringify(parsed) !== JSON.stringify(tables)) {
+            setTables(parsed);
+        }
+    }, [value]);
+
+    const updateTables = (newTables: any[]) => {
+        setTables(newTables);
+        onChange(newTables.length > 0 ? JSON.stringify(newTables) : '');
+    };
+
+    const addTable = () => {
+        const newTable = {
+            type: 'normal',
+            headers: ['Header 1', 'Header 2'],
+            rows: [['', '']]
+        };
+        updateTables([...tables, newTable]);
+    };
+
+    const deleteTable = (index: number) => {
+        const newTables = tables.filter((_, i) => i !== index);
+        updateTables(newTables);
+    };
+
+    const updateTableData = (index: number, tableDataStr: string) => {
+        try {
+            const parsed = JSON.parse(tableDataStr);
+            const newTables = tables.map((t, i) => 
+                i === index ? { ...t, headers: parsed.headers, rows: parsed.rows } : t
+            );
+            updateTables(newTables);
+        } catch (e) {}
+    };
+
+    const toggleTableType = (index: number, type: 'normal' | 'cursor') => {
+        const newTables = tables.map((t, i) => 
+            i === index ? { ...t, type } : t
+        );
+        updateTables(newTables);
+    };
+
+    return (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 my-4 space-y-4">
+            <div className="flex justify-between items-center bg-slate-100/80 p-3 rounded-lg border border-slate-200">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">{label}</span>
+                <button
+                    type="button"
+                    onClick={addTable}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
+                >
+                    <Plus size={14} /> Add New Table
+                </button>
+            </div>
+
+            {tables.length === 0 && (
+                <div className="text-center py-6 text-slate-400 text-xs font-medium bg-white border border-dashed border-slate-200 rounded-lg">
+                    No tables added yet. Click "Add New Table" to start.
+                </div>
+            )}
+
+            {tables.map((table, index) => {
+                const cursorTables = tables.slice(0, index + 1).filter(t => t.type === 'cursor');
+                const cursorIndex = cursorTables.length;
+                const placeholder = `[TABLE_${cursorIndex}]`;
+
+                return (
+                    <div key={index} className="border border-slate-200 rounded-xl bg-white p-4 space-y-3 relative shadow-sm">
+                        <button
+                            type="button"
+                            onClick={() => deleteTable(index)}
+                            className="absolute top-4 right-4 text-red-500 hover:text-red-700 transition-colors"
+                            title="Delete Table"
+                        >
+                            <Trash2 size={16} />
+                        </button>
+
+                        <div className="flex flex-wrap items-center gap-3 pr-8">
+                            <span className="px-2.5 py-1 bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold rounded-lg">
+                                Table #{index + 1}
+                            </span>
+
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-slate-400">Position Type:</span>
+                                <select
+                                    value={table.type || 'normal'}
+                                    onChange={e => toggleTableType(index, e.target.value as 'normal' | 'cursor')}
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-blue-500 bg-white font-semibold text-slate-700"
+                                >
+                                    <option value="normal">Normal Table (renders at bottom)</option>
+                                    <option value="cursor">Cursor Table (renders inline)</option>
+                                </select>
+                            </div>
+
+                            {table.type === 'cursor' && textareaId && insertTextAtCursor && onUpdateText && (
+                                <button
+                                    type="button"
+                                    onClick={() => insertTextAtCursor(textareaId, ` ${placeholder} `, onUpdateText)}
+                                    className="px-3 py-1 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition-all shadow-sm"
+                                >
+                                    [+ Insert {placeholder} @ Cursor]
+                                </button>
+                            )}
+                        </div>
+
+                        <TableBuilder
+                            label={`Table #${index + 1} content`}
+                            value={JSON.stringify({ headers: table.headers, rows: table.rows })}
+                            onChange={val => updateTableData(index, val)}
+                        />
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
+
 export default function AddQuestion() {
     const navigate = useNavigate();
     const { id } = useParams();
@@ -646,7 +795,7 @@ export default function AddQuestion() {
                                         className={`tab-item ${form.question_type === 'NORMAL' ? 'active' : ''}`}
                                         onClick={() => set('question_type', 'NORMAL')}
                                     >
-                                        Theory
+                                        Normal
                                     </div>
                                     <div 
                                         className={`tab-item ${form.question_type === 'MCQ' ? 'active' : ''}`}
@@ -718,19 +867,15 @@ export default function AddQuestion() {
                             </div>
                         </div>
 
-                        {/* Row 2: Year, Section, Q No */}
+                        {/* Row 2: Year, Q No */}
                         <div className="settings-grid">
-                            <div className="form-group span-2">
+                            <div className="form-group span-5">
                                 <label className="text-xs font-bold text-slate-500">Year</label>
                                 <select className="form-input mt-1 w-full" value={form.year} onChange={e => set('year', e.target.value)}>
                                     {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
                                 </select>
                             </div>
-                            <div className="form-group span-3">
-                                <label className="text-xs font-bold text-slate-500">Section</label>
-                                <input className="form-input mt-1 w-full" placeholder="e.g. A" value={form.section} onChange={e => set('section', e.target.value)} />
-                            </div>
-                            <div className="form-group span-3">
+                            <div className="form-group span-7">
                                 <label className="text-xs font-bold text-slate-500">Question No.</label>
                                 <input className="form-input mt-1 w-full" placeholder="e.g. 1a" value={form.q_no} onChange={e => set('q_no', e.target.value)} />
                             </div>
@@ -832,7 +977,16 @@ export default function AddQuestion() {
                                         type="button"
                                         onClick={() => {
                                             setShowQTable(true);
-                                            insertTextAtCursor('main-question-text', ' [TABLE] ', val => set('question_text', val));
+                                            const currentTables = parseTablesHelper(form.table_data);
+                                            const cursorTablesCount = currentTables.filter((t: any) => t.type === 'cursor').length;
+                                            const newTablePlaceholder = `[TABLE_${cursorTablesCount + 1}]`;
+                                            const newTable = {
+                                                type: 'cursor',
+                                                headers: ['Header 1', 'Header 2'],
+                                                rows: [['', '']]
+                                            };
+                                            set('table_data', JSON.stringify([...currentTables, newTable]));
+                                            insertTextAtCursor('main-question-text', ` ${newTablePlaceholder} `, val => set('question_text', val));
                                         }}
                                         className="px-3.5 py-1.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-bold transition-all hover:bg-slate-200"
                                     >
@@ -902,10 +1056,13 @@ export default function AddQuestion() {
 
                         {/* Inline Question Table Builder */}
                         {showQTable && (
-                            <TableBuilder
+                            <MultiTableManager
                                 label="Question Tabular Data"
                                 value={form.table_data}
                                 onChange={val => set('table_data', val)}
+                                textareaId="main-question-text"
+                                insertTextAtCursor={insertTextAtCursor}
+                                onUpdateText={val => set('question_text', val)}
                             />
                         )}
 
@@ -1078,10 +1235,16 @@ export default function AddQuestion() {
                                                     <button
                                                         type="button"
                                                         onClick={() => {
-                                                            if (!hasPartQTable) {
-                                                                updateSubQuestion(pIdx, 'table_data', JSON.stringify({ headers: ['Column 1'], rows: [['']] }));
-                                                            }
-                                                            insertTextAtCursor(`sub-q-textarea-${pIdx}`, ' [TABLE] ', val => updateSubQuestion(pIdx, 'question_text', val));
+                                                            const currentTables = parseTablesHelper(part.table_data);
+                                                            const cursorTablesCount = currentTables.filter((t: any) => t.type === 'cursor').length;
+                                                            const newTablePlaceholder = `[TABLE_${cursorTablesCount + 1}]`;
+                                                            const newTable = {
+                                                                type: 'cursor',
+                                                                headers: ['Column 1', 'Column 2'],
+                                                                rows: [['', '']]
+                                                            };
+                                                            updateSubQuestion(pIdx, 'table_data', JSON.stringify([...currentTables, newTable]));
+                                                            insertTextAtCursor(`sub-q-textarea-${pIdx}`, ` ${newTablePlaceholder} `, val => updateSubQuestion(pIdx, 'question_text', val));
                                                         }}
                                                         className="px-2.5 py-1 bg-slate-100 border border-slate-300 text-slate-700 rounded text-[10px] font-bold transition-all hover:bg-slate-200"
                                                     >
@@ -1114,14 +1277,17 @@ export default function AddQuestion() {
                                                     </button>
                                                     {part.question_type === 'MCQ' && !isCaseScenario && (
                                                         <button type="button" onClick={() => addSubQuestionOption(pIdx)} className="px-2.5 py-1 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded text-[10px] font-bold hover:bg-indigo-100 transition-all">+ Add Choice</button>
-                                                    )}
+                                                     )}
                                                 </div>
 
                                                 {hasPartQTable && (
-                                                    <TableBuilder
+                                                    <MultiTableManager
                                                         label={`Sub-question ${part.identifier} Question Table`}
                                                         value={part.table_data}
                                                         onChange={val => updateSubQuestion(pIdx, 'table_data', val)}
+                                                        textareaId={`sub-q-textarea-${pIdx}`}
+                                                        insertTextAtCursor={insertTextAtCursor}
+                                                        onUpdateText={val => updateSubQuestion(pIdx, 'question_text', val)}
                                                     />
                                                 )}
 
@@ -1295,7 +1461,16 @@ export default function AddQuestion() {
                                 type="button"
                                 onClick={() => {
                                     setShowATable(true);
-                                    insertTextAtCursor('main-correct-answer', ' [TABLE] ', val => set('correct_answer', val));
+                                    const currentTables = parseTablesHelper(form.answer_table_data);
+                                    const cursorTablesCount = currentTables.filter((t: any) => t.type === 'cursor').length;
+                                    const newTablePlaceholder = `[TABLE_${cursorTablesCount + 1}]`;
+                                    const newTable = {
+                                        type: 'cursor',
+                                        headers: ['Header 1', 'Header 2'],
+                                        rows: [['', '']]
+                                    };
+                                    set('answer_table_data', JSON.stringify([...currentTables, newTable]));
+                                    insertTextAtCursor('main-correct-answer', ` ${newTablePlaceholder} `, val => set('correct_answer', val));
                                 }}
                                 className="px-3.5 py-1.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-bold transition-all hover:bg-slate-200"
                             >
@@ -1337,10 +1512,13 @@ export default function AddQuestion() {
 
                         {/* Inline Answer Table Builder */}
                         {showATable && (
-                            <TableBuilder
+                            <MultiTableManager
                                 label="Answer Details Table"
                                 value={form.answer_table_data}
                                 onChange={val => set('answer_table_data', val)}
+                                textareaId="main-correct-answer"
+                                insertTextAtCursor={insertTextAtCursor}
+                                onUpdateText={val => set('correct_answer', val)}
                             />
                         )}
 
@@ -1383,10 +1561,16 @@ export default function AddQuestion() {
                                                     <button
                                                         type="button"
                                                         onClick={() => {
-                                                            if (!hasPartATable) {
-                                                                updateSubAnswer(pIdx, 'answer_table_data', JSON.stringify({ headers: ['Column 1'], rows: [['']] }));
-                                                            }
-                                                            insertTextAtCursor(`sub-a-textarea-${pIdx}`, ' [TABLE] ', val => updateSubAnswer(pIdx, 'correct_answer', val));
+                                                            const currentTables = parseTablesHelper(part.answer_table_data);
+                                                            const cursorTablesCount = currentTables.filter((t: any) => t.type === 'cursor').length;
+                                                            const newTablePlaceholder = `[TABLE_${cursorTablesCount + 1}]`;
+                                                            const newTable = {
+                                                                type: 'cursor',
+                                                                headers: ['Column 1', 'Column 2'],
+                                                                rows: [['', '']]
+                                                            };
+                                                            updateSubAnswer(pIdx, 'answer_table_data', JSON.stringify([...currentTables, newTable]));
+                                                            insertTextAtCursor(`sub-a-textarea-${pIdx}`, ` ${newTablePlaceholder} `, val => updateSubAnswer(pIdx, 'correct_answer', val));
                                                         }}
                                                         className="px-2.5 py-1 bg-slate-100 border border-slate-350 text-slate-700 rounded text-[10px] font-bold transition-all hover:bg-slate-200"
                                                     >
@@ -1420,10 +1604,13 @@ export default function AddQuestion() {
                                                 </div>
 
                                                 {hasPartATable && (
-                                                    <TableBuilder
+                                                    <MultiTableManager
                                                         label={`Sub-answer ${part.identifier} Solution Table`}
                                                         value={part.answer_table_data}
                                                         onChange={val => updateSubAnswer(pIdx, 'answer_table_data', val)}
+                                                        textareaId={`sub-a-textarea-${pIdx}`}
+                                                        insertTextAtCursor={insertTextAtCursor}
+                                                        onUpdateText={val => updateSubAnswer(pIdx, 'correct_answer', val)}
                                                     />
                                                 )}
                                             </div>

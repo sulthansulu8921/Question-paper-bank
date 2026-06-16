@@ -9,7 +9,8 @@ class ICAIPaperInline(admin.TabularInline):
 
 @admin.register(CALevel)
 class CALevelAdmin(admin.ModelAdmin):
-    list_display = ('name', 'order', 'is_active')
+    list_display = ('qualification', 'name', 'order', 'is_active')
+    list_filter = ('qualification', 'is_active')
     inlines = [ICAIPaperInline]
 
 

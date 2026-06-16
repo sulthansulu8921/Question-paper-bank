@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Mail, Lock, User, Phone, Loader2, ArrowRight, CheckCircle, ShieldCheck, Zap, Laptop, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, User, Phone, Loader2, ArrowRight, CheckCircle, ShieldCheck, Zap, Laptop, Eye, EyeOff, BookOpen } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import Logo from '@/components/Logo';
 import api from '@/api/axios';
@@ -36,6 +36,47 @@ export default function AuthPage() {
     const [otpSentMsg, setOtpSentMsg] = useState('');
 
     const selectedCourse = searchParams.get('course');
+    const [categories, setCategories] = useState<any[]>([]);
+    const [courses, setCourses] = useState<any[]>([]);
+    const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+    const [selectedCourseId, setSelectedCourseId] = useState<string>('');
+
+    useEffect(() => {
+        api.get('/courses/categories/')
+            .then(res => {
+                const results = res.data.results || res.data || [];
+                setCategories(results);
+            })
+            .catch(err => {
+                console.error("Failed to fetch categories", err);
+            });
+
+        api.get('/courses/courses/')
+            .then(res => {
+                const results = res.data.results || res.data || [];
+                setCourses(results);
+            })
+            .catch(err => {
+                console.error("Failed to fetch courses", err);
+            });
+    }, []);
+
+    useEffect(() => {
+        if (courses.length > 0 && selectedCourse) {
+            const matched = courses.find(c => c.slug === selectedCourse || c.name.toLowerCase() === selectedCourse.toLowerCase());
+            if (matched) {
+                setSelectedCourseId(matched.id.toString());
+                if (matched.category) {
+                    setSelectedCategoryId(matched.category.toString());
+                }
+            }
+        }
+    }, [courses, selectedCourse]);
+
+    const handleCategoryChange = (catId: string) => {
+        setSelectedCategoryId(catId);
+        setSelectedCourseId('');
+    };
 
     const handleGoogleCredentialResponse = async (response: any) => {
         setLoading(true);
@@ -202,7 +243,12 @@ export default function AuthPage() {
             if (user?.is_staff) {
                 navigate('/admin');
             } else {
-                navigate('/dashboard');
+                const targetCourseId = user?.selected_course || selectedCourseId;
+                if (targetCourseId) {
+                    navigate(`/dashboard/courses/${targetCourseId}`);
+                } else {
+                    navigate('/dashboard');
+                }
             }
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Invalid credentials');
@@ -226,8 +272,14 @@ export default function AuthPage() {
         }
 
         try {
-            await register(formData.full_name, formData.mobile, formData.email, formData.password, formData.otp);
-            navigate('/dashboard');
+            await register(formData.full_name, formData.mobile, formData.email, formData.password, formData.otp, selectedCourseId);
+            const user = useAuthStore.getState().user;
+            const targetCourseId = user?.selected_course || selectedCourseId;
+            if (targetCourseId) {
+                navigate(`/dashboard/courses/${targetCourseId}`);
+            } else {
+                navigate('/dashboard');
+            }
         } catch (err: any) {
             console.error('Registration Error:', err);
             const errData = err.response?.data;
@@ -272,7 +324,7 @@ export default function AuthPage() {
                         </Link>
 
                         <div className="space-y-4">
-                            <h2 className="text-4xl font-black leading-tight">Master your <span className="text-primary italic">CA exams.</span></h2>
+                            <h2 className="text-4xl font-black leading-tight">Every Question Counts</h2>
                             <p className="text-white/50 font-medium text-lg max-w-sm">Join India's premium portal for CA Foundation, Intermediate, and Final preparation.</p>
                         </div>
                     </div>
@@ -328,12 +380,61 @@ export default function AuthPage() {
                         </p>
                     </div>
 
-                    {selectedCourse && (
-                        <div className="mb-8 p-4 bg-primary/5 border border-primary/10 rounded-2xl flex items-center justify-between">
-                            <span className="text-[10px] font-black text-primary uppercase tracking-[0.2em] ml-2">Course Track</span>
-                            <span className="text-xs font-black text-slate-900 bg-white px-4 py-1.5 rounded-full shadow-sm border border-slate-100 italic">
-                                {selectedCourse.toUpperCase().replace('-', ' ')}
-                            </span>
+                    {tab !== 'forgot' && (
+                        <div className="mb-8 p-5 bg-slate-50 border border-slate-100 rounded-[2rem] shadow-sm space-y-4">
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2 block">
+                                    Qualification / Main stream *
+                                </label>
+                                <div className="relative group">
+                                    <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-primary transition-colors" size={18} />
+                                    <select
+                                        value={selectedCategoryId}
+                                        onChange={(e) => handleCategoryChange(e.target.value)}
+                                        className="w-full bg-white border border-gray-200/80 rounded-2xl py-3.5 pl-12 pr-10 text-sm font-bold text-slate-800 focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/20 transition-all appearance-none cursor-pointer"
+                                        required
+                                    >
+                                        <option value="">Select Qualification (CA, CMA, CS)</option>
+                                        {categories.map((cat) => (
+                                            <option key={cat.id} value={cat.id}>
+                                                {cat.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {selectedCategoryId && (
+                                <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2 block">
+                                        Course Level Name *
+                                    </label>
+                                    <div className="relative group">
+                                        <BookOpen className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-primary transition-colors" size={18} />
+                                        <select
+                                            value={selectedCourseId}
+                                            onChange={(e) => setSelectedCourseId(e.target.value)}
+                                            className="w-full bg-white border border-gray-200/80 rounded-2xl py-3.5 pl-12 pr-10 text-sm font-bold text-slate-800 focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/20 transition-all appearance-none cursor-pointer"
+                                            required
+                                        >
+                                            <option value="">Select Course Level</option>
+                                            {courses
+                                                .filter((c) => c.category?.toString() === selectedCategoryId.toString())
+                                                .map((course) => (
+                                                    <option key={course.id} value={course.id}>
+                                                        {course.name}
+                                                    </option>
+                                                ))}
+                                        </select>
+                                        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 

@@ -11,37 +11,49 @@ import {
     CheckSquare,
     Users,
     Settings,
-    Database,
     Layers,
     Tag,
     CreditCard,
     Receipt,
     FileText,
-    Video,
     ChevronLeft,
     ChevronRight,
+    Bell,
+    MonitorPlay,
+    Award,
+    BrainCircuit,
+    Activity,
+    ClipboardList,
+    Sliders,
 } from 'lucide-react';
 import Logo from '@/components/Logo';
 import '@/styles/admin/Sidebar.css';
 import '@/styles/admin/Modal.css';
 
 const menuItems = [
-    { path: '/admin', name: 'Dashboard', icon: LayoutDashboard },
-    { path: '/admin/master', name: 'Chapters & Topics', icon: Layers },
-    { path: '/admin/questions', name: 'Question Management', icon: FileQuestion },
-    { path: '/admin/questions/new', name: 'Add New Question', icon: FilePlus },
-    { path: '/admin/subjects', name: 'Subjects', icon: BookOpen },
-    { path: '/admin/papers', name: 'Model Test Papers', icon: Files },
-    { path: '/admin/answers', name: 'Suggested Answers', icon: CheckSquare },
-    { path: '/admin/notes', name: 'Study Notes', icon: FileText },
-    { path: '/admin/videos', name: 'Recorded Videos', icon: Video },
-    { path: '/admin/analytics', name: 'Analytics', icon: BarChart2 },
-    { path: '/admin/users', name: 'Users', icon: Users },
-    { path: '/admin/courses', name: 'Courses', icon: Database },
-    { path: '/admin/settings', name: 'Settings', icon: Settings },
-    { path: '/admin/coupons', name: 'Coupons', icon: Tag },
-    { path: '/admin/pricing', name: 'Pricing Plans', icon: CreditCard },
-    { path: '/admin/payments', name: 'Payments', icon: Receipt },
+    { path: '/admin', name: 'Dashboard', icon: LayoutDashboard, section: 'main' },
+    { path: '/admin/programs', name: 'Qualifications & Levels', icon: Award, section: 'main' },
+    { path: '/admin/master', name: 'Chapters & Topics', icon: Layers, section: 'main' },
+    { path: '/admin/questions', name: 'Question Management', icon: FileQuestion, section: 'main' },
+    { path: '/admin/questions/new', name: 'Add New Question', icon: FilePlus, section: 'main' },
+    { path: '/admin/subjects', name: 'Subjects', icon: BookOpen, section: 'main' },
+    { path: '/admin/papers', name: 'Model Test Papers', icon: Files, section: 'main' },
+    { path: '/admin/answers', name: 'Suggested Answers', icon: CheckSquare, section: 'main' },
+    { path: '/admin/notes', name: 'Study Notes', icon: FileText, section: 'main' },
+    // Assessment Engine section
+    { path: '/admin/mcq-bank', name: 'MCQ Question Bank', icon: BrainCircuit, section: 'assessment' },
+    { path: '/admin/mcq-bank/new', name: 'Add MCQ Question', icon: ClipboardList, section: 'assessment' },
+    { path: '/admin/mock-templates', name: 'Mock Test Templates', icon: Sliders, section: 'assessment' },
+    { path: '/admin/sessions', name: 'Student Sessions', icon: Activity, section: 'assessment' },
+    // Other sections
+    { path: '/admin/classroom', name: 'Classroom Hub', icon: MonitorPlay, section: 'other' },
+    { path: '/admin/notifications', name: 'Announcements', icon: Bell, section: 'other' },
+    { path: '/admin/analytics', name: 'Analytics', icon: BarChart2, section: 'other' },
+    { path: '/admin/users', name: 'Users', icon: Users, section: 'other' },
+    { path: '/admin/settings', name: 'Settings', icon: Settings, section: 'other' },
+    { path: '/admin/coupons', name: 'Coupons', icon: Tag, section: 'other' },
+    { path: '/admin/pricing', name: 'Pricing Plans', icon: CreditCard, section: 'other' },
+    { path: '/admin/payments', name: 'Payments', icon: Receipt, section: 'other' },
 ];
 
 interface SidebarProps {
@@ -64,6 +76,8 @@ const Sidebar = ({ open = false, collapsed = false, onNavigate, onToggleCollapse
                 '/admin/coupons',
                 '/admin/pricing',
                 '/admin/payments',
+                '/admin/live-classes',
+                '/admin/notifications',
             ];
             return !restrictedPaths.includes(item.path);
         }
@@ -102,24 +116,45 @@ const Sidebar = ({ open = false, collapsed = false, onNavigate, onToggleCollapse
 
             <nav className="sidebar-nav">
                 <ul className="nav-list">
-                    {visibleMenuItems.map((item) => {
-                        const Icon = item.icon;
-                        return (
-                            <li key={item.path} className="nav-item">
-                                <NavLink
-                                    to={item.path}
-                                    end={item.path === '/admin'}
-                                    onClick={onNavigate}
-                                    data-label={item.name}
-                                    className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-                                    title={collapsed ? item.name : undefined}
-                                >
-                                    <Icon size={20} className="nav-icon" />
-                                    <span className="nav-label">{item.name}</span>
-                                </NavLink>
-                            </li>
-                        );
-                    })}
+                    {/* Assessment Engine section header */}
+                    {(() => {
+                        const sections: { key: string; label: string }[] = [
+                            { key: 'main', label: 'Content Management' },
+                            { key: 'assessment', label: '🎯 Assessment Engine' },
+                            { key: 'other', label: 'Platform' },
+                        ];
+                        return sections.map(({ key, label }) => {
+                            const items = visibleMenuItems.filter(i => (i as any).section === key);
+                            if (items.length === 0) return null;
+                            return (
+                                <>
+                                    {!collapsed && (
+                                        <li key={`section-${key}`} style={{ padding: '8px 14px 4px', fontSize: '0.65rem', fontWeight: 800, color: key === 'assessment' ? '#a78bfa' : 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: key !== 'main' ? 8 : 0 }}>
+                                            {label}
+                                        </li>
+                                    )}
+                                    {items.map(item => {
+                                        const Icon = item.icon;
+                                        return (
+                                            <li key={item.path} className="nav-item">
+                                                <NavLink
+                                                    to={item.path}
+                                                    end={item.path === '/admin'}
+                                                    onClick={onNavigate}
+                                                    data-label={item.name}
+                                                    className={({ isActive }) => `nav-link ${isActive ? 'active' : ''} ${key === 'assessment' ? 'assessment-item' : ''}`}
+                                                    title={collapsed ? item.name : undefined}
+                                                >
+                                                    <Icon size={20} className="nav-icon" />
+                                                    <span className="nav-label">{item.name}</span>
+                                                </NavLink>
+                                            </li>
+                                        );
+                                    })}
+                                </>
+                            );
+                        });
+                    })()}
                 </ul>
             </nav>
 

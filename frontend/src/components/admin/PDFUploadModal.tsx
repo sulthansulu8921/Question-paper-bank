@@ -36,12 +36,32 @@ export default function PDFUploadModal({ open, onClose, onUploaded }: Props) {
         is_premium: true,
     });
     const [uploaded, setUploaded]   = useState<UploadResult | null>(null);
+    const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+    const [selectedCourseId, setSelectedCourseId] = useState<string>('');
 
     // Fetch subjects for dropdown
     const { data: subjects = [] } = useQuery({
         queryKey: ['subjects-list'],
         queryFn:  async () => (await api.get('/courses/subjects/')).data,
         enabled:  open,
+    });
+
+    const { data: categories = [] } = useQuery({
+        queryKey: ['subjects-categories-list'],
+        queryFn: async () => {
+            const res = await api.get('/courses/categories/');
+            return res.data.results || res.data || [];
+        },
+        enabled: open,
+    });
+
+    const { data: courses = [] } = useQuery({
+        queryKey: ['subjects-courses-list'],
+        queryFn: async () => {
+            const res = await api.get('/courses/courses/');
+            return res.data.results || res.data || [];
+        },
+        enabled: open,
     });
 
     const uploadMutation = useMutation({
@@ -82,6 +102,25 @@ export default function PDFUploadModal({ open, onClose, onUploaded }: Props) {
         setFile(null);
         setUploaded(null);
         setForm({ title: '', subject_id: '', year: '2024', source: 'RTP', paper_type: 'question_paper', is_premium: true });
+        setSelectedCategoryId('');
+        setSelectedCourseId('');
+    };
+
+    const handleCategoryChange = (catId: string) => {
+        setSelectedCategoryId(catId);
+        const filteredCourses = courses.filter((c: any) => c.category?.toString() === catId);
+        const firstCourse = filteredCourses[0]?.id?.toString() || '';
+        setSelectedCourseId(firstCourse);
+        const filteredSubjects = subjects.filter((s: any) => s.course?.toString() === firstCourse);
+        const firstSubject = filteredSubjects[0]?.id?.toString() || '';
+        setForm(prev => ({ ...prev, subject_id: firstSubject }));
+    };
+
+    const handleCourseChange = (courseId: string) => {
+        setSelectedCourseId(courseId);
+        const filteredSubjects = subjects.filter((s: any) => s.course?.toString() === courseId);
+        const firstSubject = filteredSubjects[0]?.id?.toString() || '';
+        setForm(prev => ({ ...prev, subject_id: firstSubject }));
     };
 
     const handleClose = () => { reset(); onClose(); };
@@ -180,16 +219,50 @@ export default function PDFUploadModal({ open, onClose, onUploaded }: Props) {
                                 </div>
 
                                 <div>
+                                    <label className="text-[10px] font-bold text-slate-500 block mb-1">Qualification Stream</label>
+                                    <select
+                                        className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-400 bg-white"
+                                        value={selectedCategoryId}
+                                        onChange={e => handleCategoryChange(e.target.value)}
+                                    >
+                                        <option value="">Select Stream...</option>
+                                        {categories.map((c: any) => (
+                                            <option key={c.id} value={c.id}>{c.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 block mb-1">Course Level</label>
+                                    <select
+                                        className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-400 bg-white"
+                                        value={selectedCourseId}
+                                        onChange={e => handleCourseChange(e.target.value)}
+                                        disabled={!selectedCategoryId}
+                                    >
+                                        <option value="">Select Level...</option>
+                                        {courses
+                                            .filter((c: any) => c.category?.toString() === selectedCategoryId?.toString())
+                                            .map((c: any) => (
+                                                <option key={c.id} value={c.id}>{c.name}</option>
+                                            ))}
+                                    </select>
+                                </div>
+
+                                <div className="col-span-2">
                                     <label className="text-[10px] font-bold text-slate-500 block mb-1">Subject</label>
                                     <select
                                         className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-400 bg-white"
                                         value={form.subject_id}
                                         onChange={e => setForm(p => ({ ...p, subject_id: e.target.value }))}
+                                        disabled={!selectedCourseId}
                                     >
-                                        <option value="">Select subject…</option>
-                                        {subjects.map((s: any) => (
-                                            <option key={s.id} value={s.id}>{s.name}</option>
-                                        ))}
+                                        <option value="">Select Subject...</option>
+                                        {subjects
+                                            .filter((s: any) => s.course?.toString() === selectedCourseId?.toString())
+                                            .map((s: any) => (
+                                                <option key={s.id} value={s.id}>{s.name}</option>
+                                            ))}
                                     </select>
                                 </div>
 

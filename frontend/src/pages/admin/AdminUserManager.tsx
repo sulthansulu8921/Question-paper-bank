@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/api/axios';
 import { 
-    Search, Loader2, UserCheck, UserX, Shield, User, CreditCard, 
+    Search, Loader2, UserX, Shield, User, CreditCard, 
     Activity, Calendar, CheckCircle2, XCircle, Eye, Tag, Clock, Trash2
 } from 'lucide-react';
 import AdminModal from '@/components/admin/AdminModal';
@@ -30,6 +30,42 @@ const AdminUserManager = () => {
 
     const [grantAdminOpen, setGrantAdminOpen] = useState(false);
     const [grantAdminEmail, setGrantAdminEmail] = useState('');
+
+    // Custom actions for suspend/activate and override password
+    const [resetPasswordUser, setResetPasswordUser] = useState<any | null>(null);
+    const [newPassword, setNewPassword] = useState('');
+
+    const handleToggleUserActive = async (user: any) => {
+        setIsActionPending(true);
+        const action = user.is_active ? 'suspend' : 'activate';
+        try {
+            await api.post(`/auth/users/${user.id}/${action}/`);
+            queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+            alert(`User ${user.email} successfully ${action}d.`);
+        } catch (err: any) {
+            alert(err.response?.data?.error || `Failed to ${action} user.`);
+        } finally {
+            setIsActionPending(false);
+        }
+    };
+
+    const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!resetPasswordUser || !newPassword) return;
+        setIsActionPending(true);
+        try {
+            await api.post(`/auth/users/${resetPasswordUser.id}/reset-password/`, {
+                password: newPassword
+            });
+            setResetPasswordUser(null);
+            setNewPassword('');
+            alert('Password reset successfully.');
+        } catch (err: any) {
+            alert(err.response?.data?.error || 'Failed to reset password.');
+        } finally {
+            setIsActionPending(false);
+        }
+    };
     
     const queryClient = useQueryClient();
 
@@ -373,16 +409,30 @@ const AdminUserManager = () => {
                                                 </div>
                                             </td>
                                             <td className="p-4 text-right">
-                                                <div className="flex justify-end items-center gap-2">
+                                                <div className="flex justify-end items-center gap-2 flex-wrap">
                                                     <button 
                                                         onClick={() => setHistoryUser(u)}
                                                         className="p-1.5 border border-slate-200 rounded text-slate-500 hover:text-blue-600 hover:bg-slate-50"
-                                                        title="View History"
+                                                        title="View History & Logs"
                                                     >
                                                         <Eye size={14} />
                                                     </button>
+                                                    <button 
+                                                        onClick={() => setResetPasswordUser(u)}
+                                                        className="px-2.5 py-1.5 rounded-lg border border-rose-200 text-rose-600 text-xs font-bold hover:bg-rose-50"
+                                                        title="Reset Password"
+                                                    >
+                                                        Reset PW
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleToggleUserActive(u)}
+                                                        className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold hover:bg-slate-50 ${u.is_active ? 'border-amber-200 text-amber-600' : 'border-emerald-200 text-emerald-600'}`}
+                                                        title={u.is_active ? 'Suspend User' : 'Activate User'}
+                                                    >
+                                                        {u.is_active ? 'Suspend' : 'Activate'}
+                                                    </button>
                                                     <button
-                                                        className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${u.is_staff ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-blue-200 text-blue-600 hover:bg-blue-50'}`}
+                                                        className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-all ${u.is_staff ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-blue-200 text-blue-600 hover:bg-blue-50'}`}
                                                         title={u.is_staff ? 'Remove Admin privileges' : 'Grant Admin privileges'}
                                                         onClick={() => setConfirmPrivilege({
                                                             open: true,
@@ -396,8 +446,7 @@ const AdminUserManager = () => {
                                                             }
                                                         })}
                                                     >
-                                                        {u.is_staff ? <UserX size={14} className="inline mr-1" /> : <UserCheck size={14} className="inline mr-1" />}
-                                                        {u.is_staff ? 'Demote' : 'Make Admin'}
+                                                        {u.is_staff ? 'Demote' : 'Admin'}
                                                     </button>
                                                     <button
                                                         className="p-1.5 border border-red-200 rounded text-red-500 hover:text-red-700 hover:bg-red-50"
@@ -971,6 +1020,60 @@ const AdminUserManager = () => {
                                 onChange={(e) => setGrantAdminEmail(e.target.value)}
                             />
                             <p className="text-[10px] text-slate-400 font-semibold">The user must already be registered on the platform to be promoted to administrator.</p>
+                        </div>
+                    </form>
+                </AdminModal>
+            )}
+
+            {/* Reset Password Modal */}
+            {resetPasswordUser && (
+                <AdminModal
+                    open={!!resetPasswordUser}
+                    onClose={() => { setResetPasswordUser(null); setNewPassword(''); }}
+                    title="Reset Student Password"
+                    footer={
+                        <div className="flex gap-2 justify-end w-full">
+                            <button
+                                type="button"
+                                className="secondary-btn text-xs font-bold"
+                                onClick={() => { setResetPasswordUser(null); setNewPassword(''); }}
+                                disabled={isActionPending}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                form="reset-password-form"
+                                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all disabled:opacity-50"
+                                disabled={isActionPending}
+                            >
+                                {isActionPending ? <Loader2 size={12} className="animate-spin" /> : 'Reset Password'}
+                            </button>
+                        </div>
+                    }
+                >
+                    <form id="reset-password-form" onSubmit={handleResetPasswordSubmit} className="space-y-4">
+                        <div className="p-4 bg-rose-50/50 border border-rose-100 rounded-2xl flex items-center gap-3">
+                            <Shield className="text-rose-600 shrink-0" size={24} />
+                            <div>
+                                <h4 className="text-xs font-black text-slate-800 uppercase">Override User Password</h4>
+                                <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                                    Setting a new password for: <strong>{resetPasswordUser.email}</strong>
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="form-group space-y-1">
+                            <label className="text-xs font-bold text-slate-700">New Password</label>
+                            <input
+                                type="password"
+                                required
+                                minLength={6}
+                                placeholder="Enter secure new password"
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-rose-100 font-bold text-sm bg-white"
+                                value={newPassword}
+                                onChange={(e) => setNewPassword(e.target.value)}
+                            />
                         </div>
                     </form>
                 </AdminModal>

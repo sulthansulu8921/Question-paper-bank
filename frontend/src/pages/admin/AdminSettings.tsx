@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/store/useAuthStore';
-import { Save, User, Bell, Shield, Database, Loader2 } from 'lucide-react';
+import { Save, User, Bell, Shield, Database, Loader2, Receipt } from 'lucide-react';
 import '@/styles/admin/AddQuestion.css';
 import api from '@/api/axios';
 
@@ -16,6 +16,35 @@ const AdminSettings = () => {
     });
     const [isSavingProfile, setIsSavingProfile] = useState(false);
     const [profileSaved, setProfileSaved] = useState(false);
+
+    // GST billing states
+    const [isGstEnabled, setIsGstEnabled] = useState(true);
+    const [isUpdatingGst, setIsUpdatingGst] = useState(false);
+
+    const fetchGstStatus = async () => {
+        try {
+            const res = await api.get('/subscriptions/settings/get_gst_status/');
+            setIsGstEnabled(res.data.enabled);
+        } catch (err) {
+            console.error('Failed to fetch GST status:', err);
+        }
+    };
+
+    const handleToggleGst = async (checked: boolean) => {
+        setIsUpdatingGst(true);
+        try {
+            const res = await api.post('/subscriptions/settings/toggle_gst/', { enabled: checked });
+            setIsGstEnabled(res.data.enabled);
+        } catch (err) {
+            console.error('Failed to update GST status:', err);
+        } finally {
+            setIsUpdatingGst(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchGstStatus();
+    }, []);
 
     const handleSaveProfile = async () => {
         setIsSavingProfile(true);
@@ -109,6 +138,39 @@ const AdminSettings = () => {
                             <button className="secondary-btn flex-center gap-sm" onClick={handleChangePassword} disabled={!oldPassword || !newPassword}>
                                 <Shield size={18} /><span>Update Password</span>
                             </button>
+                        </div>
+                    </div>
+
+                    {/* Billing Preferences Section */}
+                    <div className="form-section card">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(79,70,229,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4F46E5' }}>
+                                <Receipt size={20} />
+                            </div>
+                            <h3 className="section-title" style={{ margin: 0 }}>Billing Configurations</h3>
+                        </div>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: '#F8FAFC', borderRadius: '0.75rem', border: '1px solid #E2E8F0' }}>
+                                <div>
+                                    <h4 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 700, color: '#1E293B' }}>Enable GST Billing</h4>
+                                    <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.75rem', color: '#64748B' }}>
+                                        When enabled, an additional 18% GST will be applied during student checkout payments.
+                                    </p>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center' }}>
+                                    {isUpdatingGst ? (
+                                        <Loader2 size={20} className="animate-spin" style={{ color: '#4F46E5', marginRight: '0.5rem' }} />
+                                    ) : null}
+                                    <input 
+                                        type="checkbox" 
+                                        checked={isGstEnabled}
+                                        disabled={isUpdatingGst}
+                                        onChange={(e) => handleToggleGst(e.target.checked)}
+                                        style={{ width: 22, height: 22, cursor: 'pointer', accentColor: '#4F46E5' }}
+                                    />
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
