@@ -2,19 +2,19 @@ from rest_framework import status, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.utils import timezone
-from datetime import date
+from datetime import date, timedelta
 from django.db.models import F
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from .models import (
     StudentStats, StudyStreak, Achievement, UserAchievement,
-    ActivityLog, Quote, UpcomingExam, Assignment, MockTestResult
+    ActivityLog, Quote, UpcomingExam, Assignment, MockTestResult, ChatMessage
 )
 from .serializers import (
     StudentStatsSerializer, StudyStreakSerializer, AchievementSerializer,
     UserAchievementSerializer, ActivityLogSerializer, QuoteSerializer,
     UpcomingExamSerializer, AssignmentSerializer, MockTestResultSerializer,
-    LeaderboardEntrySerializer
+    LeaderboardEntrySerializer, ChatMessageSerializer
 )
 
 User = get_user_model()
@@ -416,3 +416,24 @@ class AdminGamificationActionsView(APIView):
             return Response({'status': 'success', 'current_streak': 0})
 
         return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ChatMessageView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        one_hour_ago = timezone.now() - timedelta(hours=1)
+        ChatMessage.objects.filter(created_at__lt=one_hour_ago).delete()
+        messages = ChatMessage.objects.filter(created_at__gte=one_hour_ago).order_by('created_at')
+        serializer = ChatMessageSerializer(messages, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        one_hour_ago = timezone.now() - timedelta(hours=1)
+        ChatMessage.objects.filter(created_at__lt=one_hour_ago).delete()
+        serializer = ChatMessageSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(user=request.user)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+

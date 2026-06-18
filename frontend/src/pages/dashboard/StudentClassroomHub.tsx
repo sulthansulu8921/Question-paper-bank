@@ -31,7 +31,7 @@ export default function StudentClassroomHub() {
                 </div>
 
                 {/* Tab Switcher */}
-                <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200/50 self-start md:self-center">
+                <div className="flex bg-bg p-1.5 rounded-2xl border border-border self-start md:self-center">
                     {tabs.map((tab) => {
                         const Icon = tab.icon;
                         const isActive = activeTab === tab.id;
@@ -40,14 +40,14 @@ export default function StudentClassroomHub() {
                                 key={tab.id}
                                 onClick={() => handleTabChange(tab.id)}
                                 className={`relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                                    isActive ? 'text-primary' : 'text-slate-500 hover:text-slate-700'
+                                    isActive ? 'text-primary' : 'text-text-secondary hover:text-text-primary'
                                 }`}
                                 type="button"
                             >
                                 {isActive && (
                                     <motion.div
                                         layoutId="student-active-tab-indicator"
-                                        className="absolute inset-0 bg-white shadow-sm border border-slate-200/50 rounded-xl"
+                                        className="absolute inset-0 bg-card shadow-sm border border-border rounded-xl"
                                         transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                                     />
                                 )}

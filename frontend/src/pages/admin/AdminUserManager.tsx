@@ -357,6 +357,7 @@ const AdminUserManager = () => {
                                 <tr className="bg-slate-100/50 border-b border-slate-200">
                                     <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">User</th>
                                     <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Email</th>
+                                    <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Selected Course</th>
                                     <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Mobile</th>
                                     <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Role</th>
                                     <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
@@ -366,13 +367,13 @@ const AdminUserManager = () => {
                             <tbody className="divide-y divide-slate-100">
                                 {isUsersLoading ? (
                                     <tr>
-                                        <td colSpan={6} className="text-center p-10">
+                                        <td colSpan={7} className="text-center p-10">
                                             <Loader2 className="animate-spin mx-auto text-blue-600" />
                                         </td>
                                     </tr>
                                 ) : filteredUsers.length === 0 ? (
                                     <tr>
-                                        <td colSpan={6} className="text-center p-10 text-slate-400 font-semibold text-sm">
+                                        <td colSpan={7} className="text-center p-10 text-slate-400 font-semibold text-sm">
                                             No matching users found.
                                         </td>
                                     </tr>
@@ -390,6 +391,15 @@ const AdminUserManager = () => {
                                                 </div>
                                             </td>
                                             <td className="p-4 text-sm font-semibold text-slate-600">{u.is_staff ? u.email : maskEmail(u.email)}</td>
+                                            <td className="p-4 text-sm font-bold text-slate-700">
+                                                {u.selected_course_name ? (
+                                                    <span className="px-2.5 py-1 rounded bg-blue-50 text-blue-700 border border-blue-100 text-xs">
+                                                        {u.selected_course_name}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-slate-400 font-semibold text-xs">—</span>
+                                                )}
+                                            </td>
                                             <td className="p-4 text-sm font-semibold text-slate-500">{u.mobile_number || '—'}</td>
                                             <td className="p-4">
                                                 {u.is_staff ? (
@@ -790,6 +800,11 @@ const AdminUserManager = () => {
                                     <p className="text-slate-500 font-semibold">
                                         Role: <span className="font-bold text-slate-700">{historyUser.is_staff ? 'Admin' : 'Student'}</span>
                                     </p>
+                                    {!historyUser.is_staff && (
+                                        <p className="text-slate-500 font-semibold">
+                                            Selected Course: <span className="font-bold text-blue-600">{historyUser.selected_course_name || 'None Selected'}</span>
+                                        </p>
+                                    )}
                                     <p className="text-slate-500 font-semibold">
                                         Status: <span className={`font-bold ${historyUser.is_active ? 'text-green-600' : 'text-red-500'}`}>{historyUser.is_active ? 'Active' : 'Inactive'}</span>
                                     </p>

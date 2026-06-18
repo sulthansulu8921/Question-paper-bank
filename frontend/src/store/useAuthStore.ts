@@ -9,7 +9,7 @@ interface AuthState {
     logout: () => void;
     login: (email: string, password: string) => Promise<void>;
     register: (name: string, mobile: string, email: string, password: string, otp: string, selectedCourseId?: string) => Promise<void>;
-    googleLogin: (credential: string) => Promise<void>;
+    googleLogin: (credential: string, selectedCourseId?: string) => Promise<void>;
     updateProfile: (data: any) => Promise<void>;
     hydrate: () => Promise<void>;
 }
@@ -36,8 +36,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         localStorage.setItem('token', access);
         set({ user: profileResponse.data, token: access, isHydrating: false });
     },
-    googleLogin: async (credential: string) => {
-        const response = await api.post('/auth/google/', { token: credential });
+    googleLogin: async (credential: string, selectedCourseId?: string) => {
+        const response = await api.post('/auth/google/', {
+            token: credential,
+            selected_course: selectedCourseId ? parseInt(selectedCourseId) : undefined
+        });
         const { access } = response.data;
 
         // Fetch full profile info including settings

@@ -25,6 +25,7 @@ import {
     Activity,
     ClipboardList,
     Sliders,
+    GitPullRequest,
 } from 'lucide-react';
 import Logo from '@/components/Logo';
 import '@/styles/admin/Sidebar.css';
@@ -54,6 +55,7 @@ const menuItems = [
     { path: '/admin/coupons', name: 'Coupons', icon: Tag, section: 'other' },
     { path: '/admin/pricing', name: 'Pricing Plans', icon: CreditCard, section: 'other' },
     { path: '/admin/payments', name: 'Payments', icon: Receipt, section: 'other' },
+    { path: '/admin/progression', name: 'Course Progression', icon: GitPullRequest, section: 'other' },
 ];
 
 interface SidebarProps {
@@ -68,20 +70,37 @@ const Sidebar = ({ open = false, collapsed = false, onNavigate, onToggleCollapse
     const user = useAuthStore((state) => state.user);
 
     const visibleMenuItems = menuItems.filter((item) => {
-        if (!user?.is_superuser) {
-            const restrictedPaths = [
-                '/admin',
-                '/admin/analytics',
+        const role = user?.role;
+        
+        // Super Admins see everything
+        if (user?.is_superuser || role === 'SUPER_ADMIN') {
+            return true;
+        }
+        
+        // Institution Admins and Instructors can access admin panel
+        if (role === 'INSTITUTION_ADMIN' || role === 'INSTRUCTOR') {
+            const superAdminOnlyPaths = [
                 '/admin/users',
                 '/admin/coupons',
                 '/admin/pricing',
                 '/admin/payments',
-                '/admin/live-classes',
                 '/admin/notifications',
+                '/admin/programs', // only Super Admin manages global course types
+                '/admin/progression',
             ];
-            return !restrictedPaths.includes(item.path);
+            if (role === 'INSTRUCTOR') {
+                // Instructors don't manage global subjects, MTP definitions, or chapters/topics
+                const instructorRestricted = [
+                    '/admin/subjects',
+                    '/admin/papers',
+                    '/admin/master',
+                ];
+                return !superAdminOnlyPaths.includes(item.path) && !instructorRestricted.includes(item.path);
+            }
+            return !superAdminOnlyPaths.includes(item.path);
         }
-        return true;
+        
+        return false;
     });
 
     const handleLogout = () => {
@@ -94,7 +113,7 @@ const Sidebar = ({ open = false, collapsed = false, onNavigate, onToggleCollapse
             {/* Header: Logo + toggle button */}
             <div className="sidebar-header">
                 {!collapsed && (
-                    <Logo theme="dark" className="h-8 object-contain" style={{ flex: 1, minWidth: 0, transition: 'opacity 0.2s' }} />
+                    <Logo theme="dark" className="h-8 w-auto object-contain shrink-0" style={{ transition: 'opacity 0.2s' }} />
                 )}
                 {/* Toggle button — visible only on desktop */}
                 <button

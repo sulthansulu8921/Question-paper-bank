@@ -17,6 +17,8 @@ interface Plan {
     level_name: 'FOUNDATION' | 'INTERMEDIATE' | 'FINAL';
     scope: 'PAPER_WISE' | 'GROUP_WISE';
     billing_cycle: 'MONTHLY' | 'ATTEMPT_WISE';
+    course_specific?: number;
+    level_specific?: number;
 }
 
 interface LevelDB {
@@ -43,10 +45,49 @@ export default function SubscriptionPage() {
     const hydrate = useAuthStore((state) => state.hydrate);
     const queryClient = useQueryClient();
 
+    // Fetch active course details (levels and subjects)
+    const { data: activeCourse } = useQuery<any>({
+        queryKey: ['active-course-details', user?.selected_course],
+        queryFn: async () => {
+            if (!user?.selected_course) return null;
+            return (await api.get(`/courses/courses/${user.selected_course}/`)).data;
+        },
+        enabled: !!user?.selected_course,
+    });
+
     // Configurator steps state
-    const [selectedLevel, setSelectedLevel] = useState<'FOUNDATION' | 'INTERMEDIATE' | 'FINAL'>('INTERMEDIATE');
+    const [selectedLevelId, setSelectedLevelId] = useState<number | null>(null);
     const [selectedScope, setSelectedScope] = useState<'PAPER_WISE' | 'GROUP_WISE'>('GROUP_WISE');
     const [selectedCycle, setSelectedCycle] = useState<'MONTHLY' | 'ATTEMPT_WISE'>('ATTEMPT_WISE');
+
+    const matchedLevelObj = activeCourse?.levels?.find((lvl: any) => lvl.id === selectedLevelId) || activeCourse?.levels?.[0] || null;
+
+    const selectedLevel: 'FOUNDATION' | 'INTERMEDIATE' | 'FINAL' = (() => {
+        if (matchedLevelObj) {
+            const name = matchedLevelObj.name.toUpperCase();
+            if (name.includes('FOUNDATION')) return 'FOUNDATION';
+            if (name.includes('FINAL')) return 'FINAL';
+        }
+        if (activeCourse) {
+            const name = activeCourse.name.toUpperCase();
+            if (name.includes('FOUNDATION')) return 'FOUNDATION';
+            if (name.includes('FINAL')) return 'FINAL';
+        }
+        return 'INTERMEDIATE';
+    })();
+
+    const calendarMonths = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    const attemptsMap = {
+        FOUNDATION: ['January', 'May', 'September'],
+        INTERMEDIATE: ['January', 'May', 'September'],
+        FINAL: ['May', 'November']
+    };
+
+    const currentAttempts = attemptsMap[selectedLevel] || [];
 
     // Details selection
     const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
@@ -62,7 +103,7 @@ export default function SubscriptionPage() {
     const [couponError, setCouponError] = useState('');
     const [couponSuccess, setCouponSuccess] = useState('');
     const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
-    const [isGstEnabled, setIsGstEnabled] = useState(true);
+    const [isGstEnabled, setIsGstEnabled] = useState(false);
 
     useEffect(() => {
         const fetchGstConfig = async () => {
@@ -76,6 +117,18 @@ export default function SubscriptionPage() {
         fetchGstConfig();
     }, []);
 
+    useEffect(() => {
+        if (currentAttempts.length > 0 && !selectedAttempt) {
+            setSelectedAttempt(currentAttempts[0]);
+        }
+    }, [currentAttempts, selectedAttempt]);
+
+    useEffect(() => {
+        if (selectedCycle === 'MONTHLY' && !selectedMonth) {
+            setSelectedMonth(calendarMonths[new Date().getMonth()]);
+        }
+    }, [selectedCycle, selectedMonth]);
+
     // Checkout / Processing state
     const [isProcessing, setIsProcessing] = useState(false);
     const [paymentSuccess, setPaymentSuccess] = useState(false);
@@ -85,7 +138,10 @@ export default function SubscriptionPage() {
     // Fetch plans
     const { data: plans = [], isLoading: plansLoading } = useQuery<Plan[]>({
         queryKey: ['subscription-plans'],
-        queryFn: async () => (await api.get('/subscriptions/plans/')).data,
+        queryFn: async () => {
+            const res = await api.get('/subscriptions/plans/');
+            return Array.isArray(res.data) ? res.data : (res.data.results || []);
+        },
     });
 
     // Fetch user payment history
@@ -121,27 +177,39 @@ export default function SubscriptionPage() {
     // Fetch backend syllabus metadata
     const { data: courses = [] } = useQuery<CourseDB[]>({
         queryKey: ['courses-list'],
-        queryFn: async () => (await api.get('/courses/courses/')).data,
+        queryFn: async () => {
+            const res = await api.get('/courses/courses/');
+            return Array.isArray(res.data) ? res.data : (res.data.results || []);
+        },
     });
 
     const { data: levels = [] } = useQuery<LevelDB[]>({
         queryKey: ['levels-list'],
-        queryFn: async () => (await api.get('/courses/levels/')).data,
+        queryFn: async () => {
+            const res = await api.get('/courses/levels/');
+            return Array.isArray(res.data) ? res.data : (res.data.results || []);
+        },
     });
 
     const { data: subjects = [] } = useQuery<SubjectDB[]>({
         queryKey: ['subjects-list'],
-        queryFn: async () => (await api.get('/courses/subjects/')).data,
+        queryFn: async () => {
+            const res = await api.get('/courses/subjects/');
+            return Array.isArray(res.data) ? res.data : (res.data.results || []);
+        },
     });
+
 
     // Map level selection to database levels
     const getActiveLevelDb = () => {
+        if (matchedLevelObj) return matchedLevelObj;
         const queryTerm = selectedLevel === 'FOUNDATION' ? 'foundation' : selectedLevel === 'INTERMEDIATE' ? 'intermediate' : 'final';
         return levels.find(l => l.name.toLowerCase().includes(queryTerm)) || null;
     };
 
     // Map level selection to database course
     const getActiveCourseDb = () => {
+        if (activeCourse) return activeCourse;
         const queryTerm = selectedLevel === 'FOUNDATION' ? 'foundation' : selectedLevel === 'INTERMEDIATE' ? 'intermediate' : 'final';
         return courses.find(c => c.name.toLowerCase().includes(queryTerm)) || null;
     };
@@ -193,14 +261,30 @@ export default function SubscriptionPage() {
             setSelectedAttempt(selectedLevel === 'FINAL' ? 'May' : 'January');
             setSelectedMonth('');
         }
-    }, [selectedLevel, selectedScope, selectedCycle]);
+    }, [selectedLevelId, selectedScope, selectedCycle, selectedLevel]);
 
     // Active matching plan
-    const matchingPlan = plans.find(p =>
-        p.level_name === selectedLevel &&
-        p.scope === selectedScope &&
-        p.billing_cycle === selectedCycle
-    );
+    const matchingPlan = plans.find(p => {
+        // If a plan is course-specific, it must match the active course ID
+        if (p.course_specific) {
+            if (p.course_specific !== user?.selected_course) return false;
+        }
+        // Match level specific ID or fallback to name matching
+        if (matchedLevelObj) {
+            if (p.level_specific) {
+                if (p.level_specific !== matchedLevelObj.id) return false;
+            } else {
+                const lvlNameUpper = matchedLevelObj.name.toUpperCase();
+                if (lvlNameUpper.includes('FOUNDATION') && p.level_name !== 'FOUNDATION') return false;
+                if (lvlNameUpper.includes('INTERMEDIATE') && p.level_name !== 'INTERMEDIATE') return false;
+                if (lvlNameUpper.includes('FINAL') && p.level_name !== 'FINAL') return false;
+                if (!lvlNameUpper.includes('FOUNDATION') && !lvlNameUpper.includes('INTERMEDIATE') && !lvlNameUpper.includes('FINAL') && p.level_name !== lvlNameUpper) return false;
+            }
+        } else {
+            if (p.level_name !== selectedLevel) return false;
+        }
+        return p.scope === selectedScope && p.billing_cycle === selectedCycle;
+    });
 
     // Cost Breakdown Calculation (GST 18% if enabled)
     const basePrice = matchingPlan ? parseFloat(matchingPlan.price) : 0;
@@ -400,23 +484,10 @@ export default function SubscriptionPage() {
         }
     };
 
-    const calendarMonths = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-
-    const attemptsMap = {
-        FOUNDATION: ['January', 'May', 'September'],
-        INTERMEDIATE: ['January', 'May', 'September'],
-        FINAL: ['May', 'November']
-    };
-
-    const currentAttempts = attemptsMap[selectedLevel] || [];
-
     const faqs = [
         { q: "How do Monthly and Attempt-wise cycles differ?", a: "Monthly plans give you access for exactly 30 days from the purchase date. Attempt-wise plans keep your subscription active until the end of the exam month for that attempt cycle (e.g. access is sustained until May 31 for the May attempt)." },
         { q: "Can I subscribe to multiple subjects?", a: "Absolutely! The system maintains separate active plans per subject/group. Purchasing a plan for a new subject adds it alongside your existing active subject access." },
-        { q: "Are prices inclusive of GST?", a: "No, a standard 18% GST (Goods and Services Tax) is calculated at the payment checkout screen according to Indian Tax Rules. A tax invoice is automatically generated for your records." }
+        { q: "Are there any hidden taxes or fees?", a: isGstEnabled ? "A standard 18% GST (Goods and Services Tax) is calculated at the payment checkout screen according to Indian Tax Rules." : "No, the price you see is the final price. There are no additional taxes or hidden charges added at checkout." }
     ];
 
     return (
@@ -461,32 +532,62 @@ export default function SubscriptionPage() {
                                     <Award className="text-primary" size={20} />
                                     <h3 className="text-sm font-black text-text-primary uppercase tracking-wider">1. Course Level</h3>
                                 </div>
-                                <div className="grid grid-cols-3 gap-3">
-                                    {(['FOUNDATION', 'INTERMEDIATE', 'FINAL'] as const).map((lvl) => (
-                                        <button
-                                            key={lvl}
-                                            onClick={() => setSelectedLevel(lvl)}
-                                            className={`py-3.5 px-4 rounded-2xl text-xs font-black uppercase tracking-wider transition-all border ${selectedLevel === lvl
-                                                    ? 'bg-primary text-white border-primary shadow-lg shadow-primary/10 scale-[1.02]'
-                                                    : 'bg-bg text-text-secondary border-border hover:bg-bg-secondary'
-                                                }`}
-                                        >
-                                            CA {lvl.charAt(0) + lvl.slice(1).toLowerCase()}
-                                        </button>
-                                    ))}
-                                </div>
+                                {user?.selected_course ? (
+                                    <div className="p-4 bg-primary/5 border border-primary/10 rounded-2xl flex items-center justify-between">
+                                        <div>
+                                            <span className="text-[10px] font-black text-primary uppercase tracking-wider">Your Active Program</span>
+                                            <h3 className="text-sm font-black text-text-primary mt-0.5">{activeCourse?.name || user?.selected_course_name}</h3>
+                                        </div>
+                                        <span className="text-[10px] font-black bg-primary/10 text-primary px-3 py-1.5 rounded-full uppercase tracking-wider">
+                                            {activeCourse?.category_name || user?.selected_course_category || 'CA'}
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        {activeCourse?.levels && activeCourse.levels.length > 0 ? (
+                                            activeCourse.levels.map((lvl: any) => (
+                                                <button
+                                                    key={lvl.id}
+                                                    onClick={() => setSelectedLevelId(lvl.id)}
+                                                    className={`py-3.5 px-4 rounded-2xl text-xs font-black uppercase tracking-wider transition-all border ${
+                                                        (selectedLevelId === lvl.id || (!selectedLevelId && activeCourse.levels[0]?.id === lvl.id))
+                                                            ? 'bg-primary text-white border-primary shadow-lg shadow-primary/10 scale-[1.02]'
+                                                            : 'bg-bg text-text-secondary border-border hover:bg-bg-secondary'
+                                                    }`}
+                                                >
+                                                    {lvl.name}
+                                                </button>
+                                            ))
+                                        ) : (
+                                            (['FOUNDATION', 'INTERMEDIATE', 'FINAL'] as const).map((lvl) => (
+                                                <button
+                                                    key={lvl}
+                                                    onClick={() => setSelectedLevelId(null)}
+                                                    className={`py-3.5 px-4 rounded-2xl text-xs font-black uppercase tracking-wider transition-all border ${selectedLevel === lvl
+                                                            ? 'bg-primary text-white border-primary shadow-lg shadow-primary/10 scale-[1.02]'
+                                                            : 'bg-bg text-text-secondary border-border hover:bg-bg-secondary'
+                                                        }`}
+                                                >
+                                                    CA {lvl.charAt(0) + lvl.slice(1).toLowerCase()}
+                                                </button>
+                                            ))
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
-                            {selectedLevel !== 'INTERMEDIATE' ? (
+                            {!matchingPlan ? (
                                 <div className="bg-card rounded-[2rem] p-8 border border-border shadow-sm text-center py-16 space-y-6 relative overflow-hidden">
                                     <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 to-orange-500" />
                                     <div className="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-[1.25rem] flex items-center justify-center mx-auto border border-amber-500/20">
                                         <Sparkles size={32} />
                                     </div>
                                     <div className="max-w-md mx-auto space-y-3">
-                                        <h3 className="text-xl font-black text-text-primary uppercase tracking-wider">CA {selectedLevel.charAt(0) + selectedLevel.slice(1).toLowerCase()} Coming Soon</h3>
+                                        <h3 className="text-xl font-black text-text-primary uppercase tracking-wider">
+                                            {matchedLevelObj?.name || selectedLevel} Coming Soon
+                                        </h3>
                                         <p className="text-xs text-text-muted font-bold leading-relaxed">
-                                            We are currently finalizing the exam question papers, suggested answers, and handwritten study notes for CA {selectedLevel.charAt(0) + selectedLevel.slice(1).toLowerCase()}. 
+                                            We are currently finalizing the exam question papers, suggested answers, and handwritten study notes for {matchedLevelObj?.name || selectedLevel}. 
                                             This course level will be active for subscription very shortly!
                                         </p>
                                     </div>
@@ -703,13 +804,13 @@ export default function SubscriptionPage() {
                                     <p className="text-[10px] text-text-muted font-bold mt-1">Review plan choices and tax calculation.</p>
                                 </div>
 
-                                {selectedLevel !== 'INTERMEDIATE' ? (
+                                {!matchingPlan ? (
                                     <div className="text-center py-8 text-text-muted space-y-3">
                                         <AlertCircle className="mx-auto text-amber-500 animate-pulse" size={32} />
                                         <div className="space-y-1">
-                                            <p className="text-xs font-black uppercase text-text-primary">CA {selectedLevel.charAt(0) + selectedLevel.slice(1).toLowerCase()} Plan</p>
+                                            <p className="text-xs font-black uppercase text-text-primary">{matchedLevelObj?.name || selectedLevel} Plan</p>
                                             <p className="text-[10px] text-text-muted font-bold leading-relaxed">
-                                                This course is coming soon. Billing and subscriptions are not active for this level yet.
+                                                This course level is coming soon. Billing and subscriptions are not active for this level yet.
                                             </p>
                                         </div>
                                     </div>
@@ -719,7 +820,7 @@ export default function SubscriptionPage() {
                                         <div className="bg-bg rounded-2xl p-4 border border-border text-xs font-semibold text-text-secondary space-y-2.5">
                                             <div className="flex justify-between">
                                                 <span className="text-text-muted">Course Level</span>
-                                                <span className="font-bold text-text-primary">CA {selectedLevel.charAt(0) + selectedLevel.slice(1).toLowerCase()}</span>
+                                                <span className="font-bold text-text-primary">{matchedLevelObj?.name || selectedLevel}</span>
                                             </div>
                                             <div className="flex justify-between">
                                                 <span className="text-text-muted">Billing Type</span>
@@ -799,7 +900,7 @@ export default function SubscriptionPage() {
                                         {/* Cost breakdown */}
                                         <div className="border-t border-border pt-4 space-y-2">
                                             <div className="flex justify-between text-xs font-semibold text-text-secondary">
-                                                <span>Price (Excl. Tax)</span>
+                                                <span>{isGstEnabled ? 'Price (Excl. Tax)' : 'Price'}</span>
                                                 <span>₹{basePrice.toFixed(2)}</span>
                                             </div>
                                             {appliedCoupon && (
@@ -828,9 +929,31 @@ export default function SubscriptionPage() {
                                         )}
 
                                         {paymentSuccess ? (
-                                            <div className="p-4 bg-green-500/10 border border-green-500/20 text-green-600 rounded-xl text-xs font-black flex items-center gap-2 justify-center">
-                                                <CheckCircle size={16} />
-                                                <span>Payment Success! Access Granted.</span>
+                                            <div className="p-5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl space-y-4 text-emerald-600 text-left">
+                                                <div className="flex items-center gap-2 justify-center">
+                                                    <CheckCircle size={18} className="text-emerald-500 animate-bounce" />
+                                                    <span className="text-xs font-black uppercase tracking-wider">Payment Success! Access Granted.</span>
+                                                </div>
+                                                
+                                                <div className="border-t border-emerald-500/15 pt-3 space-y-2.5 text-[11px] font-semibold">
+                                                    <div className="flex justify-between items-center gap-4">
+                                                        <span className="text-emerald-600/70 whitespace-nowrap">Plan Name</span>
+                                                        <span className="font-black text-emerald-700 text-right">{matchingPlan?.name}</span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center gap-4">
+                                                        <span className="text-emerald-600/70 whitespace-nowrap">Access Scope</span>
+                                                        <span className="font-bold text-emerald-700 text-right">
+                                                            {selectedScope === 'PAPER_WISE'
+                                                                ? `Paper - ${hasNoDatabaseSubjects ? selectedMockSubject : (filteredSubjects.find(s => s.id.toString() === selectedSubjectId)?.name || 'Selected Paper')}`
+                                                                : (selectedLevel as string) === 'FOUNDATION' ? 'Whole Course' : selectedGroup === 'ALL' ? 'Both Groups' : selectedGroup.replace('_', ' ')
+                                                            }
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center gap-4">
+                                                        <span className="text-emerald-600/70 whitespace-nowrap">Purchased Date</span>
+                                                        <span className="font-bold text-emerald-700 text-right">{new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                                    </div>
+                                                </div>
                                             </div>
                                         ) : (
                                             <button
@@ -908,7 +1031,8 @@ export default function SubscriptionPage() {
                                             <th className="pb-4 font-black">Plan</th>
                                             <th className="pb-4 font-black">Transaction ID</th>
                                             <th className="pb-4 font-black">Amount</th>
-                                            <th className="pb-4 font-black">Date</th>
+                                            <th className="pb-4 font-black">Purchased</th>
+                                            <th className="pb-4 font-black">Expires</th>
                                             <th className="pb-4 font-black text-center">Status</th>
                                             <th className="pb-4 font-black text-right">Invoice</th>
                                         </tr>
@@ -916,10 +1040,28 @@ export default function SubscriptionPage() {
                                     <tbody className="divide-y divide-border/50">
                                         {paymentHistory.map((pay: any) => (
                                             <tr key={pay.id} className="text-text-secondary">
-                                                <td className="py-4 font-black text-text-primary">{pay.plan_name}</td>
+                                                <td className="py-4 font-black text-text-primary">
+                                                    <div>{pay.plan_name}</div>
+                                                    {pay.subscription_details && (
+                                                        <div className="text-[10px] text-primary/80 font-bold mt-0.5">
+                                                            {pay.subscription_details.subject_name 
+                                                                ? `Paper: ${pay.subscription_details.subject_name}` 
+                                                                : pay.subscription_details.group 
+                                                                    ? `Scope: ${pay.subscription_details.group.replace('_', ' ')}` 
+                                                                    : 'Whole Course'}
+                                                            {pay.subscription_details.exam_attempt && ` · Attempt: ${pay.subscription_details.exam_attempt}`}
+                                                        </div>
+                                                    )}
+                                                </td>
                                                 <td className="py-4 font-mono text-[10px] font-bold">{pay.transaction_id}</td>
                                                 <td className="py-4 font-black text-primary">₹{parseFloat(pay.amount).toFixed(2)}</td>
                                                 <td className="py-4 font-bold text-[11px]">{new Date(pay.created_at).toLocaleDateString(undefined, { timeZone: 'UTC' })}</td>
+                                                <td className="py-4 font-bold text-[11px]">
+                                                    {pay.expiry_date
+                                                        ? new Date(pay.expiry_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+                                                        : <span className="text-text-muted">—</span>
+                                                    }
+                                                </td>
                                                 <td className="py-4 text-center">
                                                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${pay.status === 'SUCCESS'
                                                             ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'

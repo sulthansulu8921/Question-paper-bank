@@ -15,13 +15,12 @@ from rest_framework.pagination import PageNumberPagination
 # ── Custom throttle classes ────────────────────────────────────────────────
 class OTPRateThrottle(AnonRateThrottle):
     """Max 5 OTP requests per hour per IP address."""
-    rate = '5/hour'
     scope = 'otp'
 
 class LoginRateThrottle(AnonRateThrottle):
     """Max 10 login attempts per hour per IP address."""
-    rate = '10/hour'
     scope = 'login'
+
 
 class UserListPagination(PageNumberPagination):
     page_size = 50
@@ -387,6 +386,8 @@ class GoogleAuthView(APIView):
 
     def post(self, request):
         token = request.data.get('token')
+        selected_course_id = request.data.get('selected_course')
+        
         if not token:
             return Response({'error': 'Google token is required.'}, status=400)
 
@@ -409,6 +410,15 @@ class GoogleAuthView(APIView):
 
         email = email.strip().lower()
 
+        # Find selected course object if id was passed
+        selected_course = None
+        if selected_course_id:
+            from courses.models import Course
+            try:
+                selected_course = Course.objects.get(id=int(selected_course_id))
+            except (ValueError, Course.DoesNotExist):
+                pass
+
         # Check if user already exists
         user = User.objects.filter(email=email).first()
         created = False
@@ -425,9 +435,13 @@ class GoogleAuthView(APIView):
                 username=email,
                 first_name=given_name,
                 last_name=family_name,
-                password=get_random_string(32)
+                password=get_random_string(32),
+                selected_course=selected_course
             )
             created = True
+        elif selected_course and not user.selected_course:
+            user.selected_course = selected_course
+            user.save(update_fields=['selected_course'])
 
         # Generate JWT Tokens
         import uuid
@@ -445,3 +459,25 @@ class GoogleAuthView(APIView):
             'refresh': str(refresh),
             'created': created
         })
+
+from rest_framework import viewsets
+from authentication.models import Institution, Batch
+from authentication.serializers import InstitutionSerializer, BatchSerializer
+from authentication.permissions import IsSuperAdmin, IsInstitutionAdmin, TenantIsolationMixin
+
+class InstitutionViewSet(viewsets.ModelViewSet):
+    queryset = Institution.objects.all()
+    serializer_class = InstitutionSerializer
+    permission_classes = [IsSuperAdmin]
+
+class BatchViewSet(TenantIsolationMixin, viewsets.ModelViewSet):
+    queryset = Batch.objects.all()
+    serializer_class = BatchSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        course_id = self.request.query_params.get('course_id')
+        if course_id:
+            queryset = queryset.filter(course_id=course_id)
+        return queryset

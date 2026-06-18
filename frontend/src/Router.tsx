@@ -32,6 +32,7 @@ import AdminClassroomHub from '@/pages/admin/AdminClassroomHub';
 import StudentClassroomHub from '@/pages/dashboard/StudentClassroomHub';
 
 import AdminProgramManager from '@/pages/admin/AdminProgramManager';
+import AdminProgressionManager from '@/pages/admin/AdminProgressionManager';
 import AdminMCQBank from '@/pages/admin/AdminMCQBank';
 import AdminAddMCQ from '@/pages/admin/AdminAddMCQ';
 import AdminAssessmentMonitor from '@/pages/admin/AdminAssessmentMonitor';
@@ -64,8 +65,8 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
     const user = useAuthStore((state) => state.user);
     if (!token) return <Navigate to="/auth?tab=login" replace />;
 
-    // Only accessible if logged in user is explicitly a staff member
-    if (user && !user.is_staff) return <Navigate to="/dashboard" replace />;
+    const isStaffOrAdmin = user?.is_staff || user?.role === 'SUPER_ADMIN' || user?.role === 'INSTITUTION_ADMIN' || user?.role === 'INSTRUCTOR';
+    if (!isStaffOrAdmin) return <Navigate to="/dashboard" replace />;
 
     return children;
 };
@@ -75,11 +76,12 @@ const SuperAdminRoute = ({ children }: { children: React.ReactNode }) => {
     const user = useAuthStore((state) => state.user);
     if (!token) return <Navigate to="/auth?tab=login" replace />;
 
-    // Only accessible if logged in user is explicitly a staff member
-    if (user && !user.is_staff) return <Navigate to="/dashboard" replace />;
+    const isStaffOrAdmin = user?.is_staff || user?.role === 'SUPER_ADMIN' || user?.role === 'INSTITUTION_ADMIN' || user?.role === 'INSTRUCTOR';
+    if (!isStaffOrAdmin) return <Navigate to="/dashboard" replace />;
 
-    // Only superusers can access this route
-    if (user && !user.is_superuser) return <Navigate to="/admin/questions" replace />;
+    // Only superusers or SUPER_ADMIN role can access this route
+    const isSuperAdmin = user?.is_superuser || user?.role === 'SUPER_ADMIN';
+    if (!isSuperAdmin) return <Navigate to="/admin/questions" replace />;
 
     return children;
 };
@@ -175,11 +177,12 @@ export default function AppRouter() {
                     <Route path="pricing" element={<SuperAdminRoute><AdminPricingManager /></SuperAdminRoute>} />
                     <Route path="payments" element={<SuperAdminRoute><AdminPaymentManager /></SuperAdminRoute>} />
                     <Route path="gamification" element={<AdminGamification />} />
-                     <Route path="mcq-bank" element={<AdminMCQBank />} />
+                    <Route path="mcq-bank" element={<AdminMCQBank />} />
                     <Route path="mcq-bank/new" element={<AdminAddMCQ />} />
                     <Route path="mcq-bank/:id/edit" element={<AdminAddMCQ />} />
                     <Route path="sessions" element={<AdminAssessmentMonitor />} />
                     <Route path="mock-templates" element={<AdminMockTestManager />} />
+                    <Route path="progression" element={<SuperAdminRoute><AdminProgressionManager /></SuperAdminRoute>} />
                 </Route>
             </Routes>
         </BrowserRouter>

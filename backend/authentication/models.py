@@ -3,18 +3,58 @@ from django.contrib.auth.models import AbstractUser
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
+class Institution(models.Model):
+    name = models.CharField(max_length=255)
+    slug = models.SlugField(max_length=255, unique=True, blank=True)
+    domain = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    logo = models.URLField(max_length=500, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            from django.utils.text import slugify
+            self.slug = slugify(self.name)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
 class User(AbstractUser):
+    ROLE_CHOICES = [
+        ('SUPER_ADMIN', 'Super Admin'),
+        ('INSTITUTION_ADMIN', 'Institution Admin'),
+        ('INSTRUCTOR', 'Instructor'),
+        ('STUDENT', 'Student'),
+    ]
     mobile_number = models.CharField(max_length=15, unique=True, null=True, blank=True)
     email = models.EmailField(unique=True)
     session_key = models.CharField(max_length=100, null=True, blank=True)
     selected_course = models.ForeignKey('courses.Course', on_delete=models.SET_NULL, null=True, blank=True)
-    # is_premium shortcut can be tracked dynamically via UserSubscription, but useful for caching maybe
-    
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='STUDENT')
+    institution = models.ForeignKey(Institution, on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
+
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username']
 
     def __str__(self):
         return self.email
+
+
+class Batch(models.Model):
+    name = models.CharField(max_length=150)
+    course = models.ForeignKey('courses.Course', on_delete=models.CASCADE, related_name='batches')
+    institution = models.ForeignKey(Institution, on_delete=models.CASCADE, related_name='batches')
+    instructors = models.ManyToManyField(User, related_name='assigned_batches', blank=True)
+    students = models.ManyToManyField(User, related_name='enrolled_batches', blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = 'Batches'
+
+    def __str__(self):
+        return f"{self.institution.name} - {self.name} ({self.course.name})"
+
+
 
 class UserSettings(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='settings')

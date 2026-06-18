@@ -31,10 +31,10 @@ export default function Sidebar() {
     const logout = useAuthStore((state) => state.logout);
 
     return (
-        <aside className="w-72 bg-sidebar border-r border-border h-screen flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-50">
-            <div className="h-20 flex items-center px-8 border-b border-border">
-                <Link to="/" className="flex items-center gap-2 hover:scale-105 transition-transform duration-300">
-                    <Logo className="h-10 object-contain" />
+        <aside className="w-72 bg-sidebar border-r border-border h-screen flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-50 shrink-0">
+            <div className="h-20 flex items-center px-8 border-b border-border shrink-0">
+                <Link to="/" className="flex items-center gap-2 hover:scale-105 transition-transform duration-300 shrink-0">
+                    <Logo className="h-10 w-auto object-contain shrink-0" />
                 </Link>
             </div>
 
@@ -72,16 +72,18 @@ export default function Sidebar() {
 
                 <div className="mt-8 pt-8 border-t border-border flex flex-col gap-1.5">
                     <p className="text-[10px] font-black text-text-muted uppercase tracking-[0.2em] mb-4 ml-4">Preferences</p>
-                    {(() => {
-                        const isSettingsActive = location.pathname.startsWith('/dashboard/settings');
-                        return (
-                            <Link to="/dashboard/settings" className={`relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl transition-all duration-300 ${isSettingsActive ? 'bg-primary text-white shadow-[0_0_20px_var(--primary-glow)] font-bold' : 'text-text-muted hover:text-text-primary hover:bg-bg'}`}>
-                                <Settings size={20} strokeWidth={isSettingsActive ? 2.5 : 2} />
-                                <span className="text-sm tracking-tight">Settings</span>
-                                {isSettingsActive && <motion.div layoutId="side-indicator" className="ml-auto w-1.5 h-1.5 bg-white rounded-full" />}
-                            </Link>
-                        );
-                    })()}
+                    {location.pathname.startsWith('/dashboard/settings') ? (
+                        <Link to="/dashboard/settings" className="relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl transition-all duration-300 bg-primary text-white shadow-[0_0_20px_var(--primary-glow)] font-bold">
+                            <Settings size={20} strokeWidth={2.5} />
+                            <span className="text-sm tracking-tight">Settings</span>
+                            <motion.div layoutId="side-indicator" className="ml-auto w-1.5 h-1.5 bg-white rounded-full" />
+                        </Link>
+                    ) : (
+                        <Link to="/dashboard/settings" className="relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl transition-all duration-300 text-text-muted hover:text-text-primary hover:bg-bg">
+                            <Settings size={20} strokeWidth={2} />
+                            <span className="text-sm tracking-tight">Settings</span>
+                        </Link>
+                    )}
                     <button onClick={logout} className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl text-danger hover:bg-danger/10 transition-all text-sm font-bold tracking-tight mt-2">
                         <LogOut size={20} />
                         <span>Logout</span>

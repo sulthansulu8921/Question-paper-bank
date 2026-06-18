@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect, useMemo } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import api from '@/api/axios';
 import { useAuthStore } from '@/store/useAuthStore';
 import { 
     User, Mail, Shield, Award, Calendar, ExternalLink, Loader2, Edit3, Check, 
-    CreditCard, Download, AlertTriangle
+    CreditCard, Download, AlertTriangle, BookOpen, Zap, MessageSquare, Sparkles
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -52,6 +52,80 @@ export default function AccountPage() {
     const [fullName, setFullName] = useState(user?.full_name || 'Student User');
     const [activeTab, setActiveTab] = useState<'profile' | 'billing'>('profile');
     const [downloadingId, setDownloadingId] = useState<number | null>(null);
+    const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+    const [targetCourseId, setTargetCourseId] = useState<string>('');
+    const [masterLevels, setMasterLevels] = useState<any[]>([]);
+
+    // Fetch master levels for target dropdown selector
+    useEffect(() => {
+        api.get('/master/levels/?page_size=200')
+            .then(res => {
+                const results = res.data.results || res.data || [];
+                setMasterLevels(results);
+            })
+            .catch(err => console.error("Failed to fetch master levels", err));
+    }, []);
+
+    // Fetch student progress for progression path triggers
+    const { data: myProgress, refetch: refetchProgress } = useQuery({
+        queryKey: ['my-student-progress'],
+        queryFn: async () => (await api.get('/courses/student-progress/my-progress/')).data,
+        enabled: !!user?.selected_course,
+    });
+
+    // Fetch active upgrade paths
+    const { data: activePaths = [] } = useQuery({
+        queryKey: ['my-upgrade-paths'],
+        queryFn: async () => (await api.get('/courses/progression-paths/')).data,
+    });
+
+    // Fetch upgrade requests
+    const { data: upgradeRequests = [], refetch: refetchRequests } = useQuery({
+        queryKey: ['my-upgrade-requests'],
+        queryFn: async () => (await api.get('/courses/upgrade-requests/')).data,
+    });
+
+    // Compute active progression path and pending requests
+    const activePath = useMemo(() => {
+        if (!myProgress || !activePaths.length) return null;
+        return activePaths.find((p: any) => p.current_level === myProgress.level && p.is_active);
+    }, [myProgress, activePaths]);
+
+    // Check if there is any pending request for the user
+    const hasPendingRequest = useMemo(() => {
+        if (!upgradeRequests.length) return false;
+        return upgradeRequests.some((r: any) => r.status === 'PENDING');
+    }, [upgradeRequests]);
+
+    const pendingRequestDetail = useMemo(() => {
+        if (!upgradeRequests.length) return null;
+        return upgradeRequests.find((r: any) => r.status === 'PENDING');
+    }, [upgradeRequests]);
+
+    // Request Level Upgrade Mutation
+    const createUpgradeRequestMutation = useMutation({
+        mutationFn: async () => {
+            if (!targetCourseId) return;
+            const res = await api.post('/courses/upgrade-requests/', {
+                target_course: parseInt(targetCourseId)
+            });
+            return res.data;
+        },
+        onSuccess: () => {
+            refetchRequests();
+            refetchProgress();
+            alert("Upgrade request submitted successfully! Pending admin approval.");
+            setUpgradeModalOpen(false);
+            setTargetCourseId('');
+        },
+        onError: (e: any) => {
+            const errorMsg = e.response?.data?.detail || 
+                             e.response?.data?.non_field_errors?.[0] || 
+                             (e.response?.data ? Object.entries(e.response.data).map(([k, v]) => `${k}: ${v}`).join('\n') : null) || 
+                             "Failed to submit request.";
+            alert(errorMsg);
+        }
+    });
 
     // Fetch active subscriptions
     const { data: mySubscriptions = [], isLoading: subsLoading } = useQuery<Subscription[]>({
@@ -259,10 +333,45 @@ export default function AccountPage() {
                                         </div>
                                         <div>
                                             <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">Current Tier</p>
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center flex-wrap gap-2">
                                                 <p className="text-sm font-black text-text-primary">{user?.subscription_tier?.toUpperCase() || 'FREE ACCOUNT'}</p>
-                                                <a href="/dashboard/subscription" className="text-[10px] text-primary font-black uppercase tracking-widest hover:underline flex items-center gap-1">Upgrade <ExternalLink size={10} /></a>
+                                                <a 
+                                                    href="/dashboard/subscription" 
+                                                    className="px-2.5 py-1 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-[9px] font-black uppercase tracking-wider rounded-xl shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 active:scale-95 transition-all flex items-center gap-1 shrink-0 duration-200"
+                                                >
+                                                    Upgrade <Zap size={10} className="fill-white text-white" />
+                                                </a>
                                             </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-start gap-4">
+                                        <div className="w-10 h-10 bg-indigo-500/10 text-indigo-500 rounded-xl flex items-center justify-center shrink-0">
+                                            <BookOpen size={18} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">Active Study Level</p>
+                                            {isEditing ? (
+                                                <div className="space-y-1 mt-1.5">
+                                                    <p className="text-sm font-black text-text-primary">
+                                                        {user?.selected_course_name || 'No Level Selected'}
+                                                    </p>
+                                                    <p className="text-[10px] font-bold text-text-muted">
+                                                        To request a level change or upgrade, please use the "Upgrade Level" option.
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center flex-wrap gap-2">
+                                                    <p className="text-sm font-black text-text-primary">
+                                                        {user?.selected_course_name || 'No Level Selected'}
+                                                    </p>
+                                                    <button 
+                                                        onClick={() => setUpgradeModalOpen(true)} 
+                                                        className="px-2.5 py-1 bg-gradient-to-r from-primary to-indigo-600 hover:from-primary/95 hover:to-indigo-700 text-white text-[9px] font-black uppercase tracking-wider rounded-xl shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 active:scale-95 transition-all flex items-center gap-1 shrink-0 duration-200"
+                                                    >
+                                                        Upgrade Level <Sparkles size={10} className="fill-white text-white" />
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="flex items-start gap-4">
@@ -274,6 +383,58 @@ export default function AccountPage() {
                                             <p className="text-sm font-black text-text-primary">May 2026</p>
                                         </div>
                                     </div>
+
+                                    {/* Upgrade Pending Card */}
+                                    {hasPendingRequest && !isEditing && (
+                                        <div className="p-4 bg-gradient-to-br from-amber-50 to-amber-100/30 border border-amber-200/60 rounded-2xl space-y-3 mt-4 animate-in fade-in duration-200">
+                                            <div>
+                                                <span className="text-[8px] font-black text-amber-700 bg-amber-100 border border-amber-200/50 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                                    Upgrade Request Pending
+                                                </span>
+                                                <h4 className="text-xs font-black text-slate-800 mt-1.5 flex items-center gap-1.5">
+                                                    <Loader2 size={12} className="animate-spin text-amber-600" /> Pending Admin Approval
+                                                </h4>
+                                                <p className="text-[10px] text-text-muted mt-1 font-semibold leading-relaxed">
+                                                    Your request to upgrade to <span className="font-bold uppercase text-primary">{pendingRequestDetail?.upgrade_path_detail?.next_level_name || 'next level'}</span> is awaiting administrator action.
+                                                </p>
+                                            </div>
+                                            <a 
+                                                href={`mailto:support@qubook.in?subject=Action%20Required:%20Approve%20my%20level%20upgrade%20to%20${pendingRequestDetail?.upgrade_path_detail?.next_level_name || 'next level'}`}
+                                                className="w-full text-center py-2 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800 rounded-xl text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm flex items-center justify-center gap-1"
+                                            >
+                                                <MessageSquare size={12} /> Contact Admin to Approve
+                                            </a>
+                                        </div>
+                                    )}
+
+                                    {/* Progression Path Recommendation Card */}
+                                    {!hasPendingRequest && activePath && !isEditing && (
+                                        <div className="p-4 bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-100 rounded-2xl space-y-3 mt-4 animate-in fade-in duration-200">
+                                            <div className="flex items-start justify-between">
+                                                <div>
+                                                    <span className="text-[8px] font-black text-indigo-600 bg-indigo-100/60 border border-indigo-200/50 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                                        Progression Path Available
+                                                    </span>
+                                                    <h4 className="text-xs font-black text-slate-800 mt-1.5 flex items-center gap-1.5">
+                                                        <Zap size={14} className="text-indigo-500 animate-pulse" /> Upgrade to {activePath.next_level_name}
+                                                    </h4>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <button
+                                                    onClick={() => {
+                                                        const targetCourse = masterLevels.find(l => l.name === activePath.next_level_name);
+                                                        setTargetCourseId(targetCourse?.course_id?.toString() || '');
+                                                        setUpgradeModalOpen(true);
+                                                    }}
+                                                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm flex items-center justify-center gap-1"
+                                                >
+                                                    View Upgrade Path
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -433,6 +594,81 @@ export default function AccountPage() {
                         )}
                     </div>
                 </motion.div>
+            )}
+            {/* Upgrade Modal */}
+            {upgradeModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="bg-card border border-border w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="p-6 border-b border-border bg-gradient-to-r from-primary/10 to-accent/10">
+                            <h3 className="text-lg font-black text-text-primary flex items-center gap-2">
+                                <Zap className="text-primary animate-pulse" size={20} />
+                                Request Level Upgrade
+                            </h3>
+                            <p className="text-xs text-text-muted mt-1 uppercase font-bold tracking-widest">
+                                Submit a request to the academic admin panel.
+                            </p>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <div className="space-y-4">
+                                <div className="p-4 bg-bg rounded-2xl border border-border space-y-3">
+                                    <div className="flex justify-between items-center text-xs">
+                                        <span className="font-semibold text-text-muted">Current Level:</span>
+                                        <span className="font-black text-text-primary uppercase">{user?.selected_course_name || 'No Level Selected'}</span>
+                                    </div>
+                                    <div className="h-px bg-border" />
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[10px] font-black text-text-muted uppercase tracking-widest">Select Target Upgrade Level</label>
+                                        <select
+                                            value={targetCourseId}
+                                            onChange={(e) => setTargetCourseId(e.target.value)}
+                                            className="bg-bg border border-border rounded-xl px-3 py-2.5 text-xs font-bold text-text-primary focus:outline-none focus:ring-2 focus:ring-primary w-full"
+                                        >
+                                            <option value="">Select Target Level...</option>
+                                            {masterLevels
+                                                .filter(l => l.course_id && l.course_id !== user?.selected_course)
+                                                .map(l => (
+                                                    <option key={l.id} value={l.course_id.toString()}>
+                                                        {l.name}
+                                                    </option>
+                                                ))
+                                            }
+                                        </select>
+                                    </div>
+                                </div>
+                                <p className="text-xs font-semibold text-text-muted leading-relaxed">
+                                    Select the course level you want to progress or upgrade to. Once submitted, the administrator will review your request. Upon approval, your account level, subjects, and study access will be updated.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="p-6 border-t border-border bg-bg-secondary flex gap-3">
+                            <button
+                                onClick={() => {
+                                    setUpgradeModalOpen(false);
+                                    setTargetCourseId('');
+                                }}
+                                className="flex-1 py-3 bg-bg border border-border hover:bg-bg-hover text-text-primary rounded-xl text-xs font-black uppercase tracking-widest transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (!targetCourseId) {
+                                        alert("Please select a target level first.");
+                                        return;
+                                    }
+                                    createUpgradeRequestMutation.mutate();
+                                }}
+                                disabled={createUpgradeRequestMutation.isPending || !targetCourseId}
+                                className="flex-1 py-3 bg-primary hover:bg-primary-hover text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {createUpgradeRequestMutation.isPending && <Loader2 size={12} className="animate-spin" />}
+                                Submit Request
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

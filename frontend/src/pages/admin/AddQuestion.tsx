@@ -574,7 +574,7 @@ export default function AddQuestion() {
 
     const handleSave = (saveStatus?: string) => {
         if (!icai.topicId) {
-            alert('Please select CA Level, Paper, Chapter, and Topic.');
+            alert('Please select Course Level, Paper, Chapter, and Topic.');
             return;
         }
         if (!form.q_no) {

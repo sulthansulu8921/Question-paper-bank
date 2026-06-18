@@ -12,6 +12,7 @@ const emptyForm = {
     title: '',
     description: '',
     course: '',
+    level: '',
     subject: '',
     scheduled_time: '',
     duration_minutes: 60,
@@ -44,6 +45,12 @@ export default function AdminLiveClassManager() {
     const { data: courses = [] } = useQuery({
         queryKey: ['admin-courses-small'],
         queryFn: async () => (await api.get('/courses/courses/')).data
+    });
+
+    // Fetch levels list
+    const { data: levels = [] } = useQuery({
+        queryKey: ['admin-levels-small'],
+        queryFn: async () => (await api.get('/courses/levels/')).data
     });
 
     // Fetch subjects list
@@ -101,6 +108,7 @@ export default function AdminLiveClassManager() {
             title: item.title || '',
             description: item.description || '',
             course: item.course?.toString() || '',
+            level: item.level?.toString() || '',
             subject: item.subject?.toString() || '',
             scheduled_time: item.scheduled_time ? new Date(item.scheduled_time).toISOString().slice(0, 16) : '',
             duration_minutes: item.duration_minutes || 60,
@@ -124,10 +132,22 @@ export default function AdminLiveClassManager() {
             return;
         }
 
+        const linkLower = formData.meeting_link.toLowerCase();
+        let meetingPlatform = 'MEET';
+        if (linkLower.includes('zoom.us')) {
+            meetingPlatform = 'ZOOM';
+        } else if (linkLower.includes('meet.google') || linkLower.includes('google.com')) {
+            meetingPlatform = 'MEET';
+        } else if (linkLower.includes('jitsi')) {
+            meetingPlatform = 'JITSI';
+        }
+
         const payload = {
             ...formData,
             course: formData.course ? Number(formData.course) : null,
-            subject: formData.subject ? Number(formData.subject) : null
+            level: formData.level ? Number(formData.level) : null,
+            subject: formData.subject ? Number(formData.subject) : null,
+            meeting_platform: meetingPlatform
         };
 
         if (modalMode === 'edit' && editId) {
@@ -153,7 +173,10 @@ export default function AdminLiveClassManager() {
         });
     };
 
-    const activeCourseSubjects = subjects.filter((s: any) => s.course === Number(formData.course));
+    const activeCourseLevels = levels.filter((l: any) => l.course === Number(formData.course));
+    const activeLevelSubjects = formData.level
+        ? subjects.filter((s: any) => s.level === Number(formData.level))
+        : subjects.filter((s: any) => s.course === Number(formData.course));
 
     return (
         <div className="qm-container">
@@ -235,7 +258,19 @@ export default function AdminLiveClassManager() {
                                             <div className="flex items-center gap-1.5 text-xs text-slate-500 font-bold"><Clock size={13} /> {item.duration_minutes} Mins</div>
                                         </td>
                                         <td className="text-xs text-slate-500 font-semibold">
-                                            {item.course_name || courses.find((c: any) => c.id === item.course)?.name || 'All Courses'}
+                                            <div>
+                                                {item.course_name || courses.find((c: any) => c.id === item.course)?.name || 'All Courses'}
+                                                {item.level_name && (
+                                                    <span className="text-[10px] text-slate-400 block mt-0.5 font-bold">
+                                                        ↳ {item.level_name}
+                                                    </span>
+                                                )}
+                                                {item.subject_name && (
+                                                    <span className="text-[10px] text-primary block mt-0.5 font-bold">
+                                                        ↳ {item.subject_name}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td>
                                             {item.is_active && isUpcoming ? (
@@ -351,19 +386,26 @@ export default function AdminLiveClassManager() {
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
                         <div className="admin-form-group">
                             <label className="text-xs font-bold text-slate-700">Target Course</label>
-                            <select className="admin-form-input" value={formData.course} onChange={e => setFormData({ ...formData, course: e.target.value, subject: '' })}>
-                                <option value="">All Courses (Public Live Class)</option>
+                            <select className="admin-form-input" value={formData.course} onChange={e => setFormData({ ...formData, course: e.target.value, level: '', subject: '' })}>
+                                <option value="">All Courses (Public)</option>
                                 {courses.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </div>
+                        <div className="admin-form-group">
+                            <label className="text-xs font-bold text-slate-700">Target Level</label>
+                            <select className="admin-form-input" value={formData.level} onChange={e => setFormData({ ...formData, level: e.target.value, subject: '' })} disabled={!formData.course}>
+                                <option value="">All Levels under Course</option>
+                                {activeCourseLevels.map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
                             </select>
                         </div>
                         <div className="admin-form-group">
                             <label className="text-xs font-bold text-slate-700">Target Subject / Paper</label>
                             <select className="admin-form-input" value={formData.subject} onChange={e => setFormData({ ...formData, subject: e.target.value })} disabled={!formData.course}>
-                                <option value="">All Subjects under Course</option>
-                                {activeCourseSubjects.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                <option value="">All Subjects under {formData.level ? 'Level' : 'Course'}</option>
+                                {activeLevelSubjects.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
                             </select>
                         </div>
                     </div>

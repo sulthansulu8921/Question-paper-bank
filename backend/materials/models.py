@@ -275,14 +275,16 @@ class MaterialDownload(models.Model):
 class LiveClass(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
-    course = models.ForeignKey('courses.Course', on_delete=models.CASCADE)
-    subject = models.ForeignKey('courses.Subject', on_delete=models.CASCADE)
+    course = models.ForeignKey('courses.Course', on_delete=models.CASCADE, null=True, blank=True)
+    level = models.ForeignKey('courses.Level', on_delete=models.CASCADE, null=True, blank=True)
+    subject = models.ForeignKey('courses.Subject', on_delete=models.CASCADE, null=True, blank=True)
     scheduled_time = models.DateTimeField()
     duration_minutes = models.IntegerField(default=60)
     meeting_platform = models.CharField(max_length=50, choices=[('ZOOM', 'Zoom'), ('MEET', 'Google Meet'), ('JITSI', 'Jitsi Meet')])
     meeting_link = models.URLField()
     recording_link = models.URLField(blank=True, null=True)
     status = models.CharField(max_length=20, default='SCHEDULED', choices=[('SCHEDULED', 'Scheduled'), ('LIVE', 'Live'), ('ENDED', 'Ended')])
+    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

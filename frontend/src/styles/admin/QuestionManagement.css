@@ -92,6 +92,21 @@
     border-radius: var(--radius-md);
     background-color: var(--color-bg-card);
     font-weight: 500;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--color-text-main);
+    transition: var(--transition-fast);
+}
+
+.filter-btn:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+    border-color: rgba(0, 0, 0, 0.2);
+}
+
+.filter-btn.active {
+    background-color: var(--color-primary-light);
+    color: white;
+    border-color: var(--color-primary-light);
 }
 
 .table-select {
@@ -327,3 +342,26 @@
         text-align: center;
     }
 }
+
+/* Cascade Selector Overrides for Admin Question Bank Filters */
+.admin-question-bank-cascade .icai-cascade {
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 1rem !important;
+}
+
+.admin-question-bank-cascade .admin-form-group {
+    margin-bottom: 0 !important;
+}
+
+@media (max-width: 1024px) {
+    .admin-question-bank-cascade .icai-cascade {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+}
+
+@media (max-width: 640px) {
+    .admin-question-bank-cascade .icai-cascade {
+        grid-template-columns: 1fr !important;
+    }
+}
+

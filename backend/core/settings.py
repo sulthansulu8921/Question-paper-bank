@@ -193,6 +193,9 @@ CORS_ALLOWED_ORIGINS = [
 
 AUTH_USER_MODEL = 'authentication.User'
 
+import sys
+TESTING = 'test' in sys.argv or 'test_coverage' in sys.argv
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'authentication.authentication.SingleSessionJWTAuthentication',
@@ -207,12 +210,13 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.UserRateThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '200/hour',       # General anonymous API limit
-        'user': '2000/hour',      # General authenticated user limit
-        'otp': '5/hour',          # OTP endpoint: 5 sends per hour per IP
-        'login': '10/hour',       # Login endpoint: 10 attempts per hour per IP
+        'anon': '100000/hour' if TESTING else '200/hour',
+        'user': '100000/hour' if TESTING else '2000/hour',
+        'otp': '100000/hour' if TESTING else '5/hour',
+        'login': '100000/hour' if TESTING else '10/hour',
     },
 }
+
 
 # ── In-memory cache for throttling (works without Redis) ──────────────────
 CACHES = {

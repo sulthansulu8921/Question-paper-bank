@@ -153,9 +153,18 @@
 }
 
 /* ── Mobile Topbar ── */
+.admin-mobile-logo {
+    display: none;
+}
+
 @media (max-width: 1024px) {
     .menu-toggle-btn {
         display: flex;
+    }
+
+    .admin-mobile-logo {
+        display: block;
+        margin-left: 0.5rem;
     }
 
     .topbar {

@@ -15,6 +15,10 @@ from courses.models import Subject
 from django.contrib.auth import get_user_model
 User = get_user_model()
 from authentication.permissions import IsSuperUser
+from subscriptions.permissions import (
+    HasVideoAccess, HasNotesAccess, HasQuestionBankAccess,
+    HasMockTestAccess, HasLiveClassAccess, HasDownloadPermission
+)
 
 class IsStaffOrReadOnly(permissions.BasePermission):
     def has_permission(self, request, view):
@@ -50,6 +54,19 @@ class SubjectiveQuestionViewSet(viewsets.ModelViewSet):
         subject_id = params.get('subject_id')
         if subject_id:
             queryset = queryset.filter(subject_id=subject_id)
+
+        course_id = params.get('course_id')
+        if course_id:
+            from django.db.models import Q
+            from courses.models import Course
+            try:
+                course = Course.objects.get(id=course_id)
+                queryset = queryset.filter(
+                    Q(subject__course_id=course_id) |
+                    Q(icai_topic__chapter__paper__level__name__iexact=course.name)
+                )
+            except Course.DoesNotExist:
+                queryset = queryset.filter(subject__course_id=course_id)
 
         topic_id = params.get('topic_id')
         if topic_id:
@@ -119,6 +136,10 @@ class SubjectiveQuestionViewSet(viewsets.ModelViewSet):
             ).select_related('plan', 'subject')
 
             for sub in active_subs:
+                # If question bank access is not enabled for this plan, skip it
+                if not getattr(sub.plan, 'question_bank_access', True):
+                    continue
+
                 scope = sub.plan.scope
                 # GROUP_WISE = full access to all papers in group
                 if scope == 'GROUP_WISE':
@@ -187,6 +208,16 @@ class QuestionPaperViewSet(viewsets.ModelViewSet):
     serializer_class = QuestionPaperSerializer
     permission_classes = [IsStaffOrReadOnly]
 
+    def get_queryset(self):
+        queryset = self.queryset.order_by('-year', 'id')
+        subject_id = self.request.query_params.get('subject_id')
+        course_id = self.request.query_params.get('course_id')
+        if subject_id:
+            queryset = queryset.filter(subject_id=subject_id)
+        if course_id:
+            queryset = queryset.filter(course_id=course_id)
+        return queryset
+
 class AnswerPaperViewSet(viewsets.ModelViewSet):
     queryset = AnswerPaper.objects.all()
     serializer_class = AnswerPaperSerializer
@@ -195,12 +226,32 @@ class AnswerPaperViewSet(viewsets.ModelViewSet):
 class NotesViewSet(viewsets.ModelViewSet):
     queryset = Notes.objects.all()
     serializer_class = NotesSerializer
-    permission_classes = [IsStaffOrReadOnly]
+    permission_classes = [IsStaffOrReadOnly, HasNotesAccess]
+
+    def get_queryset(self):
+        queryset = self.queryset.order_by('id')
+        subject_id = self.request.query_params.get('subject_id')
+        course_id = self.request.query_params.get('course_id')
+        if subject_id:
+            queryset = queryset.filter(subject_id=subject_id)
+        if course_id:
+            queryset = queryset.filter(course_id=course_id)
+        return queryset
 
 class VideoViewSet(viewsets.ModelViewSet):
     queryset = Video.objects.all()
     serializer_class = VideoSerializer
-    permission_classes = [IsStaffOrReadOnly]
+    permission_classes = [IsStaffOrReadOnly, HasVideoAccess]
+
+    def get_queryset(self):
+        queryset = self.queryset.order_by('id')
+        subject_id = self.request.query_params.get('subject_id')
+        course_id = self.request.query_params.get('course_id')
+        if subject_id:
+            queryset = queryset.filter(subject_id=subject_id)
+        if course_id:
+            queryset = queryset.filter(course_id=course_id)
+        return queryset
 
 class MCQViewSet(viewsets.ModelViewSet):
     queryset = MCQ.objects.all()
@@ -1612,7 +1663,7 @@ class VideoProgressViewSet(viewsets.ModelViewSet):
 
 class MaterialDownloadViewSet(viewsets.ModelViewSet):
     serializer_class = MaterialDownloadSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasDownloadPermission]
 
     def get_queryset(self):
         if self.request.user.is_staff:
@@ -1629,7 +1680,7 @@ class LiveClassViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
-        return [permissions.IsAuthenticated()]
+        return [permissions.IsAuthenticated(), HasLiveClassAccess()]
 
     def get_queryset(self):
         course_id = self.request.query_params.get('course_id')
@@ -1662,12 +1713,12 @@ class MockTestTemplateViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
-        return [permissions.IsAuthenticated()]
+        return [permissions.IsAuthenticated(), HasMockTestAccess()]
 
 
 class AssessmentSessionViewSet(viewsets.ModelViewSet):
     serializer_class = AssessmentSessionSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasMockTestAccess]
 
     def get_queryset(self):
         user = self.request.user

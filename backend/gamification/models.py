@@ -124,3 +124,13 @@ class MockTestResult(models.Model):
 
     def __str__(self):
         return f"{self.title}: {self.score}/{self.total_marks}"
+
+
+class ChatMessage(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='chat_messages')
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.email}: {self.text[:30]} at {self.created_at}"
+

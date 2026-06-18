@@ -153,14 +153,14 @@ export default function ICAICascadeSelector({ value, onChange, required = true, 
     return (
         <div className={gridClass}>
             <div className="admin-form-group">
-                <label>CA Level {required && '*'}</label>
+                <label>Course Level {required && '*'}</label>
                 <select
                     className="admin-form-input"
                     value={value.levelId}
                     onChange={(e) => set({ levelId: e.target.value })}
                     disabled={levelsLoading}
                 >
-                    <option value="">Select CA Level...</option>
+                    <option value="">Select Course Level...</option>
                     {levels.map((l: any) => (
                         <option key={l.id} value={l.id}>{l.name}</option>
                     ))}

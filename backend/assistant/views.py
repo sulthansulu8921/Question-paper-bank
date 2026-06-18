@@ -6,10 +6,11 @@ from rest_framework.response import Response
 from .models import ChatSession, ChatMessage
 from .serializers import ChatSessionSerializer, ChatMessageSerializer
 from materials.models import SubjectiveQuestion
+from subscriptions.permissions import HasAIAssistantAccess
 
 class ChatSessionViewSet(viewsets.ModelViewSet):
     serializer_class = ChatSessionSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasAIAssistantAccess]
 
     def get_queryset(self):
         return ChatSession.objects.filter(user=self.request.user)
@@ -18,7 +19,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
         serializer.save(user=self.request.user)
 
 class ChatMessageListAPIView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasAIAssistantAccess]
 
     def get(self, request, session_id):
         try:
@@ -31,7 +32,7 @@ class ChatMessageListAPIView(APIView):
         return Response(serializer.data)
 
 class ChatAPIView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasAIAssistantAccess]
 
     def post(self, request, session_id):
         try:

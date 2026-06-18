@@ -6,6 +6,7 @@ import {
     Search, Plus, Edit, Trash2, Filter, ChevronDown, ChevronUp,
     CheckCircle, XCircle, Loader2, Eye, EyeOff, BookOpen, Layers, Target
 } from 'lucide-react';
+import ICAICascadeSelector, { type ICAISelection } from '@/components/admin/ICAICascadeSelector';
 
 const DIFFICULTIES = [
     { value: 'EASY', label: 'Easy', color: '#10b981', bg: '#dcfce7' },
@@ -37,10 +38,24 @@ export default function AdminMCQBank() {
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
     const PAGE_SIZE = 25;
 
+    const [icaiFilter, setIcaiFilter] = useState<ICAISelection>({
+        levelId: '',
+        paperId: '',
+        chapterId: '',
+        topicId: '',
+    });
+
     const { data: questions = [], isLoading } = useQuery({
-        queryKey: ['admin-mcq-bank'],
+        queryKey: ['admin-mcq-bank', icaiFilter],
         queryFn: async () => {
-            const res = await api.get('/materials/subjective-questions/?question_type=MCQ&page_size=500');
+            const params = new URLSearchParams();
+            params.append('question_type', 'MCQ');
+            params.append('page_size', '500');
+            if (icaiFilter.levelId) params.append('level_id', icaiFilter.levelId);
+            if (icaiFilter.paperId) params.append('paper_id', icaiFilter.paperId);
+            if (icaiFilter.chapterId) params.append('chapter_id', icaiFilter.chapterId);
+            if (icaiFilter.topicId) params.append('icai_topic_id', icaiFilter.topicId);
+            const res = await api.get(`/materials/subjective-questions/?${params.toString()}`);
             return Array.isArray(res.data) ? res.data : (res.data.results ?? []);
         }
     });
@@ -69,6 +84,18 @@ export default function AdminMCQBank() {
 
     const filtered = useMemo(() => {
         let list = [...(questions as any[])];
+        if (icaiFilter.levelId) {
+            list = list.filter(q => String(q.icai_level_id) === String(icaiFilter.levelId));
+        }
+        if (icaiFilter.paperId) {
+            list = list.filter(q => String(q.icai_paper_id) === String(icaiFilter.paperId));
+        }
+        if (icaiFilter.chapterId) {
+            list = list.filter(q => String(q.icai_chapter_id) === String(icaiFilter.chapterId));
+        }
+        if (icaiFilter.topicId) {
+            list = list.filter(q => String(q.icai_topic) === String(icaiFilter.topicId));
+        }
         if (search) {
             const s = search.toLowerCase();
             list = list.filter(q => [q.question_text, q.icai_topic?.name, q.icai_topic?.chapter?.name].some(f => (f || '').toLowerCase().includes(s)));
@@ -81,7 +108,7 @@ export default function AdminMCQBank() {
             return sortDir === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
         });
         return list;
-    }, [questions, search, filterDiff, filterStatus, sortKey, sortDir]);
+    }, [questions, search, filterDiff, filterStatus, sortKey, sortDir, icaiFilter]);
 
     const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
     const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -169,17 +196,42 @@ export default function AdminMCQBank() {
                 </div>
 
                 {showFilters && (
-                    <div style={{ padding: '0.75rem 1.5rem', borderBottom: '1px solid #f1f5f9', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                        <select value={filterDiff} onChange={e => { setFilterDiff(e.target.value); setPage(1); }}
-                            style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: '0.82rem', outline: 'none' }}>
-                            <option value="">All Difficulties</option>
-                            {DIFFICULTIES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-                        </select>
-                        <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }}
-                            style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: '0.82rem', outline: 'none' }}>
-                            <option value="">All Statuses</option>
-                            {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                        </select>
+                    <div style={{ padding: '0.75rem 1.5rem', borderBottom: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ width: '100%' }}>
+                            <ICAICascadeSelector
+                                value={icaiFilter}
+                                onChange={(val) => { setIcaiFilter(val); setPage(1); }}
+                                required={false}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <select value={filterDiff} onChange={e => { setFilterDiff(e.target.value); setPage(1); }}
+                                style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: '0.82rem', outline: 'none' }}>
+                                <option value="">All Difficulties</option>
+                                {DIFFICULTIES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                            </select>
+                            <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }}
+                                style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: '0.82rem', outline: 'none' }}>
+                                <option value="">All Statuses</option>
+                                {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                            </select>
+                            {(icaiFilter.levelId || icaiFilter.paperId || icaiFilter.chapterId || icaiFilter.topicId || filterDiff || filterStatus) && (
+                                <button
+                                    onClick={() => {
+                                        setIcaiFilter({ levelId: '', paperId: '', chapterId: '', topicId: '' });
+                                        setFilterDiff('');
+                                        setFilterStatus('');
+                                        setPage(1);
+                                    }}
+                                    style={{
+                                        marginLeft: 'auto', padding: '6px 12px', borderRadius: 8, border: '1px solid #e2e8f0',
+                                        background: '#fff', color: '#dc2626', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer'
+                                    }}
+                                >
+                                    Clear All
+                                </button>
+                            )}
+                        </div>
                     </div>
                 )}
 

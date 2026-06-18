@@ -1,13 +1,20 @@
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 from authentication.views import (
     RegisterView, RegisterRequestOTPView, ProfileView, EmailTokenObtainPairView,
     UserListView, UserDetailView, ChangePasswordView, ForgotPasswordRequestOTPView,
     ForgotPasswordResetView, GoogleAuthView, GrantAdminView,
-    UserSuspendView, UserActivateView, UserResetPasswordView
+    UserSuspendView, UserActivateView, UserResetPasswordView,
+    InstitutionViewSet, BatchViewSet
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
+router = DefaultRouter()
+router.register('institutions', InstitutionViewSet, basename='institution')
+router.register('batches', BatchViewSet, basename='batch')
+
 urlpatterns = [
+    path('', include(router.urls)),
     path('register/', RegisterView.as_view(), name='auth_register'),
     path('register/request-otp/', RegisterRequestOTPView.as_view(), name='register_request_otp'),
     path('login/', EmailTokenObtainPairView.as_view(), name='token_obtain_pair'),

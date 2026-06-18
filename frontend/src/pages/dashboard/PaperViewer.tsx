@@ -2,6 +2,8 @@ import { ArrowLeft, Download, MessageCircle, Video } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import QuestionTable from '@/components/dashboard/QuestionTable';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useQuery } from '@tanstack/react-query';
+import api from '@/api/axios';
 
 const SUBJECT_LOOKUP: Record<string, { name: string, code: string }> = {
     '1': { name: 'Advanced Accounting', code: 'PAPER 1' },
@@ -17,8 +19,18 @@ export default function PaperViewer() {
     const { id } = useParams<{ id: string }>();
     const user = useAuthStore((state) => state.user);
 
+    // Fetch dynamic paper/subject details from master database
+    const { data: paperDetail, isLoading } = useQuery<any>({
+        queryKey: ['master-paper-detail', id],
+        queryFn: async () => {
+            if (!id) return null;
+            return (await api.get(`/master/papers/${id}/`)).data;
+        },
+        enabled: !!id,
+    });
+
     const subjectInfo = id ? SUBJECT_LOOKUP[id] : null;
-    const subjectName = subjectInfo ? subjectInfo.name : 'Unknown Subject';
+    const subjectName = isLoading ? 'Loading Subject...' : (paperDetail?.name || (subjectInfo ? subjectInfo.name : 'Unknown Subject'));
 
     return (
         <div className="flex flex-col bg-bg min-h-screen font-sans -m-8 relative text-text-primary">

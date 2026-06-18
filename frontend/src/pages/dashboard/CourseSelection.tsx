@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { BookOpen, ChevronRight, Users, Star, Layers, Loader2 } from 'lucide-react';
 import api from '@/api/axios';
+import { useAuthStore } from '@/store/useAuthStore';
 
 interface Course {
     id: number;
@@ -16,6 +17,8 @@ interface Course {
 }
 
 export default function CourseSelection() {
+    const user = useAuthStore((state) => state.user);
+
     const { data: courses, isLoading } = useQuery<Course[]>({
         queryKey: ['courses'],
         queryFn: async () => (await api.get('/courses/courses/')).data,
@@ -30,21 +33,30 @@ export default function CourseSelection() {
         );
     }
 
+    const filteredCourses = (courses || []).filter(course => {
+        if (!user?.selected_course) return true;
+        return course.id === user.selected_course;
+    });
+
     return (
         <div className="space-y-12 pb-20">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                 <div>
                     <span className="text-primary font-black uppercase tracking-widest text-[10px] mb-2 block">Choose your focus</span>
-                    <h1 className="text-4xl md:text-5xl font-black text-text-primary tracking-tight">Available Courses</h1>
+                    <h1 className="text-4xl md:text-5xl font-black text-text-primary tracking-tight">
+                        {user?.selected_course ? 'Your Registered Course' : 'Available Courses'}
+                    </h1>
                 </div>
-                <div className="flex gap-2">
-                    <button className="px-5 py-2.5 bg-card border border-border rounded-xl text-xs font-black uppercase tracking-widest shadow-sm hover:bg-bg-secondary transition-colors text-text-primary">All Categories</button>
-                    <button className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg">New Arrival</button>
-                </div>
+                {!user?.selected_course && (
+                    <div className="flex gap-2">
+                        <button className="px-5 py-2.5 bg-card border border-border rounded-xl text-xs font-black uppercase tracking-widest shadow-sm hover:bg-bg-secondary transition-colors text-text-primary">All Categories</button>
+                        <button className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg">New Arrival</button>
+                    </div>
+                )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {(courses || []).map((course, idx) => (
+                {filteredCourses.map((course, idx) => (
                     <motion.div
                         key={course.id}
                         initial={{ opacity: 0, y: 20 }}
@@ -105,13 +117,15 @@ export default function CourseSelection() {
                 ))}
 
                 {/* Placeholder for future growth */}
-                <div className="bg-card/50 border-4 border-dashed border-border rounded-[2.5rem] p-8 flex flex-col items-center justify-center text-center opacity-60">
-                    <div className="w-16 h-16 rounded-full bg-bg flex items-center justify-center text-text-muted mb-4">
-                        <Users size={32} />
+                {!user?.selected_course && (
+                    <div className="bg-card/50 border-4 border-dashed border-border rounded-[2.5rem] p-8 flex flex-col items-center justify-center text-center opacity-60">
+                        <div className="w-16 h-16 rounded-full bg-bg flex items-center justify-center text-text-muted mb-4">
+                            <Users size={32} />
+                        </div>
+                        <h4 className="font-black text-text-primary uppercase tracking-widest text-xs">Request Course</h4>
+                        <p className="text-[10px] font-bold text-text-secondary mt-1 max-w-[150px]">Don't see your course? Tell our team to add it.</p>
                     </div>
-                    <h4 className="font-black text-text-primary uppercase tracking-widest text-xs">Request Course</h4>
-                    <p className="text-[10px] font-bold text-text-secondary mt-1 max-w-[150px]">Don't see your course? Tell our team to add it.</p>
-                </div>
+                )}
             </div>
         </div>
     );

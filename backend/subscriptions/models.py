@@ -13,7 +13,12 @@ class SubscriptionPlan(models.Model):
         ('GROUP_WISE', 'Group Wise'),
     ]
     CYCLE_CHOICES = [
-        ('MONTHLY', 'Monthly'),
+        ('ONE_TIME', 'One Time Payment'),
+        ('MONTHLY', 'Monthly Subscription'),
+        ('QUARTERLY', 'Quarterly Subscription'),
+        ('HALF_YEARLY', 'Half-Yearly Subscription'),
+        ('ANNUAL', 'Annual Subscription'),
+        ('LIFETIME', 'Lifetime Access'),
         ('ATTEMPT_WISE', 'Attempt Wise'),
     ]
 
@@ -21,8 +26,12 @@ class SubscriptionPlan(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2)
     duration_days = models.IntegerField(default=30)
     description = models.TextField(blank=True)
+    thumbnail = models.URLField(max_length=500, blank=True, null=True)
+    status = models.CharField(max_length=20, default='ACTIVE', choices=[('ACTIVE', 'Active'), ('INACTIVE', 'Inactive')])
     
+    category_specific = models.ForeignKey('courses.Category', on_delete=models.CASCADE, null=True, blank=True, related_name='subscription_plans')
     course_specific = models.ForeignKey(Course, on_delete=models.CASCADE, null=True, blank=True)
+    level_specific = models.ForeignKey('courses.Level', on_delete=models.CASCADE, null=True, blank=True, related_name='subscription_plans')
     subject_specific = models.ForeignKey(Subject, on_delete=models.CASCADE, null=True, blank=True)
 
     # Extended configurator fields
@@ -36,6 +45,28 @@ class SubscriptionPlan(models.Model):
         default=3,
         help_text="Number of questions visible per chapter. Set -1 for unlimited (premium), 0 for no access."
     )
+
+    # Granular access control flags
+    video_access = models.BooleanField(default=True)
+    notes_access = models.BooleanField(default=True)
+    question_bank_access = models.BooleanField(default=True)
+    mock_test_access = models.BooleanField(default=True)
+    ai_assistant_access = models.BooleanField(default=True)
+    live_class_access = models.BooleanField(default=True)
+    download_permission = models.BooleanField(default=True)
+
+    def save(self, *args, **kwargs):
+        if self.level_specific:
+            lvl_name = self.level_specific.name.upper()
+            if 'FOUNDATION' in lvl_name:
+                self.level_name = 'FOUNDATION'
+            elif 'INTERMEDIATE' in lvl_name:
+                self.level_name = 'INTERMEDIATE'
+            elif 'FINAL' in lvl_name:
+                self.level_name = 'FINAL'
+            else:
+                self.level_name = self.level_specific.name[:50]
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -58,6 +89,7 @@ class UserSubscription(models.Model):
 class Payment(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     plan = models.ForeignKey(SubscriptionPlan, on_delete=models.SET_NULL, null=True, blank=True)
+    subscription = models.ForeignKey(UserSubscription, on_delete=models.SET_NULL, null=True, blank=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     transaction_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     status = models.CharField(max_length=20, choices=[('SUCCESS', 'Success'), ('PENDING', 'Pending'), ('FAILED', 'Failed')])
@@ -91,3 +123,39 @@ class PlatformSetting(models.Model):
     def __str__(self):
         return f"{self.key}: {self.value}"
 
+
+class SubscriptionAuditLog(models.Model):
+    """Permanent, immutable audit trail for all admin actions on subscriptions."""
+    ACTION_CHOICES = [
+        ('EXTEND', 'Extended'),
+        ('SUSPEND', 'Suspended'),
+        ('ACTIVATE', 'Activated'),
+        ('REFUND', 'Refunded'),
+        ('CANCEL', 'Cancelled'),
+        ('CREATE', 'Created'),
+    ]
+    subscription = models.ForeignKey(
+        UserSubscription, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='audit_logs'
+    )
+    payment = models.ForeignKey(
+        Payment, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='audit_logs'
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='subscription_audit_logs'
+    )
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES)
+    notes = models.TextField(blank=True)
+    old_end_date = models.DateTimeField(null=True, blank=True)
+    new_end_date = models.DateTimeField(null=True, blank=True)
+    old_status = models.BooleanField(null=True, blank=True)
+    new_status = models.BooleanField(null=True, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"{self.action} on sub#{self.subscription_id} by {self.actor} at {self.timestamp}"

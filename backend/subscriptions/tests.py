@@ -159,6 +159,8 @@ class CouponRestrictionTests(APITestCase):
 
     def test_record_failed_payment(self):
         """Test that the record_failed endpoint correctly creates a FAILED payment entry."""
+        from subscriptions.models import PlatformSetting
+        PlatformSetting.objects.create(key="ENABLE_GST", value="true")
         self.client.force_authenticate(user=self.user_matched)
         url = '/api/subscriptions/payments/record_failed/'
         payload = {
@@ -366,17 +368,28 @@ class CourseRestrictedCouponAndGstTests(APITestCase):
 
     def test_global_gst_toggle_endpoints_and_checkout_calculation(self):
         from subscriptions.models import PlatformSetting, Payment
-        # Verify get_gst_status default (defaults to True in models/views if not exists)
+        # Verify get_gst_status default (defaults to False in models/views if not exists)
         self.client.force_authenticate(user=self.student)
         url_status = '/api/subscriptions/settings/get_gst_status/'
         response = self.client.get(url_status)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(response.data['enabled'])
+        self.assertFalse(response.data['enabled'])
 
         # Non-superuser cannot toggle GST status
         url_toggle = '/api/subscriptions/settings/toggle_gst/'
-        response = self.client.post(url_toggle, {'enabled': False})
+        response = self.client.post(url_toggle, {'enabled': True})
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Superuser can toggle GST status to True
+        self.client.force_authenticate(user=self.superuser)
+        response = self.client.post(url_toggle, {'enabled': True})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['enabled'])
+
+        # Verify status is now True
+        self.client.force_authenticate(user=self.student)
+        response = self.client.get(url_status)
+        self.assertEqual(response.data['enabled'], True)
 
         # Superuser can toggle GST status to False
         self.client.force_authenticate(user=self.superuser)

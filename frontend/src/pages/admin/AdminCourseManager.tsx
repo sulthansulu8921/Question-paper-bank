@@ -9,6 +9,7 @@ import { useAdminToast, getApiErrorMessage } from '@/components/admin/useAdminTo
 import '@/styles/admin/QuestionManagement.css';
 
 const emptyForm = {
+    category: '' as string | number,
     name: '',
     short_description: '',
     description: '',
@@ -47,6 +48,15 @@ export default function AdminCourseManager() {
     const { data: courses = [], isLoading } = useQuery({
         queryKey: ['admin-courses'],
         queryFn: async () => (await api.get('/courses/courses/')).data,
+    });
+
+    // Fetch all categories
+    const { data: categories = [] } = useQuery({
+        queryKey: ['admin-categories'],
+        queryFn: async () => {
+            const res = await api.get('/courses/categories/');
+            return res.data.results || res.data || [];
+        },
     });
 
     // Fetch all levels (to filter by selected course)
@@ -133,6 +143,7 @@ export default function AdminCourseManager() {
     const openEdit = (course: any) => {
         setEditId(course.id);
         setFormData({
+            category: course.category || '',
             name: course.name || '',
             short_description: course.short_description || '',
             description: course.description || '',
@@ -154,10 +165,14 @@ export default function AdminCourseManager() {
             show('Course name is required.', 'error');
             return;
         }
+        const payload = {
+            ...formData,
+            category: formData.category ? Number(formData.category) : null
+        };
         if (modalMode === 'edit' && editId) {
-            editMutation.mutate({ id: editId, data: formData });
+            editMutation.mutate({ id: editId, data: payload as any });
         } else {
-            createMutation.mutate(formData);
+            createMutation.mutate(payload as any);
         }
     };
 
@@ -191,7 +206,7 @@ export default function AdminCourseManager() {
             <div className="qm-header">
                 <div>
                     <h1 className="page-title">Course Selection Control</h1>
-                    <p className="page-subtitle">Configure CA courses, validity periods, access limits, and student study tracks.</p>
+                    <p className="page-subtitle">Configure qualifications, courses/streams, validity periods, access limits, and student study tracks.</p>
                 </div>
                 <button type="button" onClick={openAdd} className="primary-btn flex-center gap-sm">
                     <Plus size={20} />
@@ -267,7 +282,18 @@ export default function AdminCourseManager() {
                                     </td>
                                     <td>
                                         <div className="font-bold text-main">{course.name}</div>
-                                        {course.is_archived && <span className="text-[9px] font-black uppercase text-amber-600 bg-amber-50 px-1 rounded">Archived</span>}
+                                        <div className="flex flex-wrap gap-1.5 items-center mt-1">
+                                            {course.category_name && (
+                                                <span className="text-[9px] font-black uppercase text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                                                    {course.category_name}
+                                                </span>
+                                            )}
+                                            {course.is_archived && (
+                                                <span className="text-[9px] font-black uppercase text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">
+                                                    Archived
+                                                </span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td>
                                         <div className="text-xs font-semibold text-slate-700">{course.duration || '—'}</div>
@@ -348,14 +374,31 @@ export default function AdminCourseManager() {
                 }
             >
                 <div className="space-y-4">
-                    <div className="admin-form-group">
-                        <label className="text-xs font-bold text-slate-700">Course Name *</label>
-                        <input
-                            className="admin-form-input"
-                            placeholder="e.g. CA Intermediate Masterclass"
-                            value={formData.name}
-                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="admin-form-group">
+                            <label className="text-xs font-bold text-slate-700">Course Name *</label>
+                            <input
+                                className="admin-form-input"
+                                placeholder="e.g. CA Intermediate Masterclass"
+                                value={formData.name}
+                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                            />
+                        </div>
+                        <div className="admin-form-group">
+                            <label className="text-xs font-bold text-slate-700">Category / Stream *</label>
+                            <select
+                                className="admin-form-input w-full p-2.5 border border-slate-200 rounded-lg text-sm bg-white"
+                                value={formData.category}
+                                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                            >
+                                <option value="">Select Category / Stream</option>
+                                {categories.map((cat: any) => (
+                                    <option key={cat.id} value={cat.id}>
+                                        {cat.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">

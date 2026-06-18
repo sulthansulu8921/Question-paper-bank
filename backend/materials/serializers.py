@@ -146,6 +146,9 @@ class SubjectiveQuestionSerializer(serializers.ModelSerializer):
     icai_chapter_name = serializers.CharField(source='icai_topic.chapter.name', read_only=True, allow_null=True)
     icai_paper_name = serializers.CharField(source='icai_topic.chapter.paper.name', read_only=True, allow_null=True)
     icai_level_name = serializers.CharField(source='icai_topic.chapter.paper.level.name', read_only=True, allow_null=True)
+    icai_paper_id = serializers.IntegerField(source='icai_topic.chapter.paper.id', read_only=True, allow_null=True)
+    icai_chapter_id = serializers.IntegerField(source='icai_topic.chapter.id', read_only=True, allow_null=True)
+    icai_level_id = serializers.IntegerField(source='icai_topic.chapter.paper.level.id', read_only=True, allow_null=True)
     parts = SubQuestionSerializer(many=True, required=False)
     options = QuestionOptionSerializer(many=True, required=False)
     created_by_name = serializers.SerializerMethodField()
@@ -410,11 +413,27 @@ class MaterialDownloadSerializer(serializers.ModelSerializer):
 
 class LiveClassSerializer(serializers.ModelSerializer):
     course_name = serializers.ReadOnlyField(source='course.name')
+    level_name = serializers.ReadOnlyField(source='level.name')
     subject_name = serializers.ReadOnlyField(source='subject.name')
+    meeting_platform = serializers.CharField(required=False)
 
     class Meta:
         model = LiveClass
         fields = '__all__'
+
+    def validate(self, attrs):
+        meeting_link = attrs.get('meeting_link', '')
+        if not attrs.get('meeting_platform') and meeting_link:
+            link_lower = meeting_link.lower()
+            if 'zoom.us' in link_lower:
+                attrs['meeting_platform'] = 'ZOOM'
+            elif 'meet.google' in link_lower or 'google.com' in link_lower:
+                attrs['meeting_platform'] = 'MEET'
+            elif 'jitsi' in link_lower:
+                attrs['meeting_platform'] = 'JITSI'
+            else:
+                attrs['meeting_platform'] = 'MEET'  # Default fallback
+        return attrs
 
 
 class NotificationSerializer(serializers.ModelSerializer):

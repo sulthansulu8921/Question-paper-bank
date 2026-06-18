@@ -156,7 +156,7 @@ const AdminSubjectManager = () => {
             <div className="qm-header">
                 <div>
                     <h1 className="page-title">Subject & Paper Selection</h1>
-                    <p className="page-subtitle">Configure CA Subjects mapped under Courses and their study levels (e.g. Intermediate &rarr; Advanced Accounting).</p>
+                    <p className="page-subtitle">Configure subjects/papers mapped under courses and their study levels (e.g. Intermediate &rarr; Advanced Accounting).</p>
                 </div>
                 <button onClick={() => setIsAdding(true)} className="primary-btn flex-center gap-sm">
                     <Plus size={20} /> <span>Add Subject</span>

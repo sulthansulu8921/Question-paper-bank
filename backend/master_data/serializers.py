@@ -69,7 +69,23 @@ class CALevelListSerializer(serializers.ModelSerializer):
     paper_count = serializers.IntegerField(read_only=True)
     chapter_count = serializers.IntegerField(read_only=True)
     topic_count = serializers.IntegerField(read_only=True)
+    course_id = serializers.SerializerMethodField()
 
     class Meta:
         model = CALevel
-        fields = ['id', 'qualification', 'name', 'slug', 'order', 'is_active', 'paper_count', 'chapter_count', 'topic_count']
+        fields = [
+            'id', 'qualification', 'name', 'slug', 'order', 'is_active',
+            'paper_count', 'chapter_count', 'topic_count', 'course_id',
+        ]
+
+    def get_course_id(self, obj):
+        """
+        Returns the courses.Course ID that was auto-created when this CALevel was saved.
+        Used by the frontend registration form to pass the correct selected_course ID.
+        """
+        try:
+            from courses.models import Course
+            course = Course.objects.filter(name=obj.name).first()
+            return course.id if course else None
+        except Exception:
+            return None

@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import api from '@/api/axios';
 import {
     Database, Layers, BookOpen, FileText, ListTree,
-    Loader2, Plus, ChevronRight, Search, Edit, Trash2, Save
+    Loader2, Plus, ChevronRight, ChevronDown, Search, Edit, Trash2, Save
 } from 'lucide-react';
 import AdminModal from '@/components/admin/AdminModal';
 import AdminConfirmModal from '@/components/admin/AdminConfirmModal';
@@ -19,9 +19,10 @@ const AdminMasterDatabase = () => {
     const [search, setSearch] = useState('');
     const [selectedLevelId, setSelectedLevelId] = useState<number | null>(null);
     const [selectedPaperId, setSelectedPaperId] = useState<number | null>(null);
+    const hasAutoSelected = useState(false);
 
     // Modal state managers
-    const [levelModal, setLevelModal] = useState<{ open: boolean; editId?: number; qualification: string; name: string; order: number }>({ open: false, qualification: 'CA', name: '', order: 0 });
+    const [levelModal, setLevelModal] = useState<{ open: boolean; editId?: number; qualification: string; name: string; order: number }>({ open: false, qualification: '', name: '', order: 0 });
     const [selectedLevelNames, setSelectedLevelNames] = useState<string[]>([]);
     const [paperModal, setPaperModal] = useState<{ open: boolean; editId?: number; name: string; code: string; order: number }>({ open: false, name: '', code: '', order: 0 });
     const [chapterModal, setChapterModal] = useState<{ open: boolean; editId?: number; name: string; order: number }>({ open: false, name: '', order: 0 });
@@ -32,7 +33,7 @@ const AdminMasterDatabase = () => {
         title: string;
         message: string;
         onConfirm: () => void;
-    }>({ open: false, title: '', message: '', onConfirm: () => {} });
+    }>({ open: false, title: '', message: '', onConfirm: () => { } });
 
     const { data: stats, isLoading: statsLoading } = useQuery({
         queryKey: ['master-stats'],
@@ -89,7 +90,7 @@ const AdminMasterDatabase = () => {
         },
         onSuccess: () => {
             invalidateMaster();
-            setLevelModal({ open: false, qualification: categories[0]?.name || 'CA', name: '', order: 0 });
+            setLevelModal({ open: false, qualification: categories[0]?.name || '', name: '', order: 0 });
             setSelectedLevelNames([]);
             show(levelModal.editId ? 'Level updated.' : 'Level(s) created.');
         },
@@ -212,7 +213,7 @@ const AdminMasterDatabase = () => {
     const groupedTree = useMemo(() => {
         const groups: { [key: string]: any[] } = {};
         filteredTree.forEach((level: any) => {
-            const q = level.qualification || 'CA';
+            const q = level.qualification || 'Uncategorized';
             const upperQ = q.toUpperCase();
             if (!groups[upperQ]) {
                 groups[upperQ] = [];
@@ -223,14 +224,15 @@ const AdminMasterDatabase = () => {
     }, [filteredTree]);
 
     useEffect(() => {
-        if (filteredTree.length && selectedLevelId === null) {
+        if (filteredTree.length && !hasAutoSelected[0]) {
+            hasAutoSelected[1](true);
             const first = filteredTree[0];
             setSelectedLevelId(first.id);
             setSelectedPaperId(first.papers?.[0]?.id ?? null);
         }
-    }, [filteredTree, selectedLevelId]);
+    }, [filteredTree]);
 
-    const levelId = selectedLevelId ?? filteredTree[0]?.id ?? null;
+    const levelId = selectedLevelId;
     const displayLevel = filteredTree.find((l: any) => l.id === levelId);
     const paperId = selectedPaperId ?? displayLevel?.papers?.[0]?.id ?? null;
     const displayPaper = displayLevel?.papers?.find((p: any) => p.id === paperId);
@@ -260,8 +262,8 @@ const AdminMasterDatabase = () => {
                     </p>
                 </div>
                 <div className="header-actions flex gap-3">
-                    <button 
-                        onClick={() => setLevelModal({ open: true, qualification: categories[0]?.name || 'CA', name: '', order: tree.length + 1 })}
+                    <button
+                        onClick={() => setLevelModal({ open: true, qualification: categories[0]?.name || '', name: '', order: tree.length + 1 })}
                         className="secondary-btn flex-center gap-xs font-bold text-xs"
                     >
                         <Plus size={16} />
@@ -291,7 +293,7 @@ const AdminMasterDatabase = () => {
                 })}
             </div>
 
-            <div className="master-tree-layout grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
+            <div className="master-tree-layout grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6" style={{ height: 'calc(100vh - 280px)', minHeight: '500px' }}>
                 <div className="master-tree-panel bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden flex flex-col h-full">
                     <div className="master-tree-toolbar p-4 border-b border-slate-50 flex flex-col gap-3">
                         <div className="search-box relative flex items-center">
@@ -304,8 +306,8 @@ const AdminMasterDatabase = () => {
                                 onChange={(e) => setSearch(e.target.value)}
                             />
                         </div>
-                        <button 
-                            onClick={() => setLevelModal({ open: true, qualification: categories[0]?.name || 'CA', name: '', order: tree.length + 1 })}
+                        <button
+                            onClick={() => setLevelModal({ open: true, qualification: categories[0]?.name || '', name: '', order: tree.length + 1 })}
                             className="w-full flex items-center justify-center gap-1.5 py-2 border border-dashed border-blue-200 rounded-lg text-xs font-bold text-blue-600 hover:bg-blue-50 hover:border-blue-300 transition-colors"
                         >
                             <Plus size={14} /> Add Course Level
@@ -320,22 +322,38 @@ const AdminMasterDatabase = () => {
                         {Object.entries(groupedTree).map(([qualification, levels]) => (
                             <div key={qualification} className="mb-4">
                                 <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 bg-slate-50/50 border border-slate-100 rounded-lg px-2.5 py-1 mb-2 flex items-center justify-between">
-                                    <span>{qualification} Levels</span>
+                                    <span>{qualification}</span>
                                     <span className="bg-slate-200/50 text-slate-500 px-1 py-0.2 rounded-full font-bold text-[8px]">{levels.length}</span>
                                 </div>
                                 <div className="space-y-2 pl-0.5">
                                     {levels.map((level: any) => (
                                         <div key={level.id} className="tree-level mb-2">
                                             <div
-                                                className={`tree-level-btn flex justify-between items-center px-3 py-2 rounded-lg text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 cursor-pointer transition-colors ${levelId === level.id ? 'bg-blue-50/70 text-blue-600 border border-blue-100' : ''}`}
+                                                className={`tree-level-btn flex justify-between items-center px-3 py-2 rounded-lg text-xs font-bold cursor-pointer transition-all duration-150 ${
+                                                    levelId === level.id
+                                                        ? 'bg-blue-50 text-blue-600 border border-blue-100'
+                                                        : 'text-slate-700 bg-slate-50 hover:bg-slate-100'
+                                                }`}
                                                 onClick={() => {
-                                                    setSelectedLevelId(level.id);
-                                                    setSelectedPaperId(level.papers[0]?.id ?? null);
+                                                    if (selectedLevelId === level.id) {
+                                                        setSelectedLevelId(null);
+                                                        setSelectedPaperId(null);
+                                                    } else {
+                                                        setSelectedLevelId(level.id);
+                                                        setSelectedPaperId(level.papers[0]?.id ?? null);
+                                                    }
                                                 }}
                                             >
-                                                <span className="truncate max-w-[150px]">{level.name}</span>
-                                                <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                                                    <button className="text-slate-400 hover:text-blue-600 transition-colors" onClick={() => setLevelModal({ open: true, editId: level.id, qualification: level.qualification || 'CA', name: level.name, order: level.order })}><Edit size={12} /></button>
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <ChevronDown
+                                                        size={13}
+                                                        className="flex-shrink-0 transition-transform duration-200"
+                                                        style={{ transform: levelId === level.id ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+                                                    />
+                                                    <span className="truncate max-w-[130px]">{level.name}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                                                    <button className="text-slate-400 hover:text-blue-600 transition-colors" onClick={() => setLevelModal({ open: true, editId: level.id, qualification: level.qualification || '', name: level.name, order: level.order })}><Edit size={12} /></button>
                                                     <button className="text-slate-400 hover:text-red-600 transition-colors" onClick={() => setConfirmDelete({
                                                         open: true,
                                                         title: 'Delete Course Level',
@@ -373,7 +391,7 @@ const AdminMasterDatabase = () => {
                                                             {paperId === paper.id && paper.chapters && paper.chapters.length > 0 && (
                                                                 <div className="mt-0.5 mb-1.5 pl-4 flex flex-col gap-0.5 border-l border-teal-200 ml-4">
                                                                     {paper.chapters.map((chapter: any) => (
-                                                                        <div 
+                                                                        <div
                                                                             key={chapter.id}
                                                                             className="flex items-center justify-between py-1 text-[11px] text-slate-500 hover:text-slate-700 transition-colors"
                                                                         >
@@ -384,7 +402,7 @@ const AdminMasterDatabase = () => {
                                                             )}
                                                         </div>
                                                     ))}
-                                                    <button 
+                                                    <button
                                                         onClick={() => setPaperModal({ open: true, name: '', code: '', order: level.papers.length + 1 })}
                                                         className="tree-paper-btn flex items-center gap-1 text-[11px] text-blue-600 font-bold hover:bg-blue-50 py-1"
                                                     >
@@ -400,9 +418,9 @@ const AdminMasterDatabase = () => {
                     </div>
                 </div>
 
-                <div className="master-detail-panel bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden flex flex-col h-full">
+                <div className="master-detail-panel bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden flex flex-col h-full min-h-0">
                     {displayPaper ? (
-                        <div className="flex flex-col h-full">
+                        <div className="flex flex-col h-full min-h-0">
                             <div className="master-detail-header p-5 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
                                 <div>
                                     <h2 className="text-md font-bold text-slate-800">{displayPaper.name}</h2>
@@ -414,14 +432,14 @@ const AdminMasterDatabase = () => {
                                         <span>{displayPaper.chapters?.length ?? 0} Chapters</span>
                                     </div>
                                 </div>
-                                <button 
+                                <button
                                     onClick={() => setChapterModal({ open: true, name: '', order: (displayPaper.chapters?.length || 0) + 1 })}
                                     className="primary-btn flex-center gap-xs font-bold text-xs"
                                 >
                                     <Plus size={16} /> Add Chapter
                                 </button>
                             </div>
-                            <div className="chapter-grid p-5 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto max-h-[600px]">
+                            <div className="chapter-grid p-5 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto flex-1 min-h-0">
                                 {displayPaper.chapters?.map((chapter: any) => (
                                     <div key={chapter.id} className="chapter-card bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between hover:border-blue-300 transition-colors">
                                         <div>
@@ -452,8 +470,8 @@ const AdminMasterDatabase = () => {
                                                 {chapter.topics?.map((t: any) => (
                                                     <span key={t.id} className="topic-pill flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-100 group/pill relative">
                                                         <span>{t.name}</span>
-                                                        <button 
-                                                            className="hover:text-red-600 font-bold ml-1" 
+                                                        <button
+                                                            className="hover:text-red-600 font-bold ml-1"
                                                             title="Delete Topic"
                                                             onClick={() => setConfirmDelete({
                                                                 open: true,
@@ -469,7 +487,7 @@ const AdminMasterDatabase = () => {
                                                         </button>
                                                     </span>
                                                 ))}
-                                                <button 
+                                                <button
                                                     onClick={() => setTopicModal({ open: true, chapterId: chapter.id, name: '', order: (chapter.topics?.length || 0) + 1 })}
                                                     className="flex items-center gap-0.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border border-slate-200 text-slate-500 bg-white hover:bg-slate-50"
                                                 >
@@ -505,23 +523,23 @@ const AdminMasterDatabase = () => {
             <AdminModal
                 open={levelModal.open}
                 onClose={() => {
-                    setLevelModal({ open: false, qualification: categories[0]?.name || 'CA', name: '', order: 0 });
+                    setLevelModal({ open: false, qualification: categories[0]?.name || '', name: '', order: 0 });
                     setSelectedLevelNames([]);
                 }}
                 title={levelModal.editId ? "Edit Course Level" : "Add Course Level(s)"}
                 footer={
                     <>
                         <button type="button" className="secondary-btn text-xs font-bold" onClick={() => {
-                            setLevelModal({ open: false, qualification: categories[0]?.name || 'CA', name: '', order: 0 });
+                            setLevelModal({ open: false, qualification: categories[0]?.name || '', name: '', order: 0 });
                             setSelectedLevelNames([]);
                         }}>Cancel</button>
-                        <button 
-                            type="button" 
+                        <button
+                            type="button"
                             className="primary-btn flex-center gap-xs font-bold text-xs"
-                            onClick={() => saveLevelMutation.mutate({ 
-                                qualification: levelModal.qualification, 
-                                names: levelModal.editId ? [levelModal.name] : selectedLevelNames, 
-                                order: levelModal.order 
+                            onClick={() => saveLevelMutation.mutate({
+                                qualification: levelModal.qualification,
+                                names: levelModal.editId ? [levelModal.name] : selectedLevelNames,
+                                order: levelModal.order
                             })}
                             disabled={saveLevelMutation.isPending || !levelModal.qualification || (levelModal.editId ? !levelModal.name : selectedLevelNames.length === 0)}
                         >
@@ -532,14 +550,14 @@ const AdminMasterDatabase = () => {
                 }
             >
                 <div className="admin-form-group mb-4">
-                    <label className="text-xs font-bold text-slate-700 mb-1 block">Qualification / Main CA Stream *</label>
-                    <select 
-                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm bg-white" 
-                        value={levelModal.qualification} 
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">Qualification / Learning Stream *</label>
+                    <select
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm bg-white"
+                        value={levelModal.qualification}
                         onChange={e => {
                             setLevelModal({ ...levelModal, qualification: e.target.value, name: '' });
                             setSelectedLevelNames([]);
-                        }} 
+                        }}
                     >
                         <option value="">Select Stream Qualification</option>
                         {categories.map((cat: any) => (
@@ -550,56 +568,129 @@ const AdminMasterDatabase = () => {
                 <div className="admin-form-group mb-4">
                     <label className="text-xs font-bold text-slate-700 mb-1 block">Course Level Name *</label>
                     {levelModal.editId ? (
-                        <select 
-                            className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm bg-white" 
-                            value={levelModal.name} 
-                            onChange={e => setLevelModal({ ...levelModal, name: e.target.value })} 
-                            disabled={!levelModal.qualification}
-                        >
-                            <option value="">Select Course Level</option>
-                            {courses
-                                .filter((c: any) => c.category_name?.toString() === levelModal.qualification?.toString())
-                                .map((c: any) => (
-                                    <option key={c.id} value={c.name}>{c.name}</option>
-                                ))}
-                        </select>
+                        <div className="space-y-2">
+                            <input
+                                type="text"
+                                className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm bg-white"
+                                placeholder="Enter Level Name"
+                                value={levelModal.name}
+                                onChange={e => setLevelModal({ ...levelModal, name: e.target.value })}
+                            />
+                            {courses.filter((c: any) => c.category_name?.toString() === levelModal.qualification?.toString()).length > 0 && (
+                                <p className="text-[10px] text-slate-400">
+                                    Suggested from existing courses: {courses.filter((c: any) => c.category_name?.toString() === levelModal.qualification?.toString()).map((c: any) => c.name).join(', ')}
+                                </p>
+                            )}
+                        </div>
                     ) : (
-                        <div className="border border-slate-200 rounded-xl p-3 max-h-48 overflow-y-auto space-y-2 bg-slate-50">
-                            {courses
-                                .filter((c: any) => c.category_name?.toString() === levelModal.qualification?.toString())
-                                .map((c: any) => {
-                                    const isChecked = selectedLevelNames.includes(c.name);
+                        <div className="space-y-3">
+                            {/* Option 1: Existing courses checkboxes */}
+                            <div className="border border-slate-200 rounded-xl p-3 max-h-40 overflow-y-auto space-y-2 bg-slate-50">
+                                {(() => {
+                                    const availableCourses = courses
+                                        .filter((c: any) => c.category_name?.toString() === levelModal.qualification?.toString())
+                                        .filter((c: any) => !tree.some((t: any) => t.name?.toLowerCase() === c.name?.toLowerCase()));
+
+                                    if (availableCourses.length === 0) {
+                                        return (
+                                            <p className="text-xs text-slate-400 text-center py-2">
+                                                No unmapped existing courses found for this qualification.
+                                            </p>
+                                        );
+                                    }
+
                                     return (
-                                        <label key={c.id} className="flex items-center gap-2.5 text-xs text-slate-700 font-semibold cursor-pointer hover:bg-slate-100/60 p-2 rounded-lg transition-colors">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={isChecked}
-                                                onChange={() => {
-                                                    if (isChecked) {
-                                                        setSelectedLevelNames(selectedLevelNames.filter(n => n !== c.name));
-                                                    } else {
-                                                        setSelectedLevelNames([...selectedLevelNames, c.name]);
-                                                    }
-                                                }}
-                                                className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
-                                            />
-                                            {c.name}
-                                        </label>
+                                        <>
+                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">Available Existing Courses:</p>
+                                            {availableCourses.map((c: any) => {
+                                                const isChecked = selectedLevelNames.includes(c.name);
+                                                return (
+                                                    <label key={c.id} className="flex items-center gap-2.5 text-xs text-slate-700 font-semibold cursor-pointer hover:bg-slate-100/60 p-1 rounded transition-colors">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={() => {
+                                                                if (isChecked) {
+                                                                    setSelectedLevelNames(selectedLevelNames.filter(n => n !== c.name));
+                                                                } else {
+                                                                    setSelectedLevelNames([...selectedLevelNames, c.name]);
+                                                                }
+                                                            }}
+                                                            className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+                                                        />
+                                                        {c.name}
+                                                    </label>
+                                                );
+                                            })}
+                                        </>
                                     );
-                                })}
-                            {courses.filter((c: any) => c.category_name?.toString() === levelModal.qualification?.toString()).length === 0 && (
-                                <p className="text-xs text-slate-400 text-center py-4">No levels found for this qualification.</p>
+                                })()}
+                            </div>
+
+                            {/* Option 2: Add custom name */}
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    id="custom-level-input"
+                                    placeholder="Type custom level name (e.g. CA Final)"
+                                    className="admin-form-input flex-1 p-2 border border-slate-200 rounded-lg text-sm bg-white"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const val = e.currentTarget.value.trim();
+                                            if (val && !selectedLevelNames.includes(val)) {
+                                                setSelectedLevelNames([...selectedLevelNames, val]);
+                                                e.currentTarget.value = '';
+                                            }
+                                        }
+                                    }}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const input = document.getElementById('custom-level-input') as HTMLInputElement;
+                                        const val = input?.value.trim();
+                                        if (val && !selectedLevelNames.includes(val)) {
+                                            setSelectedLevelNames([...selectedLevelNames, val]);
+                                            if (input) input.value = '';
+                                        }
+                                    }}
+                                    className="px-3 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg hover:bg-slate-700 transition-colors"
+                                >
+                                    Add
+                                </button>
+                            </div>
+
+                            {/* Display selected level names */}
+                            {selectedLevelNames.length > 0 && (
+                                <div className="space-y-1">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Levels to create:</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {selectedLevelNames.map(name => (
+                                            <span key={name} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary text-xs font-bold rounded-full">
+                                                {name}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedLevelNames(selectedLevelNames.filter(n => n !== name))}
+                                                    className="hover:text-rose-500 font-bold ml-1"
+                                                >
+                                                    &times;
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
                             )}
                         </div>
                     )}
                 </div>
                 <div className="admin-form-group">
                     <label className="text-xs font-bold text-slate-700 mb-1 block">Display Order</label>
-                    <input 
+                    <input
                         type="number"
-                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
-                        value={levelModal.order} 
-                        onChange={e => setLevelModal({ ...levelModal, order: parseInt(e.target.value) || 0 })} 
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm"
+                        value={levelModal.order}
+                        onChange={e => setLevelModal({ ...levelModal, order: parseInt(e.target.value) || 0 })}
                     />
                 </div>
             </AdminModal>
@@ -612,8 +703,8 @@ const AdminMasterDatabase = () => {
                 footer={
                     <>
                         <button type="button" className="secondary-btn text-xs font-bold" onClick={() => setPaperModal({ open: false, name: '', code: '', order: 0 })}>Cancel</button>
-                        <button 
-                            type="button" 
+                        <button
+                            type="button"
                             className="primary-btn flex-center gap-xs font-bold text-xs"
                             onClick={() => {
                                 if (!levelId) return;
@@ -635,29 +726,29 @@ const AdminMasterDatabase = () => {
                 )}
                 <div className="admin-form-group mb-4">
                     <label className="text-xs font-bold text-slate-700 mb-1 block">Paper Name *</label>
-                    <input 
-                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
-                        value={paperModal.name} 
-                        onChange={e => setPaperModal({ ...paperModal, name: e.target.value })} 
-                        placeholder="e.g. Paper 1 - Accounting" 
+                    <input
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm"
+                        value={paperModal.name}
+                        onChange={e => setPaperModal({ ...paperModal, name: e.target.value })}
+                        placeholder="e.g. Paper 1 - Accounting"
                     />
                 </div>
                 <div className="admin-form-group mb-4">
                     <label className="text-xs font-bold text-slate-700 mb-1 block">Paper Code</label>
-                    <input 
-                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
-                        value={paperModal.code} 
-                        onChange={e => setPaperModal({ ...paperModal, code: e.target.value })} 
-                        placeholder="e.g. P1-ACC" 
+                    <input
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm"
+                        value={paperModal.code}
+                        onChange={e => setPaperModal({ ...paperModal, code: e.target.value })}
+                        placeholder="e.g. P1-ACC"
                     />
                 </div>
                 <div className="admin-form-group">
                     <label className="text-xs font-bold text-slate-700 mb-1 block">Display Order</label>
-                    <input 
+                    <input
                         type="number"
-                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
-                        value={paperModal.order} 
-                        onChange={e => setPaperModal({ ...paperModal, order: parseInt(e.target.value) || 0 })} 
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm"
+                        value={paperModal.order}
+                        onChange={e => setPaperModal({ ...paperModal, order: parseInt(e.target.value) || 0 })}
                     />
                 </div>
             </AdminModal>
@@ -670,8 +761,8 @@ const AdminMasterDatabase = () => {
                 footer={
                     <>
                         <button type="button" className="secondary-btn text-xs font-bold" onClick={() => setChapterModal({ open: false, name: '', order: 0 })}>Cancel</button>
-                        <button 
-                            type="button" 
+                        <button
+                            type="button"
                             className="primary-btn flex-center gap-xs font-bold text-xs"
                             onClick={() => {
                                 if (!paperId) return;
@@ -693,20 +784,20 @@ const AdminMasterDatabase = () => {
                 )}
                 <div className="admin-form-group mb-4">
                     <label className="text-xs font-bold text-slate-700 mb-1 block">Chapter Name *</label>
-                    <input 
-                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
-                        value={chapterModal.name} 
-                        onChange={e => setChapterModal({ ...chapterModal, name: e.target.value })} 
-                        placeholder="e.g. Chapter 1: Introduction to Accounting" 
+                    <input
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm"
+                        value={chapterModal.name}
+                        onChange={e => setChapterModal({ ...chapterModal, name: e.target.value })}
+                        placeholder="e.g. Chapter 1: Introduction to Accounting"
                     />
                 </div>
                 <div className="admin-form-group">
                     <label className="text-xs font-bold text-slate-700 mb-1 block">Display Order</label>
-                    <input 
+                    <input
                         type="number"
-                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
-                        value={chapterModal.order} 
-                        onChange={e => setChapterModal({ ...chapterModal, order: parseInt(e.target.value) || 0 })} 
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm"
+                        value={chapterModal.order}
+                        onChange={e => setChapterModal({ ...chapterModal, order: parseInt(e.target.value) || 0 })}
                     />
                 </div>
             </AdminModal>
@@ -719,8 +810,8 @@ const AdminMasterDatabase = () => {
                 footer={
                     <>
                         <button type="button" className="secondary-btn text-xs font-bold" onClick={() => setTopicModal({ open: false, name: '', order: 0 })}>Cancel</button>
-                        <button 
-                            type="button" 
+                        <button
+                            type="button"
                             className="primary-btn flex-center gap-xs font-bold text-xs"
                             onClick={() => {
                                 const chId = topicModal.chapterId;
@@ -745,20 +836,20 @@ const AdminMasterDatabase = () => {
                 )}
                 <div className="admin-form-group mb-4">
                     <label className="text-xs font-bold text-slate-700 mb-1 block">Topic Name *</label>
-                    <input 
-                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
-                        value={topicModal.name} 
-                        onChange={e => setTopicModal({ ...topicModal, name: e.target.value })} 
-                        placeholder="e.g. Topic 1: Standard Settings" 
+                    <input
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm"
+                        value={topicModal.name}
+                        onChange={e => setTopicModal({ ...topicModal, name: e.target.value })}
+                        placeholder="e.g. Topic 1: Standard Settings"
                     />
                 </div>
                 <div className="admin-form-group">
                     <label className="text-xs font-bold text-slate-700 mb-1 block">Display Order</label>
-                    <input 
+                    <input
                         type="number"
-                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm" 
-                        value={topicModal.order} 
-                        onChange={e => setTopicModal({ ...topicModal, order: parseInt(e.target.value) || 0 })} 
+                        className="admin-form-input w-full p-2 border border-slate-200 rounded-lg text-sm"
+                        value={topicModal.order}
+                        onChange={e => setTopicModal({ ...topicModal, order: parseInt(e.target.value) || 0 })}
                     />
                 </div>
             </AdminModal>

@@ -1,10 +1,20 @@
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
-import { Outlet } from 'react-router-dom';
-import { X, Phone, Loader2 } from 'lucide-react';
+import { Outlet, Link } from 'react-router-dom';
+import { X, Phone, Loader2, AlertTriangle, Clock, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useQuery } from '@tanstack/react-query';
+import api from '@/api/axios';
+
+interface ExpiryAlert {
+    id: string;
+    type: 'DANGER' | 'WARNING' | 'INFO';
+    title: string;
+    message: string;
+    days_left: number;
+}
 
 export default function DashboardLayout() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -21,13 +31,52 @@ export default function DashboardLayout() {
         return localStorage.getItem(`dismissed_mobile_prompt_${user.id}`) === 'true';
     });
 
+    // Expiry banner dismissed state per-user
+    const [dismissedAlertIds, setDismissedAlertIds] = useState<string[]>(() => {
+        try {
+            const stored = localStorage.getItem(`dismissed_alerts_${user?.id}`);
+            return stored ? JSON.parse(stored) : [];
+        } catch {
+            return [];
+        }
+    });
+
     useEffect(() => {
         if (user) {
             setHasDismissed(localStorage.getItem(`dismissed_mobile_prompt_${user.id}`) === 'true');
+            try {
+                const stored = localStorage.getItem(`dismissed_alerts_${user.id}`);
+                setDismissedAlertIds(stored ? JSON.parse(stored) : []);
+            } catch {
+                setDismissedAlertIds([]);
+            }
         }
     }, [user]);
 
     const showMobilePrompt = user && !user.mobile_number?.trim() && !hasDismissed;
+
+    // Fetch expiry alerts (only for non-staff students)
+    const { data: expiryAlerts = [] } = useQuery<ExpiryAlert[]>({
+        queryKey: ['expiry-alerts', user?.id],
+        queryFn: async () => {
+            const res = await api.get('/subscriptions/my-subscriptions/notifications/');
+            return Array.isArray(res.data) ? res.data : [];
+        },
+        enabled: !!user && !user.is_staff,
+        staleTime: 120_000,
+        refetchOnWindowFocus: false,
+    });
+
+    const visibleAlerts = expiryAlerts.filter((a) => !dismissedAlertIds.includes(a.id));
+    const topAlert = visibleAlerts[0] ?? null;
+
+    const dismissAlert = (alertId: string) => {
+        const updated = [...dismissedAlertIds, alertId];
+        setDismissedAlertIds(updated);
+        if (user) {
+            localStorage.setItem(`dismissed_alerts_${user.id}`, JSON.stringify(updated));
+        }
+    };
 
     const handleMobileSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -47,10 +96,16 @@ export default function DashboardLayout() {
         }
     };
 
+    const alertColors = {
+        DANGER: { bg: 'bg-rose-500', text: 'text-white', border: 'border-rose-600' },
+        WARNING: { bg: 'bg-amber-500', text: 'text-white', border: 'border-amber-600' },
+        INFO: { bg: 'bg-blue-500', text: 'text-white', border: 'border-blue-600' },
+    };
+
     return (
         <div className="flex bg-bg min-h-screen text-text-primary font-sans relative overflow-hidden">
             {/* Desktop Sidebar */}
-            <div className="hidden lg:block">
+            <div className="hidden lg:block shrink-0">
                 <Sidebar />
             </div>
 
@@ -86,10 +141,55 @@ export default function DashboardLayout() {
                 )}
             </AnimatePresence>
 
-            <div className="flex-1 flex flex-col h-screen overflow-hidden">
+            <div className="flex-1 flex flex-col h-screen h-[100dvh] overflow-hidden">
                 <Topbar onMenuClick={() => setIsMobileMenuOpen(true)} />
 
-                <main className="flex-1 overflow-y-auto p-4 md:p-8 lg:p-10 scrollbar-hide">
+                {/* Subscription Expiry Banner */}
+                <AnimatePresence>
+                    {topAlert && (
+                        <motion.div
+                            key={topAlert.id}
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.25 }}
+                            className={`${alertColors[topAlert.type].bg} ${alertColors[topAlert.type].text} overflow-hidden shrink-0`}
+                        >
+                            <div className="max-w-[1600px] mx-auto px-4 py-2.5 flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                    <div className="shrink-0">
+                                        {topAlert.type === 'DANGER' ? (
+                                            <AlertTriangle size={15} />
+                                        ) : (
+                                            <Clock size={15} />
+                                        )}
+                                    </div>
+                                    <p className="text-[11px] font-bold truncate">
+                                        <span className="font-black">{topAlert.title}:</span>{' '}
+                                        {topAlert.message}
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <Link
+                                        to="/dashboard/subscription"
+                                        className="text-[10px] font-black uppercase tracking-wider underline underline-offset-2 opacity-90 hover:opacity-100 flex items-center gap-0.5 whitespace-nowrap"
+                                    >
+                                        Renew Now <ChevronRight size={11} />
+                                    </Link>
+                                    <button
+                                        onClick={() => dismissAlert(topAlert.id)}
+                                        className="opacity-70 hover:opacity-100 transition-opacity p-1 rounded"
+                                        title="Dismiss"
+                                    >
+                                        <X size={13} />
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                <main className="flex-1 overflow-y-auto p-3 sm:p-6 md:p-8 lg:p-10 scrollbar-hide">
                     <div className="max-w-[1600px] mx-auto min-h-full">
                         <Outlet />
                     </div>

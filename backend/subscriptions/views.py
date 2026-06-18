@@ -16,16 +16,19 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-from subscriptions.models import SubscriptionPlan, UserSubscription, Payment, Coupon, PlatformSetting
-from subscriptions.serializers import SubscriptionPlanSerializer, UserSubscriptionSerializer, PaymentSerializer, CouponSerializer, PlatformSettingSerializer
+from subscriptions.models import SubscriptionPlan, UserSubscription, Payment, Coupon, PlatformSetting, SubscriptionAuditLog
+from subscriptions.serializers import SubscriptionPlanSerializer, UserSubscriptionSerializer, PaymentSerializer, CouponSerializer, PlatformSettingSerializer, SubscriptionAuditLogSerializer
 from authentication.permissions import IsSuperUser
+from django.db.models import Sum, Count
+from django.db.models.functions import TruncMonth
 
 def is_gst_enabled():
     try:
         setting = PlatformSetting.objects.get(key="ENABLE_GST")
         return setting.value.lower() == "true"
     except PlatformSetting.DoesNotExist:
-        return True
+        return False
+
 
 # Safe Razorpay configuration
 RAZORPAY_KEY_ID = getattr(settings, 'RAZORPAY_KEY_ID', 'rzp_test_placeholder_key')
@@ -35,6 +38,8 @@ is_sandbox = (RAZORPAY_KEY_ID == 'rzp_test_placeholder_key')
 class SubscriptionPlanViewSet(viewsets.ModelViewSet):
     queryset = SubscriptionPlan.objects.all().order_by('id')
     serializer_class = SubscriptionPlanSerializer
+    pagination_class = None
+
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
@@ -44,6 +49,8 @@ class SubscriptionPlanViewSet(viewsets.ModelViewSet):
 class CouponViewSet(viewsets.ModelViewSet):
     queryset = Coupon.objects.all().order_by('-created_at')
     serializer_class = CouponSerializer
+    pagination_class = None
+
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy', 'list', 'retrieve']:
@@ -188,6 +195,7 @@ class UserSubscriptionViewSet(viewsets.ModelViewSet):
         Payment.objects.create(
             user=request.user,
             plan=plan,
+            subscription=subscription,
             amount=total_amount,
             base_amount=subtotal,
             gst_amount=gst_amount,
@@ -250,10 +258,22 @@ class UserSubscriptionViewSet(viewsets.ModelViewSet):
                 
         return Response(alerts)
 
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated, IsSuperUser])
+    def upcoming_expirations(self, request):
+        """Return subscriptions expiring within the next 7 days."""
+        window_end = timezone.now() + timedelta(days=7)
+        subs = UserSubscription.objects.filter(
+            is_active=True,
+            end_date__lte=window_end,
+            end_date__gte=timezone.now()
+        ).select_related('user', 'plan').order_by('end_date')
+        return Response(UserSubscriptionSerializer(subs, many=True).data)
+
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsSuperUser])
     def extend(self, request, pk=None):
         sub = self.get_object()
         days = request.data.get('days')
+        notes = request.data.get('notes', '')
         if not days:
             return Response({'error': 'days is required'}, status=400)
         try:
@@ -261,30 +281,51 @@ class UserSubscriptionViewSet(viewsets.ModelViewSet):
         except ValueError:
             return Response({'error': 'days must be an integer'}, status=400)
 
+        old_end = sub.end_date
         sub.end_date = sub.end_date + timedelta(days=days)
         sub.is_active = True
         sub.save()
+        SubscriptionAuditLog.objects.create(
+            subscription=sub, actor=request.user, action='EXTEND',
+            notes=notes or f"Extended by {days} days",
+            old_end_date=old_end, new_end_date=sub.end_date,
+        )
         return Response(UserSubscriptionSerializer(sub).data)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsSuperUser])
     def suspend(self, request, pk=None):
         sub = self.get_object()
+        old_status = sub.is_active
         sub.is_active = False
         sub.save()
+        SubscriptionAuditLog.objects.create(
+            subscription=sub, actor=request.user, action='SUSPEND',
+            notes=request.data.get('notes', 'Suspended by admin'),
+            old_status=old_status, new_status=False,
+        )
         return Response(UserSubscriptionSerializer(sub).data)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsSuperUser])
     def activate(self, request, pk=None):
         sub = self.get_object()
+        old_status = sub.is_active
+        old_end = sub.end_date
         sub.is_active = True
         if sub.end_date <= timezone.now():
             sub.end_date = timezone.now() + timedelta(days=30)
         sub.save()
+        SubscriptionAuditLog.objects.create(
+            subscription=sub, actor=request.user, action='ACTIVATE',
+            notes=request.data.get('notes', 'Activated by admin'),
+            old_status=old_status, new_status=True,
+            old_end_date=old_end, new_end_date=sub.end_date,
+        )
         return Response(UserSubscriptionSerializer(sub).data)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsSuperUser])
     def refund(self, request, pk=None):
         sub = self.get_object()
+        old_status = sub.is_active
         sub.is_active = False
         sub.save()
 
@@ -293,8 +334,209 @@ class UserSubscriptionViewSet(viewsets.ModelViewSet):
         if payment:
             payment.status = 'FAILED'
             payment.save()
-            
+
+        SubscriptionAuditLog.objects.create(
+            subscription=sub, payment=payment, actor=request.user, action='REFUND',
+            notes=request.data.get('notes', 'Refunded by admin'),
+            old_status=old_status, new_status=False,
+        )
         return Response(UserSubscriptionSerializer(sub).data)
+
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsSuperUser])
+    def bulk_operations(self, request):
+        from django.db import transaction
+        action_type = request.data.get('action_type')
+        student_ids = request.data.get('student_ids', [])
+        
+        if not action_type:
+            return Response({'error': 'action_type is required'}, status=400)
+            
+        if action_type == 'BULK_IMPORT_STUDENTS':
+            students_data = request.data.get('students_data', [])
+            if not students_data:
+                return Response({'error': 'students_data list is required'}, status=400)
+                
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            imported_count = 0
+            with transaction.atomic():
+                for student in students_data:
+                    email = student.get('email', '').strip().lower()
+                    if not email:
+                        continue
+                    user, created = User.objects.get_or_create(email=email)
+                    if created:
+                        user.set_password(User.objects.make_random_password())
+                    
+                    first_name = student.get('first_name', '').strip()
+                    last_name = student.get('last_name', '').strip()
+                    if first_name: user.first_name = first_name
+                    if last_name: user.last_name = last_name
+                    
+                    mobile = student.get('mobile_number', '').strip()
+                    if mobile: user.mobile_number = mobile
+                    
+                    course_id = student.get('course_id')
+                    if course_id:
+                        user.selected_course_id = course_id
+                    
+                    user.save()
+                    
+                    plan_id = student.get('plan_id')
+                    if plan_id:
+                        try:
+                            plan = SubscriptionPlan.objects.get(id=plan_id)
+                            # Invalidate existing
+                            UserSubscription.objects.filter(user=user, is_active=True).update(is_active=False)
+                            
+                            start_date = timezone.now()
+                            end_date = start_date + timedelta(days=plan.duration_days)
+                            
+                            sub = UserSubscription.objects.create(
+                                user=user,
+                                plan=plan,
+                                end_date=end_date,
+                                is_active=True
+                            )
+                            SubscriptionAuditLog.objects.create(
+                                subscription=sub, actor=request.user, action='CREATE',
+                                notes=f"Bulk imported student subscription creation"
+                            )
+                        except SubscriptionPlan.DoesNotExist:
+                            pass
+                    imported_count += 1
+            return Response({'message': f'Successfully imported {imported_count} students.'})
+
+        # For other actions, student_ids is required
+        if not student_ids:
+            return Response({'error': 'student_ids list is required'}, status=400)
+
+        # Convert student_ids to integers
+        try:
+            student_ids = [int(sid) for sid in student_ids]
+        except ValueError:
+            return Response({'error': 'student_ids must be a list of integers'}, status=400)
+
+        with transaction.atomic():
+            if action_type == 'ASSIGN_PLANS':
+                plan_id = request.data.get('plan_id')
+                if not plan_id:
+                    return Response({'error': 'plan_id is required'}, status=400)
+                try:
+                    plan = SubscriptionPlan.objects.get(id=plan_id)
+                except SubscriptionPlan.DoesNotExist:
+                    return Response({'error': 'Plan not found'}, status=404)
+                    
+                for sid in student_ids:
+                    UserSubscription.objects.filter(user_id=sid, is_active=True).update(is_active=False)
+                    start_date = timezone.now()
+                    end_date = start_date + timedelta(days=plan.duration_days)
+                    sub = UserSubscription.objects.create(
+                        user_id=sid,
+                        plan=plan,
+                        end_date=end_date,
+                        is_active=True
+                    )
+                    SubscriptionAuditLog.objects.create(
+                        subscription=sub, actor=request.user, action='CREATE',
+                        notes=f"Bulk assigned plan {plan.name}"
+                    )
+                return Response({'message': f'Plan successfully assigned to {len(student_ids)} students.'})
+
+            elif action_type == 'EXTEND_PLANS':
+                days = request.data.get('days')
+                if not days:
+                    return Response({'error': 'days is required'}, status=400)
+                try:
+                    days = int(days)
+                except ValueError:
+                    return Response({'error': 'days must be an integer'}, status=400)
+                    
+                active_subs = UserSubscription.objects.filter(user_id__in=student_ids, is_active=True)
+                count = active_subs.count()
+                for sub in active_subs:
+                    old_end = sub.end_date
+                    sub.end_date = sub.end_date + timedelta(days=days)
+                    sub.save()
+                    SubscriptionAuditLog.objects.create(
+                        subscription=sub, actor=request.user, action='EXTEND',
+                        notes=f"Bulk extended by {days} days",
+                        old_end_date=old_end, new_end_date=sub.end_date
+                    )
+                return Response({'message': f'Extended active plans for {count} students.'})
+
+            elif action_type == 'SUSPEND_ACCESS':
+                active_subs = UserSubscription.objects.filter(user_id__in=student_ids, is_active=True)
+                count = active_subs.count()
+                for sub in active_subs:
+                    sub.is_active = False
+                    sub.save()
+                    SubscriptionAuditLog.objects.create(
+                        subscription=sub, actor=request.user, action='SUSPEND',
+                        notes="Bulk suspended by admin"
+                    )
+                return Response({'message': f'Suspended access for {count} active subscriptions.'})
+
+            elif action_type == 'RESTORE_ACCESS':
+                # Active/inactive but not expired subscriptions
+                subs = UserSubscription.objects.filter(user_id__in=student_ids, is_active=False, end_date__gt=timezone.now())
+                count = subs.count()
+                for sub in subs:
+                    sub.is_active = True
+                    sub.save()
+                    SubscriptionAuditLog.objects.create(
+                        subscription=sub, actor=request.user, action='ACTIVATE',
+                        notes="Bulk restored by admin"
+                    )
+                return Response({'message': f'Restored access for {count} subscriptions.'})
+
+            elif action_type in ['UPGRADE_STUDENTS', 'DOWNGRADE_STUDENTS']:
+                level_id = request.data.get('level_id')
+                if not level_id:
+                    return Response({'error': 'level_id is required'}, status=400)
+                from courses.models import Level, StudentProgress, AuditLog
+                try:
+                    level = Level.objects.get(id=level_id)
+                except Level.DoesNotExist:
+                    return Response({'error': 'Level not found'}, status=404)
+                    
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+                users = User.objects.filter(id__in=student_ids)
+                for user in users:
+                    progress, created = StudentProgress.objects.get_or_create(
+                        user=user,
+                        course=level.course,
+                        defaults={'level': level}
+                    )
+                    progress.level = level
+                    progress.save()
+                    user.selected_course = level.course
+                    user.save()
+                    
+                    AuditLog.objects.create(
+                        user=request.user,
+                        action="BULK_LEVEL_UPDATE",
+                        description=f"Bulk updated level for student {user.email} to {level.name}"
+                    )
+                return Response({'message': f'Successfully updated level to {level.name} for {users.count()} students.'})
+
+            elif action_type == 'BULK_ASSIGN_COURSES':
+                course_id = request.data.get('course_id')
+                if not course_id:
+                    return Response({'error': 'course_id is required'}, status=400)
+                from courses.models import Course, AuditLog
+                try:
+                    course = Course.objects.get(id=course_id)
+                except Course.DoesNotExist:
+                    return Response({'error': 'Course not found'}, status=404)
+                    
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+                updated_count = User.objects.filter(id__in=student_ids).update(selected_course=course)
+                return Response({'message': f'Successfully assigned course {course.name} to {updated_count} students.'})
+
+            return Response({'error': 'Invalid action_type'}, status=400)
 
 class PaymentViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
@@ -304,6 +546,103 @@ class PaymentViewSet(viewsets.ModelViewSet):
         if self.request.user and self.request.user.is_superuser and self.request.query_params.get('all') == 'true':
             return Payment.objects.all().order_by('-created_at')
         return Payment.objects.filter(user=self.request.user).order_by('-created_at')
+
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated, IsSuperUser])
+    def revenue_report(self, request):
+        """Admin revenue analytics report."""
+        successful = Payment.objects.filter(status='SUCCESS')
+
+        total_revenue = successful.aggregate(total=Sum('amount'))['total'] or 0
+        total_gst = successful.aggregate(total=Sum('gst_amount'))['total'] or 0
+        active_subs = UserSubscription.objects.filter(is_active=True, end_date__gt=timezone.now()).count()
+        expired_subs = UserSubscription.objects.filter(is_active=False).count()
+        total_payments = successful.count()
+
+        # Monthly breakdown (last 12 months)
+        monthly = (
+            successful
+            .annotate(month=TruncMonth('created_at'))
+            .values('month')
+            .annotate(revenue=Sum('amount'), count=Count('id'))
+            .order_by('month')
+        )
+        monthly_data = [
+            {
+                'month': entry['month'].strftime('%b %Y'),
+                'revenue': float(entry['revenue']),
+                'count': entry['count']
+            }
+            for entry in monthly
+        ]
+
+        # Course-wise breakdown
+        course_data = (
+            successful
+            .values('plan__name', 'plan__course_specific__name')
+            .annotate(revenue=Sum('amount'), count=Count('id'))
+            .order_by('-revenue')
+        )
+        course_breakdown = [
+            {
+                'plan': entry['plan__name'] or 'Unknown Plan',
+                'course': entry['plan__course_specific__name'] or 'General',
+                'revenue': float(entry['revenue']),
+                'count': entry['count']
+            }
+            for entry in course_data
+        ]
+
+        # 1. Renewal Rate
+        total_users_with_expired = UserSubscription.objects.filter(is_active=False).values('user').distinct().count()
+        renewed_users = UserSubscription.objects.filter(is_active=False).values('user').distinct().filter(user__usersubscription__is_active=True, user__usersubscription__end_date__gt=timezone.now()).distinct().count()
+        renewal_rate = round((renewed_users / total_users_with_expired * 100), 2) if total_users_with_expired > 0 else 0.0
+
+        # 2. Upgrade Revenue
+        from courses.models import UpgradeRequest
+        upgrade_revenue = float(UpgradeRequest.objects.filter(status='APPROVED').aggregate(total=Sum('upgrade_path__price'))['total'] or 0.0)
+
+        # 3. Student-wise Revenue
+        student_data = (
+            successful.values('user__email', 'user__first_name', 'user__last_name')
+            .annotate(revenue=Sum('amount'))
+            .order_by('-revenue')[:10]
+        )
+        student_breakdown = [
+            {
+                'email': entry['user__email'],
+                'name': f"{entry['user__first_name']} {entry['user__last_name']}".strip() or entry['user__email'].split('@')[0],
+                'revenue': float(entry['revenue'])
+            }
+            for entry in student_data
+        ]
+
+        # 4. Institution-wise Revenue
+        institution_data = (
+            successful.values('user__institution__name')
+            .annotate(revenue=Sum('amount'))
+            .order_by('-revenue')
+        )
+        institution_breakdown = [
+            {
+                'institution': entry['user__institution__name'] or 'Direct / Individual Students',
+                'revenue': float(entry['revenue'])
+            }
+            for entry in institution_data
+        ]
+
+        return Response({
+            'total_revenue': float(total_revenue),
+            'total_gst_collected': float(total_gst),
+            'active_subscriptions': active_subs,
+            'expired_subscriptions': expired_subs,
+            'total_successful_payments': total_payments,
+            'monthly_breakdown': monthly_data,
+            'course_wise_breakdown': course_breakdown,
+            'renewal_rate': renewal_rate,
+            'upgrade_revenue': upgrade_revenue,
+            'student_wise_breakdown': student_breakdown,
+            'institution_wise_breakdown': institution_breakdown,
+        })
 
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def record_failed(self, request):
@@ -535,6 +874,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         Payment.objects.create(
             user=request.user,
             plan=plan,
+            subscription=subscription,
             amount=total_amount,
             base_amount=subtotal,
             gst_amount=gst_amount,
@@ -639,24 +979,39 @@ class PaymentViewSet(viewsets.ModelViewSet):
         story.append(Paragraph("Transaction Summary", h2_style))
         story.append(Spacer(1, 5))
 
-        headers = [Paragraph("<b>Description</b>", body_bold), 
-                   Paragraph("<b>Original Price</b>", body_bold), 
-                   Paragraph("<b>Discount</b>", body_bold),
-                   Paragraph("<b>Base Price</b>", body_bold), 
-                   Paragraph("<b>GST (18%)</b>", body_bold), 
-                   Paragraph("<b>Total Paid</b>", body_bold)]
-        
-        row1 = [
-            Paragraph(f"Subscription: {payment.plan.name if payment.plan else 'Premium Access'}", body_style),
-            Paragraph(f"INR {payment.original_amount}", body_style),
-            Paragraph(f"INR {payment.discount_amount}", body_style),
-            Paragraph(f"INR {payment.base_amount}", body_style),
-            Paragraph(f"INR {payment.gst_amount}", body_style),
-            Paragraph(f"INR {payment.amount}", body_bold)
-        ]
-        
-        table_data = [headers, row1]
-        t2 = Table(table_data, colWidths=[150, 75, 65, 75, 75, 80])
+        if payment.gst_amount > 0:
+            headers = [
+                Paragraph("<b>Description</b>", body_bold), 
+                Paragraph("<b>Original Price</b>", body_bold), 
+                Paragraph("<b>Discount</b>", body_bold),
+                Paragraph("<b>Base Price</b>", body_bold), 
+                Paragraph("<b>GST (18%)</b>", body_bold), 
+                Paragraph("<b>Total Paid</b>", body_bold)
+            ]
+            row1 = [
+                Paragraph(f"Subscription: {payment.plan.name if payment.plan else 'Premium Access'}", body_style),
+                Paragraph(f"INR {payment.original_amount}", body_style),
+                Paragraph(f"INR {payment.discount_amount}", body_style),
+                Paragraph(f"INR {payment.base_amount}", body_style),
+                Paragraph(f"INR {payment.gst_amount}", body_style),
+                Paragraph(f"INR {payment.amount}", body_bold)
+            ]
+            t2 = Table([headers, row1], colWidths=[150, 75, 65, 75, 75, 80])
+        else:
+            headers = [
+                Paragraph("<b>Description</b>", body_bold), 
+                Paragraph("<b>Original Price</b>", body_bold), 
+                Paragraph("<b>Discount</b>", body_bold),
+                Paragraph("<b>Total Paid</b>", body_bold)
+            ]
+            row1 = [
+                Paragraph(f"Subscription: {payment.plan.name if payment.plan else 'Premium Access'}", body_style),
+                Paragraph(f"INR {payment.original_amount}", body_style),
+                Paragraph(f"INR {payment.discount_amount}", body_style),
+                Paragraph(f"INR {payment.amount}", body_bold)
+            ]
+            t2 = Table([headers, row1], colWidths=[220, 100, 100, 100])
+
         t2.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F1F5F9')),
             ('ALIGN', (0,0), (-1,-1), 'LEFT'),
@@ -676,6 +1031,8 @@ class PlatformSettingViewSet(viewsets.ModelViewSet):
     queryset = PlatformSetting.objects.all()
     serializer_class = PlatformSettingSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy', 'toggle_gst']:

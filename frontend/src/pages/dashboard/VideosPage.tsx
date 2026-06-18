@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
-import { Play, Calendar, Clock, Lock, Loader2, X, AlertCircle } from 'lucide-react';
+import { Play, Calendar, Clock, Lock, Loader2, X, AlertCircle, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '@/api/axios';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 
 interface Video {
     id: number;
@@ -24,6 +25,7 @@ export default function VideosPage() {
     const [selectedCourse, setSelectedCourse] = useState<string>('');
     const [selectedLevel, setSelectedLevel] = useState<string>('');
     const [activeVideo, setActiveVideo] = useState<Video | null>(null);
+    const { hasVideoAccess, isLoading: subLoading } = useSubscriptionAccess();
 
     // Fetch videos
     const { data: videos = [], isLoading: isLoadingVideos } = useQuery<Video[]>({
@@ -110,7 +112,7 @@ export default function VideosPage() {
         return url.includes('youtube.com') || url.includes('youtu.be') || url.includes('vimeo.com');
     };
 
-    if (isLoadingVideos || isLoadingCourses) {
+    if (isLoadingVideos || isLoadingCourses || subLoading) {
         return (
             <div className="h-[60vh] flex flex-col items-center justify-center gap-4">
                 <Loader2 className="animate-spin text-primary" size={40} />
@@ -118,6 +120,46 @@ export default function VideosPage() {
             </div>
         );
     }
+
+    // Premium lock gate
+    if (!hasVideoAccess) {
+        return (
+            <div className="flex-1 flex items-center justify-center p-6 min-h-[70vh]">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="max-w-lg w-full bg-card rounded-[2.5rem] p-10 text-center shadow-xl border border-border relative overflow-hidden"
+                >
+                    <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-400" />
+                    <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl" />
+                    <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/20 rounded-[1.5rem] flex items-center justify-center mx-auto mb-6 text-amber-500">
+                        <Lock size={36} />
+                    </div>
+                    <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-3 py-1.5 rounded-full border border-amber-100 inline-block mb-4">
+                        Premium Access Required
+                    </span>
+                    <h2 className="text-2xl font-black text-text-primary mb-3 tracking-tight">Recorded Classes Locked</h2>
+                    <p className="text-sm text-text-secondary font-semibold leading-relaxed mb-8 max-w-sm mx-auto">
+                        Access our complete library of recorded lectures, doubt-clearing sessions, and expert explanations by subscribing to a premium plan.
+                    </p>
+                    <div className="space-y-3">
+                        <Link
+                            to="/dashboard/subscription"
+                            className="w-full py-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-black text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-2.5 shadow-lg shadow-amber-500/20 hover:scale-[1.02] active:scale-95"
+                        >
+                            <Sparkles size={16} />
+                            <span>Unlock All Classes</span>
+                        </Link>
+                        <p className="text-[10px] text-text-muted font-semibold">
+                            Already subscribed? Your subscription may have expired.{' '}
+                            <Link to="/dashboard/subscription" className="text-primary underline">Check status</Link>
+                        </p>
+                    </div>
+                </motion.div>
+            </div>
+        );
+    }
+
 
     return (
         <div className="space-y-8 pb-20">

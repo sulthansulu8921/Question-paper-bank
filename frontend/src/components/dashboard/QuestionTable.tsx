@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Eye, Home, Search, Star, X, Lock } from 'lucide-react';
+import { Eye, Home, Search, Star, X, Lock, Filter } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import QuestionModal from './QuestionModal';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useParams, Link } from 'react-router-dom';
 import api from '@/api/axios';
+import { useAuthStore } from '@/store/useAuthStore';
 
 interface Question {
     id: number;
@@ -28,15 +29,20 @@ export default function QuestionTable({
     defaultFilter?: 'subjective' | 'mcq' | 'important' | 'saved';
     hideTabs?: boolean;
 }) {
+    const { user } = useAuthStore();
     const { id: routeSubjectId } = useParams<{ id: string }>();
     const [activeRowId, setActiveRowId] = useState<number | null>(null);
-    const [filter, setFilter] = useState<'subjective' | 'mcq' | 'important' | 'saved'>(defaultFilter);
+    const [filter, setFilter] = useState<'subjective' | 'mcq' | 'important' | 'saved'>(defaultFilter || 'subjective');
     const [searchParams] = useSearchParams();
 
     // Read global search from Topbar
     const globalSearch = searchParams.get('search') || '';
     const [searchQuery, setSearchQuery] = useState(globalSearch);
     const [showSearch, setShowSearch] = useState(!!globalSearch);
+    const [selectedSource, setSelectedSource] = useState<string>('all');
+    const [selectedYear, setSelectedYear] = useState<string>('all');
+    const [selectedMarks, setSelectedMarks] = useState<string>('all');
+    const [showFilters, setShowFilters] = useState(false);
 
     // Sync external search updates
     useEffect(() => {
@@ -47,9 +53,14 @@ export default function QuestionTable({
     }, [globalSearch]);
 
     // Fetch Questions
-    const { data: questions = [], isLoading } = useQuery({
-        queryKey: ['subjective-questions'],
-        queryFn: async () => (await api.get('/materials/subjective-questions/')).data,
+    const { data: questionsResponse, isLoading } = useQuery({
+        queryKey: ['subjective-questions', routeSubjectId],
+        queryFn: async () => {
+            const url = routeSubjectId
+                ? `/materials/subjective-questions/?paper_id=${routeSubjectId}`
+                : '/materials/subjective-questions/';
+            return (await api.get(url)).data;
+        },
         refetchInterval: 5000, // Live-sync with Django Admin
     });
 
@@ -82,10 +93,61 @@ export default function QuestionTable({
     const [viewerQuestion, setViewerQuestion] = useState<Question | null>(null);
     const [isViewerOpen, setIsViewerOpen] = useState(false);
 
+    const uniqueSources = useMemo(() => {
+        const questionsList = Array.isArray(questionsResponse) ? questionsResponse : (questionsResponse?.results || []);
+        const set = new Set<string>();
+        questionsList.forEach((q: any) => {
+            if (q.source) set.add(q.source);
+        });
+        return Array.from(set).sort();
+    }, [questionsResponse]);
+
+    const uniqueYears = useMemo(() => {
+        const questionsList = Array.isArray(questionsResponse) ? questionsResponse : (questionsResponse?.results || []);
+        const set = new Set<string>();
+        questionsList.forEach((q: any) => {
+            if (q.year) set.add(q.year);
+        });
+        return Array.from(set).sort().reverse();
+    }, [questionsResponse]);
+
+    const uniqueMarks = useMemo(() => {
+        const questionsList = Array.isArray(questionsResponse) ? questionsResponse : (questionsResponse?.results || []);
+        const set = new Set<number>();
+        questionsList.forEach((q: any) => {
+            if (q.marks) set.add(Number(q.marks));
+        });
+        return Array.from(set).sort((a, b) => a - b);
+    }, [questionsResponse]);
+
     const filteredQuestions = useMemo(() => {
-        return questions.filter((q: any) => {
-            // Filter by subject ID from the route parameter if present
-            if (routeSubjectId && String(q.subject) !== String(routeSubjectId)) {
+        const questionsList = Array.isArray(questionsResponse) ? questionsResponse : (questionsResponse?.results || []);
+        return questionsList.filter((q: any) => {
+            // Scope by student's selected course level name if present
+            // Skip check if we are already scoped to a specific paper (routeSubjectId) or user is staff
+            if (user?.selected_course_name && !routeSubjectId && !user?.is_staff) {
+                const qLevelName = q.icai_level_name || '';
+                if (qLevelName.toLowerCase() !== user.selected_course_name.toLowerCase()) {
+                    return false;
+                }
+            }
+
+            // Filter by subject/paper ID from the route parameter if present
+            if (routeSubjectId) {
+                const legacyMatch = String(q.subject) === String(routeSubjectId);
+                const masterMatch = String(q.icai_paper_id) === String(routeSubjectId);
+                if (!legacyMatch && !masterMatch) {
+                    return false;
+                }
+            }
+
+            if (selectedSource !== 'all' && q.source !== selectedSource) {
+                return false;
+            }
+            if (selectedYear !== 'all' && q.year !== selectedYear) {
+                return false;
+            }
+            if (selectedMarks !== 'all' && String(q.marks) !== selectedMarks) {
                 return false;
             }
 
@@ -100,11 +162,12 @@ export default function QuestionTable({
 
             const searchStr = searchQuery.toLowerCase();
             const matchesSearch = (q.topic_name || '').toLowerCase().includes(searchStr) ||
+                (q.icai_topic_name || '').toLowerCase().includes(searchStr) ||
                 (q.source || '').toLowerCase().includes(searchStr) ||
                 (q.q_no || '').toLowerCase().includes(searchStr);
             return matchesType && matchesSearch;
         });
-    }, [questions, bookmarks, filter, searchQuery, routeSubjectId]);
+    }, [questionsResponse, bookmarks, filter, searchQuery, routeSubjectId, user?.selected_course_name, selectedSource, selectedYear, selectedMarks]);
 
     const handleRowClick = (q: Question) => {
         setActiveRowId(q.id);
@@ -137,6 +200,18 @@ export default function QuestionTable({
 
     return (
         <div className="w-full bg-card rounded-xl overflow-hidden shadow-sm border border-border font-sans">
+            {searchParams.get('debug') === 'true' && (
+                <div className="bg-red-50 border-b border-red-200 text-red-800 p-6 text-xs font-mono space-y-2">
+                    <p className="font-bold text-sm">DEVELOPER DEBUG INFO (url has ?debug=true):</p>
+                    <p><strong>user.email:</strong> {user?.email || 'N/A'}</p>
+                    <p><strong>user.selected_course_name:</strong> {user?.selected_course_name || 'N/A'}</p>
+                    <p><strong>routeSubjectId:</strong> {routeSubjectId || 'N/A'}</p>
+                    <p><strong>questionsResponse type:</strong> {typeof questionsResponse}</p>
+                    <p><strong>questionsResponse isArray:</strong> {String(Array.isArray(questionsResponse))}</p>
+                    <p><strong>questionsList length:</strong> {((Array.isArray(questionsResponse) ? questionsResponse : (questionsResponse?.results || [])) || []).length}</p>
+                    <p><strong>first question details:</strong> {JSON.stringify((Array.isArray(questionsResponse) ? questionsResponse[0] : (questionsResponse?.results?.[0] || {})))}</p>
+                </div>
+            )}
             {/* Legend & Stats Bar */}
             <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between px-4 md:px-6 py-4 bg-card border-b border-border gap-4">
                 <div className="flex flex-wrap items-center gap-3">
@@ -166,6 +241,17 @@ export default function QuestionTable({
                             </button>
                         </div>
                     )}
+                    <button
+                        onClick={() => setShowFilters(!showFilters)}
+                        className={`w-10 h-10 flex items-center justify-center rounded-lg border transition-all ${
+                            showFilters
+                                ? 'bg-primary border-primary text-white shadow-md'
+                                : 'bg-bg border-border text-text-muted hover:text-text-primary'
+                        }`}
+                        title="Toggle Filters"
+                    >
+                        <Filter size={16} />
+                    </button>
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between lg:justify-end gap-4 sm:gap-8 w-full lg:w-auto">
@@ -185,6 +271,66 @@ export default function QuestionTable({
                     </div>
                 </div>
             </div>
+
+            {showFilters && (
+                <div className="px-4 md:px-6 py-3 bg-bg border-b border-border flex flex-wrap items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                    {/* Source Filter Selector */}
+                    {uniqueSources.length > 0 && (
+                        <select
+                            value={selectedSource}
+                            onChange={(e) => setSelectedSource(e.target.value)}
+                            className="h-10 px-3 border border-border rounded-lg bg-card text-text-primary text-xs font-bold focus:ring-2 focus:ring-primary focus:border-transparent outline-none cursor-pointer w-full sm:w-auto"
+                        >
+                            <option value="all">All Sources</option>
+                            {uniqueSources.map(src => (
+                                <option key={src} value={src}>{src}</option>
+                            ))}
+                        </select>
+                    )}
+
+                    {/* Year Filter Selector */}
+                    {uniqueYears.length > 0 && (
+                        <select
+                            value={selectedYear}
+                            onChange={(e) => setSelectedYear(e.target.value)}
+                            className="h-10 px-3 border border-border rounded-lg bg-card text-text-primary text-xs font-bold focus:ring-2 focus:ring-primary focus:border-transparent outline-none cursor-pointer w-full sm:w-auto"
+                        >
+                            <option value="all">All Years</option>
+                            {uniqueYears.map(yr => (
+                                <option key={yr} value={yr}>{yr}</option>
+                            ))}
+                        </select>
+                    )}
+
+                    {/* Marks Filter Selector */}
+                    {uniqueMarks.length > 0 && (
+                        <select
+                            value={selectedMarks}
+                            onChange={(e) => setSelectedMarks(e.target.value)}
+                            className="h-10 px-3 border border-border rounded-lg bg-card text-text-primary text-xs font-bold focus:ring-2 focus:ring-primary focus:border-transparent outline-none cursor-pointer w-full sm:w-auto"
+                        >
+                            <option value="all">All Marks</option>
+                            {uniqueMarks.map(mrk => (
+                                <option key={mrk} value={String(mrk)}>{mrk} Marks</option>
+                            ))}
+                        </select>
+                    )}
+
+                    {/* Reset Button */}
+                    {(selectedSource !== 'all' || selectedYear !== 'all' || selectedMarks !== 'all') && (
+                        <button
+                            onClick={() => {
+                                setSelectedSource('all');
+                                setSelectedYear('all');
+                                setSelectedMarks('all');
+                            }}
+                            className="h-10 px-4 text-rose-500 hover:text-rose-600 bg-rose-500/10 hover:bg-rose-500/20 text-xs font-black uppercase tracking-wider rounded-lg transition-colors w-full sm:w-auto"
+                        >
+                            Reset Filters
+                        </button>
+                    )}
+                </div>
+            )}
 
             {/* Sub Navigation Bar */}
             {!hideTabs && (
@@ -272,7 +418,7 @@ export default function QuestionTable({
                                     className={`group cursor-pointer transition-colors ${isActive ? 'bg-[var(--table-header)] text-white' : 'hover:bg-[var(--table-hover)]'}`}
                                 >
                                     <td className={`px-4 py-5 text-xs font-bold text-center border-r border-border ${isActive ? 'border-white/10' : ''}`}>{idx + 1}</td>
-                                    <td className={`px-6 py-5 text-xs font-black border-r border-border ${isActive ? 'border-white/10' : ''}`}>{q.topic_name}</td>
+                                    <td className={`px-6 py-5 text-xs font-black border-r border-border ${isActive ? 'border-white/10' : ''}`}>{(q as any).topic_name || (q as any).icai_topic_name}</td>
                                     <td className={`px-6 py-5 text-[11px] font-bold border-r border-border ${isActive ? 'border-white/10' : ''}`}>{q.source}</td>
                                     <td className={`px-6 py-5 text-[11px] font-bold border-r border-border ${isActive ? 'border-white/10' : ''}`}>{q.year}</td>
                                     <td className={`px-6 py-5 text-[11px] font-black border-r border-border ${isActive ? 'border-white/10' : ''}`}>{q.q_no}</td>
@@ -298,7 +444,7 @@ export default function QuestionTable({
                             );
                         })}
                         {/* Render locked rows if present */}
-                        {!isLoading && (questions as any).locked_count > 0 && (
+                        {!isLoading && (questionsResponse as any)?.locked_count > 0 && (
                             <tr className="bg-bg/25 border-t border-border opacity-70">
                                 <td className="px-4 py-5 text-xs font-bold text-center border-r border-border text-text-muted">
                                     {filteredQuestions.length + 1}
@@ -324,7 +470,7 @@ export default function QuestionTable({
                                         className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md transition-all scale-95 hover:scale-100"
                                     >
                                         <Lock size={12} />
-                                        <span>Unlock {(questions as any).locked_count} More</span>
+                                        <span>Unlock {(questionsResponse as any)?.locked_count} More</span>
                                     </Link>
                                 </td>
                             </tr>

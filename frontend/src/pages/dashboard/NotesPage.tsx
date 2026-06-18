@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import api from '@/api/axios';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import { 
     Lock, Sparkles, ArrowLeft, 
     ExternalLink, Search, Loader2, BookOpenCheck,
@@ -39,6 +40,7 @@ interface Topic {
 export default function NotesPage() {
     const user = useAuthStore((state) => state.user);
     const navigate = useNavigate();
+    const { hasNotesAccess, isLoading: subLoading } = useSubscriptionAccess();
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedSubjectId, setSelectedSubjectId] = useState<string>('all');
     const [selectedTopicId, setSelectedTopicId] = useState<string>('all');
@@ -46,22 +48,31 @@ export default function NotesPage() {
 
     // Queries
     const { data: notes = [], isLoading: notesLoading } = useQuery<Note[]>({
-        queryKey: ['notes-list'],
-        queryFn: async () => (await api.get('/materials/notes/')).data,
+        queryKey: ['notes-list', user?.selected_course],
+        queryFn: async () => {
+            const url = user?.selected_course ? `/materials/notes/?course_id=${user.selected_course}` : '/materials/notes/';
+            return (await api.get(url)).data;
+        },
     });
 
     const { data: subjects = [] } = useQuery<Subject[]>({
-        queryKey: ['subjects-list-small'],
-        queryFn: async () => (await api.get('/courses/subjects/')).data,
+        queryKey: ['subjects-list-small', user?.selected_course],
+        queryFn: async () => {
+            const url = user?.selected_course ? `/courses/subjects/?course_id=${user.selected_course}` : '/courses/subjects/';
+            return (await api.get(url)).data;
+        },
     });
 
     const { data: topics = [] } = useQuery<Topic[]>({
-        queryKey: ['topics-list-small'],
-        queryFn: async () => (await api.get('/courses/topics/')).data,
+        queryKey: ['topics-list-small', user?.selected_course],
+        queryFn: async () => {
+            const url = user?.selected_course ? `/courses/topics/?course_id=${user.selected_course}` : '/courses/topics/';
+            return (await api.get(url)).data;
+        },
     });
 
     // Check user subscription tier
-    const isPremiumUser = user?.is_staff || (user?.subscription_tier && user.subscription_tier !== 'Free Account');
+    const isPremiumUser = hasNotesAccess;
 
     // Filter topics by subject
     const filteredTopics = topics.filter(t => 
@@ -180,7 +191,7 @@ export default function NotesPage() {
                         </div>
 
                         {/* Notes Grid */}
-                        {notesLoading ? (
+                        {notesLoading || subLoading ? (
                             <div className="flex flex-col items-center justify-center py-20">
                                 <Loader2 className="animate-spin text-indigo-600 mb-4" size={36} />
                                 <p className="text-sm font-semibold text-slate-500">Loading resources...</p>

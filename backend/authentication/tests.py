@@ -231,3 +231,68 @@ class AdminUserManagementTests(APITestCase):
         url = reverse('grant_admin')
         response = self.client.post(url, {'email': self.normal_user.email}, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class MultiTenantSaaSTests(APITestCase):
+    """
+    Tests for multi-tenant data isolation.
+    All institutions, categories, courses and batches below are generic test fixtures only.
+    In production, all such data is created exclusively by admins via the admin panel.
+    """
+    def setUp(self):
+        from authentication.models import Institution, Batch
+        from courses.models import Category, Course
+        # Generic test institutions — not real data; created by admin in production
+        self.inst1 = Institution.objects.create(name="Test Institution A", domain="testa.test")
+        self.inst2 = Institution.objects.create(name="Test Institution B", domain="testb.test")
+
+        # Generic test category and course — admin creates these in production
+        self.category = Category.objects.create(name="Test Category")
+        self.course = Course.objects.create(name="Test Course", category=self.category)
+
+        self.super_admin = get_user_model().objects.create_superuser(
+            email='superadmin@test.com', username='superadmin@test.com', password='Password123!', role='SUPER_ADMIN'
+        )
+        self.inst_admin1 = get_user_model().objects.create_user(
+            email='admin1@test.com', username='admin1@test.com', password='Password123!',
+            role='INSTITUTION_ADMIN', institution=self.inst1, is_staff=True
+        )
+        self.inst_admin2 = get_user_model().objects.create_user(
+            email='admin2@test.com', username='admin2@test.com', password='Password123!',
+            role='INSTITUTION_ADMIN', institution=self.inst2, is_staff=True
+        )
+
+        # Generic test batches — admin creates these in production
+        self.batch1 = Batch.objects.create(name="Batch A", institution=self.inst1, course=self.course)
+        self.batch2 = Batch.objects.create(name="Batch B", institution=self.inst2, course=self.course)
+
+    def test_tenant_isolation_batches(self):
+        # Authenticate as Oxford Admin
+        self.client.force_authenticate(user=self.inst_admin1)
+        url = reverse('batch-list')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Determine if paginated or flat list
+        results = response.data['results'] if 'results' in response.data else response.data
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['name'], "Batch A")
+
+        # Authenticate as Cambridge Admin
+        self.client.force_authenticate(user=self.inst_admin2)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        results = response.data['results'] if 'results' in response.data else response.data
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['name'], "Batch B")
+
+    def test_super_admin_sees_all_batches(self):
+        self.client.force_authenticate(user=self.super_admin)
+        url = reverse('batch-list')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        results = response.data['results'] if 'results' in response.data else response.data
+        self.assertEqual(len(results), 2)
+

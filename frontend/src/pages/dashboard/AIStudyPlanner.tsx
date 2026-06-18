@@ -1,13 +1,26 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import api from '@/api/axios';
 import { 
     Sparkles, Compass, Loader2, Play, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { useAuthStore } from '@/store/useAuthStore';
 
 export default function AIStudyPlanner() {
     const navigate = useNavigate();
+    const user = useAuthStore((state) => state.user);
+
+    // Fetch active course details (levels and subjects)
+    const { data: activeCourse } = useQuery<any>({
+        queryKey: ['active-course-details', user?.selected_course],
+        queryFn: async () => {
+            if (!user?.selected_course) return null;
+            return (await api.get(`/courses/courses/${user.selected_course}/`)).data;
+        },
+        enabled: !!user?.selected_course,
+    });
 
     // Form states
     const [targetExam, setTargetExam] = useState('CA');
@@ -17,6 +30,41 @@ export default function AIStudyPlanner() {
     const [plan, setPlan] = useState<any[] | null>(null);
     const [errorMsg, setErrorMsg] = useState('');
     const [isAiPowered, setIsAiPowered] = useState(false);
+
+    // Map course name to correct target exam value
+    useEffect(() => {
+        if (activeCourse?.name) {
+            const nameUpper = activeCourse.name.toUpperCase();
+            if (nameUpper.includes('CHARTERED') || nameUpper.includes('CA ')) {
+                setTargetExam('CA');
+            } else if (nameUpper.includes('CMA') || nameUpper.includes('COST')) {
+                setTargetExam('CMA');
+            } else if (nameUpper.includes('CS ') || nameUpper.includes('SECRETARY')) {
+                setTargetExam('CS');
+            } else if (nameUpper.includes('ACCA')) {
+                setTargetExam('ACCA');
+            } else if (nameUpper.includes('NEET')) {
+                setTargetExam('NEET');
+            } else if (nameUpper.includes('JEE')) {
+                setTargetExam('JEE');
+            } else if (nameUpper.includes('UPSC') || nameUpper.includes('CIVIL')) {
+                setTargetExam('UPSC');
+            } else if (nameUpper.includes('BANK') || nameUpper.includes('IBPS')) {
+                setTargetExam('BANKING');
+            }
+        }
+    }, [activeCourse]);
+
+    const examMap: { [key: string]: string } = {
+        'CA': 'Chartered Accountant (CA)',
+        'CMA': 'Cost & Management Accountant (CMA)',
+        'CS': 'Company Secretary (CS)',
+        'ACCA': 'ACCA Global',
+        'NEET': 'NEET (UG)',
+        'JEE': 'JEE (Mains/Adv)',
+        'UPSC': 'UPSC Civil Services',
+        'BANKING': 'Banking / IBPS'
+    };
 
     // Calculate days remaining
     const daysRemaining = useMemo(() => {
@@ -97,20 +145,34 @@ export default function AIStudyPlanner() {
                     {/* Target Exam */}
                     <div className="space-y-2">
                         <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">Target Exam / Stream</label>
-                        <select
-                            value={targetExam}
-                            onChange={(e) => setTargetExam(e.target.value)}
-                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none bg-slate-50/50 dark:bg-slate-950 text-xs font-bold"
-                        >
-                            <option value="CA">Chartered Accountant (CA)</option>
-                            <option value="CMA">Cost & Management Accountant (CMA)</option>
-                            <option value="CS">Company Secretary (CS)</option>
-                            <option value="ACCA">ACCA Global</option>
-                            <option value="NEET">NEET (UG)</option>
-                            <option value="JEE">JEE (Mains/Adv)</option>
-                            <option value="UPSC">UPSC Civil Services</option>
-                            <option value="BANKING">Banking / IBPS</option>
-                        </select>
+                        {user?.selected_course ? (
+                            <div className="p-4 bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/30 rounded-2xl flex items-center justify-between">
+                                <div>
+                                    <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Your Active Program</span>
+                                    <h3 className="text-sm font-black text-slate-900 dark:text-white mt-0.5">
+                                        {activeCourse?.name || user?.selected_course_name || examMap[targetExam] || 'Chartered Accountant (CA)'}
+                                    </h3>
+                                </div>
+                                <span className="text-[10px] font-black bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded-full uppercase tracking-wider shrink-0">
+                                    {targetExam}
+                                </span>
+                            </div>
+                        ) : (
+                            <select
+                                value={targetExam}
+                                onChange={(e) => setTargetExam(e.target.value)}
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none bg-slate-50/50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-white"
+                            >
+                                <option value="CA">Chartered Accountant (CA)</option>
+                                <option value="CMA">Cost & Management Accountant (CMA)</option>
+                                <option value="CS">Company Secretary (CS)</option>
+                                <option value="ACCA">ACCA Global</option>
+                                <option value="NEET">NEET (UG)</option>
+                                <option value="JEE">JEE (Mains/Adv)</option>
+                                <option value="UPSC">UPSC Civil Services</option>
+                                <option value="BANKING">Banking / IBPS</option>
+                            </select>
+                        )}
                     </div>
 
                     {/* Target Date */}

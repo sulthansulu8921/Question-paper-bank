@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import (
     StudentStats, StudyStreak, Achievement, UserAchievement,
-    ActivityLog, Quote, UpcomingExam, Assignment, MockTestResult
+    ActivityLog, Quote, UpcomingExam, Assignment, MockTestResult, ChatMessage
 )
 
 User = get_user_model()
@@ -72,3 +72,13 @@ class LeaderboardEntrySerializer(serializers.Serializer):
     level = serializers.IntegerField()
     xp_points = serializers.IntegerField()
     current_streak = serializers.IntegerField()
+
+
+class ChatMessageSerializer(serializers.ModelSerializer):
+    user_detail = UserMiniSerializer(source='user', read_only=True)
+
+    class Meta:
+        model = ChatMessage
+        fields = ('id', 'user', 'user_detail', 'text', 'created_at')
+        read_only_fields = ('user', 'created_at')
+

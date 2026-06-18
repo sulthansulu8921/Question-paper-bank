@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/api/axios';
 import {
@@ -6,6 +6,7 @@ import {
     SortAsc, SortDesc, Filter, Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import ICAICascadeSelector, { type ICAISelection } from '@/components/admin/ICAICascadeSelector';
 import '@/styles/admin/QuestionManagement.css';
 
 const ITEMS_PER_PAGE = 20;
@@ -49,11 +50,21 @@ export default function AdminQuestionBank() {
     const [searchQuery, setSearchQuery] = useState('');
     const [filterSource, setFilterSource] = useState('');
     const [filterAttempt, setFilterAttempt] = useState('');
+    const [filterYear, setFilterYear] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
     const [importantOnly, setImportantOnly] = useState(false);
     const [showFilters, setShowFilters] = useState(false);
     const [sortKey, setSortKey] = useState('id');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+    const [icaiFilter, setIcaiFilter] = useState<ICAISelection>({
+        levelId: '',
+        paperId: '',
+        chapterId: '',
+        topicId: '',
+    });
+
+    const [currentPage, setCurrentPage] = useState(1);
 
     // Excel import state
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -62,12 +73,24 @@ export default function AdminQuestionBank() {
     const [exporting, setExporting] = useState(false);
 
     const { data: questions = [], isLoading } = useQuery({
-        queryKey: ['admin-questions'],
+        queryKey: ['admin-questions', icaiFilter],
         queryFn: async () => {
-            const res = (await api.get('/materials/subjective-questions/?page_size=200')).data;
+            const params = new URLSearchParams();
+            params.append('page_size', '200');
+            if (icaiFilter.levelId) params.append('level_id', icaiFilter.levelId);
+            if (icaiFilter.paperId) params.append('paper_id', icaiFilter.paperId);
+            if (icaiFilter.chapterId) params.append('chapter_id', icaiFilter.chapterId);
+            if (icaiFilter.topicId) params.append('icai_topic_id', icaiFilter.topicId);
+            
+            const res = (await api.get(`/materials/subjective-questions/?${params.toString()}`)).data;
             return Array.isArray(res) ? res : (res.results ?? []);
         }
     });
+
+    const uniqueYears = useMemo(() => {
+        const years = (questions as any[]).map((q: any) => q.year).filter(Boolean);
+        return Array.from(new Set(years)).sort((a: any, b: any) => b - a) as any[];
+    }, [questions]);
 
     const deleteMutation = useMutation({
         mutationFn: (id: number) => api.delete(`/materials/subjective-questions/${id}/`),
@@ -83,14 +106,31 @@ export default function AdminQuestionBank() {
 
     const filtered = useMemo(() => {
         let list = [...questions];
+        
+        // Dynamic curriculum filters
+        if (icaiFilter.levelId) {
+            list = list.filter((q: any) => String(q.icai_level_id) === String(icaiFilter.levelId));
+        }
+        if (icaiFilter.paperId) {
+            list = list.filter((q: any) => String(q.icai_paper_id) === String(icaiFilter.paperId));
+        }
+        if (icaiFilter.chapterId) {
+            list = list.filter((q: any) => String(q.icai_chapter_id) === String(icaiFilter.chapterId));
+        }
+        if (icaiFilter.topicId) {
+            list = list.filter((q: any) => String(q.icai_topic) === String(icaiFilter.topicId));
+        }
+
         if (searchQuery) {
             const lowSearch = searchQuery.toLowerCase();
             list = list.filter((q: any) =>
-                [q.topic_name, q.source, q.q_no, q.year, q.question_text, q.tags].some(f => (f || '').toLowerCase().includes(lowSearch))
+                [q.topic_name, q.icai_topic_name, q.icai_chapter_name, q.icai_paper_name, q.icai_level_name, q.source, q.q_no, q.year, q.question_text, q.tags]
+                    .some(f => (f || '').toLowerCase().includes(lowSearch))
             );
         }
         if (filterSource) list = list.filter((q: any) => q.source === filterSource);
         if (filterAttempt) list = list.filter((q: any) => q.attempt === filterAttempt);
+        if (filterYear) list = list.filter((q: any) => String(q.year) === String(filterYear));
         if (filterStatus) list = list.filter((q: any) => q.status === filterStatus);
         if (importantOnly) list = list.filter((q: any) => q.is_important);
 
@@ -101,9 +141,18 @@ export default function AdminQuestionBank() {
             return sortDir === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
         });
         return list;
-    }, [questions, searchQuery, filterSource, filterAttempt, filterStatus, importantOnly, sortKey, sortDir]);
+    }, [questions, searchQuery, filterSource, filterAttempt, filterYear, filterStatus, importantOnly, sortKey, sortDir, icaiFilter]);
 
-    const paginated = filtered.slice(0, ITEMS_PER_PAGE);
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filtered.length]);
+
+    const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
+    
+    const paginated = useMemo(() => {
+        const start = (currentPage - 1) * ITEMS_PER_PAGE;
+        return filtered.slice(start, start + ITEMS_PER_PAGE);
+    }, [filtered, currentPage]);
 
     const exportExcel = async () => {
         setExporting(true);
@@ -220,29 +269,57 @@ export default function AdminQuestionBank() {
                         <input type="text" placeholder="Search..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
-                        <button className={`icon-btn filter-btn ${showFilters ? 'active' : ''}`} onClick={() => setShowFilters(!showFilters)}>
+                        <button className={`filter-btn ${showFilters ? 'active' : ''}`} onClick={() => setShowFilters(!showFilters)}>
                             <Filter size={18} /><span>Filters</span>
                         </button>
-                        <button className={`icon-btn filter-btn ${importantOnly ? 'active' : ''}`} onClick={() => setImportantOnly(!importantOnly)}>
+                        <button className={`filter-btn ${importantOnly ? 'active' : ''}`} onClick={() => setImportantOnly(!importantOnly)}>
                             <span>Important</span>
                         </button>
                     </div>
                 </div>
 
                 {showFilters && (
-                    <div className="filter-drawer" style={{ display: 'flex', gap: 12, padding: '0 1.25rem 1rem' }}>
-                        <select className="form-input" value={filterSource} onChange={e => setFilterSource(e.target.value)}>
-                            <option value="">All Sources</option>
-                            {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                        <select className="form-input" value={filterAttempt} onChange={e => setFilterAttempt(e.target.value)}>
-                            <option value="">All Attempts</option>
-                            {ATTEMPTS.map(a => <option key={a} value={a}>{a}</option>)}
-                        </select>
-                        <select className="form-input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                            <option value="">All Statuses</option>
-                            {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                        </select>
+                    <div className="filter-drawer" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1rem 1.25rem' }}>
+                        <div className="admin-question-bank-cascade" style={{ width: '100%' }}>
+                            <ICAICascadeSelector
+                                value={icaiFilter}
+                                onChange={setIcaiFilter}
+                                required={false}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <select className="form-input" style={{ minWidth: '160px' }} value={filterSource} onChange={e => setFilterSource(e.target.value)}>
+                                <option value="">All Sources</option>
+                                {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                            <select className="form-input" style={{ minWidth: '160px' }} value={filterAttempt} onChange={e => setFilterAttempt(e.target.value)}>
+                                <option value="">All Attempts</option>
+                                {ATTEMPTS.map(a => <option key={a} value={a}>{a}</option>)}
+                            </select>
+                            <select className="form-input" style={{ minWidth: '160px' }} value={filterYear} onChange={e => setFilterYear(e.target.value)}>
+                                <option value="">All Years</option>
+                                {uniqueYears.map(y => <option key={y} value={y}>{y}</option>)}
+                            </select>
+                            <select className="form-input" style={{ minWidth: '160px' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                                <option value="">All Statuses</option>
+                                {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                            </select>
+                            {(icaiFilter.levelId || icaiFilter.paperId || icaiFilter.chapterId || icaiFilter.topicId || filterSource || filterAttempt || filterYear || filterStatus) && (
+                                <button
+                                    onClick={() => {
+                                        setIcaiFilter({ levelId: '', paperId: '', chapterId: '', topicId: '' });
+                                        setFilterSource('');
+                                        setFilterAttempt('');
+                                        setFilterYear('');
+                                        setFilterStatus('');
+                                    }}
+                                    className="secondary-btn text-xs"
+                                    style={{ marginLeft: 'auto', padding: '6px 12px', fontSize: '0.8rem', fontWeight: 600 }}
+                                >
+                                    Clear All
+                                </button>
+                            )}
+                        </div>
                     </div>
                 )}
 
@@ -266,6 +343,8 @@ export default function AdminQuestionBank() {
                         <tbody>
                             {isLoading ? (
                                 <tr><td colSpan={11} style={{ textAlign: 'center' }}>Loading...</td></tr>
+                            ) : paginated.length === 0 ? (
+                                <tr><td colSpan={11} style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>No questions found matching your filter criteria.</td></tr>
                             ) : paginated.map((q: any) => (
                                 <tr key={q.id}>
                                     <td>#{q.id}</td>
@@ -309,6 +388,56 @@ export default function AdminQuestionBank() {
                         </tbody>
                     </table>
                 </div>
+
+                {/* Table Footer with Pagination */}
+                {filtered.length > 0 && (
+                    <div className="table-footer">
+                        <div className="showing-text">
+                            Showing <span className="font-medium">{Math.min(filtered.length, (currentPage - 1) * ITEMS_PER_PAGE + 1)}</span> to{' '}
+                            <span className="font-medium">{Math.min(filtered.length, currentPage * ITEMS_PER_PAGE)}</span> of{' '}
+                            <span className="font-medium">{filtered.length}</span> questions
+                        </div>
+                        {totalPages > 1 && (
+                            <div className="pagination">
+                                <button
+                                    className={`page-btn ${currentPage === 1 ? 'disabled' : ''}`}
+                                    onClick={() => currentPage > 1 && setCurrentPage(currentPage - 1)}
+                                    disabled={currentPage === 1}
+                                    style={{ cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                                >
+                                    &laquo;
+                                </button>
+                                {Array.from({ length: totalPages }).map((_, i) => {
+                                    const pageNum = i + 1;
+                                    if (pageNum === 1 || pageNum === totalPages || Math.abs(pageNum - currentPage) <= 1) {
+                                        return (
+                                            <button
+                                                key={pageNum}
+                                                className={`page-btn ${currentPage === pageNum ? 'active' : ''}`}
+                                                onClick={() => setCurrentPage(pageNum)}
+                                                style={{ cursor: 'pointer' }}
+                                            >
+                                                {pageNum}
+                                            </button>
+                                        );
+                                    }
+                                    if (pageNum === 2 || pageNum === totalPages - 1) {
+                                        return <span key={pageNum} className="page-dots" style={{ padding: '0 4px', color: '#64748b' }}>...</span>;
+                                    }
+                                    return null;
+                                })}
+                                <button
+                                    className={`page-btn ${currentPage === totalPages ? 'disabled' : ''}`}
+                                    onClick={() => currentPage < totalPages && setCurrentPage(currentPage + 1)}
+                                    disabled={currentPage === totalPages}
+                                    style={{ cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
+                                >
+                                    &raquo;
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
 

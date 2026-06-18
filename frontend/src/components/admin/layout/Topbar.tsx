@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, Bell, Menu } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useAdminSearch } from '@/context/AdminSearchContext';
+import Logo from '@/components/Logo';
 import '@/styles/admin/Topbar.css';
 
 interface TopbarProps {
@@ -29,6 +30,9 @@ const Topbar = ({ onMenuToggle }: TopbarProps) => {
                 <button type="button" className="menu-toggle-btn" onClick={onMenuToggle} aria-label="Toggle menu">
                     <Menu size={24} />
                 </button>
+                <div className="admin-mobile-logo">
+                    <Logo theme="light" className="h-6 w-auto object-contain shrink-0" />
+                </div>
                 <form className="search-container" onSubmit={handleSearch}>
                     <Search size={18} className="search-icon" />
                     <input

@@ -1,14 +1,19 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import api from '@/api/axios';
+import { useAuthStore } from '@/store/useAuthStore';
 import { 
     Shield, Loader2, ArrowRight, AlertCircle,
-    Sliders, Clock, BookOpen, Award
+    Sliders, Clock, BookOpen, Award, Lock, Sparkles
 } from 'lucide-react';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
+import { motion } from 'framer-motion';
 
 export default function MockTestHub() {
     const navigate = useNavigate();
+    const user = useAuthStore((state) => state.user);
+    const { hasMockTestAccess, isLoading: subLoading } = useSubscriptionAccess();
 
     // Query to load academic master tree
     const { data: tree = [], isLoading: treeLoading } = useQuery<any[]>({
@@ -23,6 +28,16 @@ export default function MockTestHub() {
             const res = await api.get('/materials/mock-templates/');
             return Array.isArray(res.data) ? res.data.filter((t: any) => t.is_published) : [];
         }
+    });
+
+    // Fetch active course details (levels and subjects)
+    const { data: activeCourse } = useQuery<any>({
+        queryKey: ['active-course-details', user?.selected_course],
+        queryFn: async () => {
+            if (!user?.selected_course) return null;
+            return (await api.get(`/courses/courses/${user.selected_course}/`)).data;
+        },
+        enabled: !!user?.selected_course,
     });
 
     // Main Selection Type
@@ -51,8 +66,53 @@ export default function MockTestHub() {
                 set.add(level.qualification.toUpperCase());
             }
         });
-        return Array.from(set).sort();
-    }, [tree]);
+        const allStreams = Array.from(set).sort();
+        if (activeCourse?.category_name) {
+            const matched = allStreams.filter(s => 
+                s.toLowerCase() === activeCourse.category_name.toLowerCase() ||
+                activeCourse.name?.toLowerCase().includes(s.toLowerCase())
+            );
+            if (matched.length > 0) return matched;
+        }
+        return allStreams;
+    }, [tree, activeCourse]);
+
+    // Auto-populate based on user's active course
+    useEffect(() => {
+        if (activeCourse && tree.length > 0) {
+            const specificLevel = tree.find((l: any) =>
+                l.name.toLowerCase() === activeCourse.name.toLowerCase()
+            );
+            if (specificLevel) {
+                const streamUpper = specificLevel.qualification.toUpperCase();
+                setSelectedStream(streamUpper);
+                setCustomStream(streamUpper);
+                setSelectedLevelId(String(specificLevel.id));
+                setCustomLevelId(String(specificLevel.id));
+            }
+        }
+    }, [activeCourse, tree]);
+
+    // Filter templates to only show those matching the user's stream/level
+    const filteredTemplates = useMemo(() => {
+        if (!templates) return [];
+        if (!activeCourse) return templates;
+        
+        return templates.filter((t: any) => {
+            // Match qualification
+            const qualMatches = t.qualification?.toLowerCase() === activeCourse.category_name?.toLowerCase() ||
+                               activeCourse.name?.toLowerCase().includes(t.qualification?.toLowerCase());
+            
+            // Match level
+            const userLevels = activeCourse.levels || [];
+            const levelMatches = userLevels.some((al: any) => 
+                al.name?.toLowerCase() === t.course_level?.toLowerCase() ||
+                t.course_level?.toLowerCase()?.includes(al.name?.toLowerCase())
+            );
+            
+            return qualMatches && levelMatches;
+        });
+    }, [templates, activeCourse]);
 
     // Standard levels
     const standardLevels = useMemo(() => {
@@ -174,6 +234,53 @@ export default function MockTestHub() {
         }
     };
 
+    if (treeLoading || templatesLoading || subLoading) {
+        return (
+            <div className="h-[60vh] flex flex-col items-center justify-center gap-4">
+                <Loader2 className="animate-spin text-primary" size={40} />
+                <p className="text-text-muted font-bold uppercase tracking-widest text-xs">Loading Exam Simulator...</p>
+            </div>
+        );
+    }
+
+    if (!hasMockTestAccess) {
+        return (
+            <div className="flex-1 flex items-center justify-center p-6 min-h-[70vh]">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="max-w-lg w-full bg-card rounded-[2.5rem] p-10 text-center shadow-xl border border-border relative overflow-hidden"
+                >
+                    <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-400" />
+                    <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl" />
+                    <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/20 rounded-[1.5rem] flex items-center justify-center mx-auto mb-6 text-amber-500">
+                        <Lock size={36} />
+                    </div>
+                    <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-3 py-1.5 rounded-full border border-amber-100 inline-block mb-4">
+                        Premium Access Required
+                    </span>
+                    <h2 className="text-2xl font-black text-text-primary mb-3 tracking-tight">Mock Exam Simulator Locked</h2>
+                    <p className="text-sm text-text-secondary font-semibold leading-relaxed mb-8 max-w-sm mx-auto">
+                        Take official full-syllabus exam papers, standard subject mocks, or customize your own test parameters. Subscribe to a premium plan to unlock.
+                    </p>
+                    <div className="space-y-3">
+                        <Link
+                            to="/dashboard/subscription"
+                            className="w-full py-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-black text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-2.5 shadow-lg shadow-amber-500/20 hover:scale-[1.02] active:scale-95"
+                        >
+                            <Sparkles size={16} />
+                            <span>Unlock Mock Exams</span>
+                        </Link>
+                        <p className="text-[10px] text-text-muted font-semibold">
+                            Already subscribed? Your subscription may have expired.{' '}
+                            <Link to="/dashboard/subscription" className="text-primary underline">Check status</Link>
+                        </p>
+                    </div>
+                </motion.div>
+            </div>
+        );
+    }
+
     return (
         <div className="p-6 md:p-10 max-w-5xl mx-auto space-y-8 min-h-[85vh]">
             {/* Header */}
@@ -241,7 +348,7 @@ export default function MockTestHub() {
                     <div className="lg:col-span-2">
                         {mockType === 'official' && (
                             <div className="space-y-6">
-                                {templates.length === 0 ? (
+                                {filteredTemplates.length === 0 ? (
                                     <div className="bg-card rounded-3xl p-8 border border-border text-center space-y-3">
                                         <Award className="mx-auto text-slate-400" size={48} />
                                         <h3 className="text-sm font-bold text-slate-700">No official mock templates published yet.</h3>
@@ -249,7 +356,7 @@ export default function MockTestHub() {
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        {templates.map((template) => (
+                                        {filteredTemplates.map((template) => (
                                             <div key={template.id} className="bg-card rounded-3xl p-6 border border-border shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between space-y-4">
                                                 <div>
                                                     <div className="flex justify-between items-start">
@@ -298,41 +405,53 @@ export default function MockTestHub() {
                                     <span>Select Mock Syllabus</span>
                                 </h2>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {/* Stream */}
-                                    <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Exam Category</label>
-                                        <select
-                                            value={selectedStream}
-                                            onChange={(e) => {
-                                                setSelectedStream(e.target.value);
-                                                setSelectedLevelId('');
-                                            }}
-                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold"
-                                        >
-                                            <option value="">Choose Exam Category</option>
-                                            {streams.map((stream) => (
-                                                <option key={stream} value={stream}>{stream}</option>
-                                            ))}
-                                        </select>
+                                {user?.selected_course ? (
+                                    <div className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex items-center justify-between">
+                                        <div>
+                                            <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Your Active Program</span>
+                                            <h3 className="text-sm font-black text-slate-900 mt-0.5">{activeCourse?.name || user?.selected_course_name}</h3>
+                                        </div>
+                                        <span className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-full uppercase tracking-wider">
+                                            {activeCourse?.category_name || user?.selected_course_category || 'CA'}
+                                        </span>
                                     </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {/* Stream */}
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Exam Category</label>
+                                            <select
+                                                value={selectedStream}
+                                                onChange={(e) => {
+                                                    setSelectedStream(e.target.value);
+                                                    setSelectedLevelId('');
+                                                }}
+                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold"
+                                            >
+                                                <option value="">Choose Exam Category</option>
+                                                {streams.map((stream) => (
+                                                    <option key={stream} value={stream}>{stream}</option>
+                                                ))}
+                                            </select>
+                                        </div>
 
-                                    {/* Level */}
-                                    <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Level / Course</label>
-                                        <select
-                                            value={selectedLevelId}
-                                            onChange={(e) => setSelectedLevelId(e.target.value)}
-                                            disabled={!selectedStream}
-                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold disabled:opacity-50"
-                                        >
-                                            <option value="">Select Level</option>
-                                            {standardLevels.map((l: any) => (
-                                                <option key={l.id} value={l.id}>{l.name}</option>
-                                            ))}
-                                        </select>
+                                        {/* Level */}
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Level / Course</label>
+                                            <select
+                                                value={selectedLevelId}
+                                                onChange={(e) => setSelectedLevelId(e.target.value)}
+                                                disabled={!selectedStream}
+                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold disabled:opacity-50"
+                                            >
+                                                <option value="">Select Level</option>
+                                                {standardLevels.map((l: any) => (
+                                                    <option key={l.id} value={l.id}>{l.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     </div>
-                                </div>
+                                )}
 
                                 <div className="bg-indigo-50/30 border border-indigo-100 rounded-2xl p-5 space-y-3">
                                     <h4 className="text-xs font-black text-indigo-900 uppercase tracking-wider">Standard Mock Rules:</h4>
@@ -353,45 +472,57 @@ export default function MockTestHub() {
                                     <span>Custom Mock Configuration</span>
                                 </h2>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {/* Stream */}
-                                    <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Exam Category</label>
-                                        <select
-                                            value={customStream}
-                                            onChange={(e) => {
-                                                setCustomStream(e.target.value);
-                                                setCustomLevelId('');
-                                                setSelectedPaperId('all');
-                                            }}
-                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold"
-                                        >
-                                            <option value="">Choose Exam Category</option>
-                                            {streams.map((stream) => (
-                                                <option key={stream} value={stream}>{stream}</option>
-                                            ))}
-                                        </select>
+                                {user?.selected_course ? (
+                                    <div className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex items-center justify-between">
+                                        <div>
+                                            <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Your Active Program</span>
+                                            <h3 className="text-sm font-black text-slate-900 mt-0.5">{activeCourse?.name || user?.selected_course_name}</h3>
+                                        </div>
+                                        <span className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-full uppercase tracking-wider">
+                                            {activeCourse?.category_name || user?.selected_course_category || 'CA'}
+                                        </span>
                                     </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {/* Stream */}
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Exam Category</label>
+                                            <select
+                                                value={customStream}
+                                                onChange={(e) => {
+                                                    setCustomStream(e.target.value);
+                                                    setCustomLevelId('');
+                                                    setSelectedPaperId('all');
+                                                }}
+                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold"
+                                            >
+                                                <option value="">Choose Exam Category</option>
+                                                {streams.map((stream) => (
+                                                    <option key={stream} value={stream}>{stream}</option>
+                                                ))}
+                                            </select>
+                                        </div>
 
-                                    {/* Level */}
-                                    <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Level / Course</label>
-                                        <select
-                                            value={customLevelId}
-                                            onChange={(e) => {
-                                                setCustomLevelId(e.target.value);
-                                                setSelectedPaperId('all');
-                                            }}
-                                            disabled={!customStream}
-                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold disabled:opacity-50"
-                                        >
-                                            <option value="">Select Level</option>
-                                            {customLevels.map((l: any) => (
-                                                <option key={l.id} value={l.id}>{l.name}</option>
-                                            ))}
-                                        </select>
+                                        {/* Level */}
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Level / Course</label>
+                                            <select
+                                                value={customLevelId}
+                                                onChange={(e) => {
+                                                    setCustomLevelId(e.target.value);
+                                                    setSelectedPaperId('all');
+                                                }}
+                                                disabled={!customStream}
+                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold disabled:opacity-50"
+                                            >
+                                                <option value="">Select Level</option>
+                                                {customLevels.map((l: any) => (
+                                                    <option key={l.id} value={l.id}>{l.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     </div>
-                                </div>
+                                )}
 
                                 <div className="grid grid-cols-1 gap-6">
                                     {/* Subject Paper */}

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from authentication.models import User, UserSettings
+from authentication.models import User, UserSettings, Institution, Batch
 from courses.models import Course
 
 class UserSettingsSerializer(serializers.ModelSerializer):
@@ -19,13 +19,22 @@ class UserSerializer(serializers.ModelSerializer):
         allow_null=True
     )
     selected_course_name = serializers.SerializerMethodField()
+    selected_course_category = serializers.SerializerMethodField()
+    role = serializers.CharField(required=False, default='STUDENT')
+    institution = serializers.PrimaryKeyRelatedField(
+        queryset=Institution.objects.all(),
+        required=False,
+        allow_null=True
+    )
+    institution_name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             'id', 'email', 'mobile_number', 'first_name', 'last_name', 'full_name', 
             'password', 'settings', 'is_staff', 'is_superuser', 'subscription_tier', 
-            'date_joined', 'last_login', 'selected_course', 'selected_course_name'
+            'date_joined', 'last_login', 'selected_course', 'selected_course_name',
+            'selected_course_category', 'role', 'institution', 'institution_name'
         ]
         extra_kwargs = {'password': {'write_only': True}}
     
@@ -34,6 +43,14 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_selected_course_name(self, obj):
         return obj.selected_course.name if obj.selected_course else None
+
+    def get_selected_course_category(self, obj):
+        if obj.selected_course and obj.selected_course.category:
+            return obj.selected_course.category.name
+        return None
+
+    def get_institution_name(self, obj):
+        return obj.institution.name if obj.institution else None
 
     def get_subscription_tier(self, obj):
         from subscriptions.models import UserSubscription
@@ -86,6 +103,29 @@ class UserSerializer(serializers.ModelSerializer):
             mobile_number=validated_data.get('mobile_number', ''),
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', ''),
-            selected_course=validated_data.get('selected_course')
+            selected_course=validated_data.get('selected_course'),
+            role=validated_data.get('role', 'STUDENT'),
+            institution=validated_data.get('institution')
         )
         return user
+
+class InstitutionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Institution
+        fields = ['id', 'name', 'slug', 'domain', 'logo', 'created_at']
+
+class BatchSerializer(serializers.ModelSerializer):
+    course_name = serializers.ReadOnlyField(source='course.name')
+    institution_name = serializers.ReadOnlyField(source='institution.name')
+    instructors_list = serializers.SerializerMethodField()
+    students_list = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Batch
+        fields = ['id', 'name', 'course', 'course_name', 'institution', 'institution_name', 'instructors', 'instructors_list', 'students', 'students_list', 'created_at']
+
+    def get_instructors_list(self, obj):
+        return [{'id': u.id, 'name': u.get_full_name(), 'email': u.email} for u in obj.instructors.all()]
+
+    def get_students_list(self, obj):
+        return [{'id': u.id, 'name': u.get_full_name(), 'email': u.email} for u in obj.students.all()]

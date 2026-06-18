@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import api from '@/api/axios';
+import { useAuthStore } from '@/store/useAuthStore';
 import { 
     Layers, Settings, Award, 
     ArrowRight, Loader2, Sparkles, AlertCircle
@@ -9,11 +10,22 @@ import {
 
 export default function PracticeHub() {
     const navigate = useNavigate();
+    const user = useAuthStore((state) => state.user);
 
     // Query to load the complete academic master tree
     const { data: tree = [], isLoading: treeLoading } = useQuery<any[]>({
         queryKey: ['master-tree'],
         queryFn: async () => (await api.get('/master/tree/')).data,
+    });
+
+    // Fetch active course details (levels and subjects)
+    const { data: activeCourse } = useQuery<any>({
+        queryKey: ['active-course-details', user?.selected_course],
+        queryFn: async () => {
+            if (!user?.selected_course) return null;
+            return (await api.get(`/courses/courses/${user.selected_course}/`)).data;
+        },
+        enabled: !!user?.selected_course,
     });
 
     // Step state or selection state
@@ -40,8 +52,30 @@ export default function PracticeHub() {
                 set.add(level.qualification.toUpperCase());
             }
         });
-        return Array.from(set).sort();
-    }, [tree]);
+        const allStreams = Array.from(set).sort();
+        if (activeCourse?.category_name) {
+            const matched = allStreams.filter(s => 
+                s.toLowerCase() === activeCourse.category_name.toLowerCase() ||
+                activeCourse.name?.toLowerCase().includes(s.toLowerCase())
+            );
+            if (matched.length > 0) return matched;
+        }
+        return allStreams;
+    }, [tree, activeCourse]);
+
+    // Auto-populate based on user's active course
+    useEffect(() => {
+        if (activeCourse && tree.length > 0) {
+            const specificLevel = tree.find((l: any) =>
+                l.name.toLowerCase() === activeCourse.name.toLowerCase()
+            );
+            if (specificLevel) {
+                const streamUpper = specificLevel.qualification.toUpperCase();
+                setSelectedStream(streamUpper);
+                setSelectedLevelId(String(specificLevel.id));
+            }
+        }
+    }, [activeCourse, tree]);
 
     // Filter levels by stream
     const levels = useMemo(() => {
@@ -139,49 +173,61 @@ export default function PracticeHub() {
                                 <span>1. Select Course & Syllabus</span>
                             </h2>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* Qualification Stream */}
-                                <div className="space-y-2">
-                                    <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Exam Category</label>
-                                    <select
-                                        value={selectedStream}
-                                        onChange={(e) => {
-                                            setSelectedStream(e.target.value);
-                                            setSelectedLevelId('');
-                                            setSelectedPaperId('all');
-                                            setSelectedChapterId('all');
-                                            setSelectedTopicId('all');
-                                        }}
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold"
-                                    >
-                                        <option value="">Choose Exam (e.g. NEET, CA, JEE)</option>
-                                        {streams.map((stream) => (
-                                            <option key={stream} value={stream}>{stream}</option>
-                                        ))}
-                                    </select>
+                            {user?.selected_course ? (
+                                <div className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex items-center justify-between">
+                                    <div>
+                                        <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Your Active Program</span>
+                                        <h3 className="text-sm font-black text-slate-900 mt-0.5">{activeCourse?.name || user?.selected_course_name}</h3>
+                                    </div>
+                                    <span className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-full uppercase tracking-wider">
+                                        {activeCourse?.category_name || user?.selected_course_category || 'CA'}
+                                    </span>
                                 </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* Qualification Stream */}
+                                    <div className="space-y-2">
+                                        <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Exam Category</label>
+                                        <select
+                                            value={selectedStream}
+                                            onChange={(e) => {
+                                                setSelectedStream(e.target.value);
+                                                setSelectedLevelId('');
+                                                setSelectedPaperId('all');
+                                                setSelectedChapterId('all');
+                                                setSelectedTopicId('all');
+                                            }}
+                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold"
+                                        >
+                                            <option value="">Choose Exam (e.g. NEET, CA, JEE)</option>
+                                            {streams.map((stream) => (
+                                                <option key={stream} value={stream}>{stream}</option>
+                                            ))}
+                                        </select>
+                                    </div>
 
-                                {/* Course Level */}
-                                <div className="space-y-2">
-                                    <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Course Level</label>
-                                    <select
-                                        value={selectedLevelId}
-                                        onChange={(e) => {
-                                            setSelectedLevelId(e.target.value);
-                                            setSelectedPaperId('all');
-                                            setSelectedChapterId('all');
-                                            setSelectedTopicId('all');
-                                        }}
-                                        disabled={!selectedStream}
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold disabled:opacity-50"
-                                    >
-                                        <option value="">Select Level</option>
-                                        {levels.map((l: any) => (
-                                            <option key={l.id} value={l.id}>{l.name}</option>
-                                        ))}
-                                    </select>
+                                    {/* Course Level */}
+                                    <div className="space-y-2">
+                                        <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Course Level</label>
+                                        <select
+                                            value={selectedLevelId}
+                                            onChange={(e) => {
+                                                setSelectedLevelId(e.target.value);
+                                                setSelectedPaperId('all');
+                                                setSelectedChapterId('all');
+                                                setSelectedTopicId('all');
+                                            }}
+                                            disabled={!selectedStream}
+                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold disabled:opacity-50"
+                                        >
+                                            <option value="">Select Level</option>
+                                            {levels.map((l: any) => (
+                                                <option key={l.id} value={l.id}>{l.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
 
                             <div className="space-y-6">
                                 {/* Subject Paper */}
