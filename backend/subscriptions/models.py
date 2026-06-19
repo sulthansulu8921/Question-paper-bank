@@ -39,6 +39,12 @@ class SubscriptionPlan(models.Model):
     scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, null=True, blank=True)
     billing_cycle = models.CharField(max_length=20, choices=CYCLE_CHOICES, null=True, blank=True)
 
+    PLAN_TYPE_CHOICES = [
+        ('QUESTIONS', 'Questions Only'),
+        ('FULL_COURSE', 'Full Course'),
+    ]
+    plan_type = models.CharField(max_length=20, choices=PLAN_TYPE_CHOICES, default='FULL_COURSE')
+
     # Access control: how many questions per chapter can a user on this plan see
     # -1 = unlimited (premium), 0 = no access, N = first N questions only
     free_questions_per_chapter = models.IntegerField(
@@ -54,6 +60,11 @@ class SubscriptionPlan(models.Model):
     ai_assistant_access = models.BooleanField(default=True)
     live_class_access = models.BooleanField(default=True)
     download_permission = models.BooleanField(default=True)
+
+    # Date configuration fields
+    purchase_start_date = models.DateTimeField(null=True, blank=True)
+    purchase_end_date = models.DateTimeField(null=True, blank=True)
+    fixed_expiry_date = models.DateTimeField(null=True, blank=True)
 
     def save(self, *args, **kwargs):
         if self.level_specific:
@@ -77,6 +88,7 @@ class UserSubscription(models.Model):
     start_date = models.DateTimeField(auto_now_add=True)
     end_date = models.DateTimeField()
     is_active = models.BooleanField(default=True)
+    order_id = models.CharField(max_length=100, blank=True, null=True)
 
     # Dynamic purchase details
     level = models.ForeignKey(Level, on_delete=models.SET_NULL, null=True, blank=True)
@@ -92,6 +104,7 @@ class Payment(models.Model):
     subscription = models.ForeignKey(UserSubscription, on_delete=models.SET_NULL, null=True, blank=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     transaction_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    order_id = models.CharField(max_length=100, blank=True, null=True)
     status = models.CharField(max_length=20, choices=[('SUCCESS', 'Success'), ('PENDING', 'Pending'), ('FAILED', 'Failed')])
     created_at = models.DateTimeField(auto_now_add=True)
     
@@ -159,3 +172,13 @@ class SubscriptionAuditLog(models.Model):
 
     def __str__(self):
         return f"{self.action} on sub#{self.subscription_id} by {self.actor} at {self.timestamp}"
+
+
+class UserViewedPaper(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='viewed_papers')
+    paper_id = models.IntegerField()
+    viewed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'paper_id')
+

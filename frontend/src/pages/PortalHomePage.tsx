@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -6,6 +6,7 @@ import { BookOpen, Phone, Mail, ChevronRight, Loader2, Sparkles, ArrowRight, Men
 import Logo from '@/components/Logo';
 import api from '@/api/axios';
 import lightBg from '@/assets/light-portal-bg.png';
+import { useAuthStore } from '@/store/useAuthStore';
 
 const fadeUp = {
     initial: { opacity: 0, y: 30 },
@@ -16,6 +17,18 @@ const fadeUp = {
 
 export default function PortalHomePage() {
     const navigate = useNavigate();
+    const token = useAuthStore((state) => state.token);
+    const user = useAuthStore((state) => state.user);
+
+    useEffect(() => {
+        if (token) {
+            if (user?.selected_course) {
+                navigate(`/dashboard/courses/${user.selected_course}`);
+            } else {
+                navigate('/dashboard');
+            }
+        }
+    }, [token, user, navigate]);
 
     const [email, setEmail] = useState('');
     const [submitting, setSubmitting] = useState(false);

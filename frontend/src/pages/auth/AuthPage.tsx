@@ -12,6 +12,21 @@ import api from '@/api/axios';
 
 export default function AuthPage() {
     const navigate = useNavigate();
+    const token = useAuthStore((state) => state.token);
+    const user = useAuthStore((state) => state.user);
+
+    useEffect(() => {
+        if (token) {
+            if (user?.is_staff) {
+                navigate('/admin');
+            } else if (user?.selected_course) {
+                navigate(`/dashboard/courses/${user.selected_course}`);
+            } else {
+                navigate('/dashboard');
+            }
+        }
+    }, [token, user, navigate]);
+
     const [searchParams] = useSearchParams();
     const activeTabParams = searchParams.get('tab') === 'login' ? 'login' : 'register';
     const [tab, setTab] = useState<'login' | 'register' | 'forgot'>(activeTabParams);

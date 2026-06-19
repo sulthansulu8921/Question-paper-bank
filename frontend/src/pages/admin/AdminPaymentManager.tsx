@@ -40,6 +40,11 @@ interface Payment {
     coupon_code: string | null;
     discount_amount: string;
     original_amount: string | null;
+    subscription_details?: {
+        start_date: string;
+        end_date: string;
+        plan_billing_cycle: string;
+    } | null;
 }
 
 export default function AdminPaymentManager() {
@@ -469,7 +474,13 @@ export default function AdminPaymentManager() {
                                     </div>
                                     <div>
                                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Access Duration</p>
-                                        <p className="text-sm font-bold text-slate-700">{selectedPayment.plan_duration ? `${selectedPayment.plan_duration} Days` : '—'}</p>
+                                        <p className="text-sm font-bold text-slate-700">
+                                            {selectedPayment.plan_duration ? (
+                                                selectedPayment.subscription_details?.plan_billing_cycle === 'ATTEMPT_WISE'
+                                                    ? `${Math.max(1, Math.ceil((new Date(selectedPayment.subscription_details.end_date).getTime() - new Date(selectedPayment.subscription_details.start_date).getTime()) / (1000 * 60 * 60 * 24)))} Days`
+                                                    : `${selectedPayment.plan_duration} Days`
+                                            ) : '—'}
+                                        </p>
                                     </div>
                                 </div>
                             </div>

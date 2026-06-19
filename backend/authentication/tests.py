@@ -209,10 +209,30 @@ class AdminUserManagementTests(APITestCase):
     def test_grant_admin_privileges_by_email_success(self):
         self.client.force_authenticate(user=self.admin_user)
         url = reverse('grant_admin')
-        response = self.client.post(url, {'email': self.normal_user.email}, format='json')
+        response = self.client.post(url, {'email': self.normal_user.email, 'role': 'QUESTION_ADMIN'}, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.normal_user.refresh_from_db()
         self.assertTrue(self.normal_user.is_staff)
+        self.assertEqual(self.normal_user.role, 'QUESTION_ADMIN')
+
+    def test_grant_admin_invalid_role(self):
+        self.client.force_authenticate(user=self.admin_user)
+        url = reverse('grant_admin')
+        response = self.client.post(url, {'email': self.normal_user.email, 'role': 'INVALID_ROLE'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_admin_can_update_user_role(self):
+        self.client.force_authenticate(user=self.admin_user)
+        # First grant admin role
+        self.normal_user.is_staff = True
+        self.normal_user.role = 'QUESTION_ADMIN'
+        self.normal_user.save()
+
+        url = reverse('user_detail', kwargs={'pk': self.normal_user.id})
+        response = self.client.patch(url, {'role': 'COURSE_ADMIN'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.normal_user.refresh_from_db()
+        self.assertEqual(self.normal_user.role, 'COURSE_ADMIN')
 
     def test_grant_admin_non_existent_email(self):
         self.client.force_authenticate(user=self.admin_user)

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Eye, Home, Search, Star, X, Lock, Filter } from 'lucide-react';
+import { Eye, Home, Search, Star, X, Lock, Filter, Sparkles } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import QuestionModal from './QuestionModal';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -53,7 +53,7 @@ export default function QuestionTable({
     }, [globalSearch]);
 
     // Fetch Questions
-    const { data: questionsResponse, isLoading } = useQuery({
+    const { data: questionsResponse, isLoading, error } = useQuery({
         queryKey: ['subjective-questions', routeSubjectId],
         queryFn: async () => {
             const url = routeSubjectId
@@ -61,10 +61,27 @@ export default function QuestionTable({
                 : '/materials/subjective-questions/';
             return (await api.get(url)).data;
         },
-        refetchInterval: 5000, // Live-sync with Django Admin
+        refetchInterval: (query) => {
+            const err = query.state.error;
+            if (err && ((err as any)?.response?.status === 403 || (err as any)?.response?.data?.detail === 'subscription_required')) {
+                return false;
+            }
+            return 5000;
+        },
+        retry: (failureCount, error: any) => {
+            if (error?.response?.status === 403 || error?.response?.data?.detail === 'subscription_required') {
+                return false;
+            }
+            return failureCount < 3;
+        }
     });
 
-    // Fetch Bookmarks to check what's "saved"
+    const isSubscriptionRequired = !!error && (
+        (error as any)?.response?.data?.detail === 'subscription_required' ||
+        (error as any)?.response?.status === 403
+    );
+    const errorMessage = (error as any)?.response?.data?.message || (error as any)?.response?.data?.detail || '';
+
     const { data: bookmarks = [] } = useQuery({
         queryKey: ['bookmarks'],
         queryFn: async () => (await api.get('/materials/bookmarks/')).data,
@@ -399,14 +416,39 @@ export default function QuestionTable({
                                 </td>
                             </tr>
                         )}
-                        {!isLoading && filteredQuestions.length === 0 && (
+                        {isSubscriptionRequired && (
+                            <tr>
+                                <td colSpan={7} className="px-6 py-16 text-center">
+                                    <div className="max-w-md mx-auto p-8 bg-card border border-amber-200 rounded-[2rem] shadow-xl space-y-6 relative overflow-hidden text-center">
+                                        <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 to-orange-500" />
+                                        <div className="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-2xl flex items-center justify-center mx-auto border border-amber-500/20">
+                                            <Lock size={32} />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <h3 className="text-lg font-black text-text-primary uppercase tracking-wider">Premium Content Locked</h3>
+                                            <p className="text-xs text-text-secondary font-semibold leading-relaxed">
+                                                {errorMessage || "You have reached the limit of 2 free trial papers. Subscribe to a plan to unlock full access to this course."}
+                                            </p>
+                                        </div>
+                                        <Link
+                                            to="/dashboard/subscription"
+                                            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-amber-500/20 transition-all hover:scale-[1.03] active:scale-95"
+                                        >
+                                            <Sparkles size={14} />
+                                            <span>View Subscription Plans</span>
+                                        </Link>
+                                    </div>
+                                </td>
+                            </tr>
+                        )}
+                        {!isLoading && !isSubscriptionRequired && filteredQuestions.length === 0 && (
                             <tr>
                                 <td colSpan={7} className="px-6 py-8 text-center text-text-muted font-bold text-xs uppercase tracking-widest">
                                     No questions found for this category.
                                 </td>
                             </tr>
                         )}
-                        {filteredQuestions.map((q: Question, idx: number) => {
+                        {!isLoading && !isSubscriptionRequired && filteredQuestions.map((q: Question, idx: number) => {
                             const isActive = q.id === activeRowId;
                             const isSavedOrImportant = isBookmarked(q.id);
                             const bookmarkId = getBookmarkId(q.id);

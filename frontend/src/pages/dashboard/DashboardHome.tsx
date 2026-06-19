@@ -234,6 +234,14 @@ export default function DashboardHome() {
         return diffDays;
     };
 
+    const activeSub = useMemo(() => {
+        return userSubscriptions.find((sub: any) => sub.is_active && getDaysRemaining(sub.end_date) > 0);
+    }, [userSubscriptions]);
+
+    const hasExpiredSubs = useMemo(() => {
+        return userSubscriptions.length > 0 && userSubscriptions.every((sub: any) => !sub.is_active || getDaysRemaining(sub.end_date) <= 0);
+    }, [userSubscriptions]);
+
     useEffect(() => {
         fetchDashboardData();
         recordStudyActivity();
@@ -414,7 +422,15 @@ export default function DashboardHome() {
                     <div className="space-y-2">
                         <div className="flex items-center gap-2 text-primary font-black text-[10px] uppercase tracking-[0.2em]">
                             <GraduationCap size={16} />
-                            Academic Status: Active ({user?.subscription_tier || 'Free Account'})
+                            Academic Status: {isLoadingSubs ? (
+                                <span className="text-text-muted font-extrabold animate-pulse">Loading Status...</span>
+                            ) : activeSub ? (
+                                <span className="text-emerald-500 font-extrabold">Active Premium ({activeSub.plan_name})</span>
+                            ) : hasExpiredSubs ? (
+                                <span className="text-rose-500 font-extrabold">Subscription Expired</span>
+                            ) : (
+                                <span className="text-amber-500 font-extrabold">Free Trial Account</span>
+                            )}
                         </div>
                         <h1 className="text-3xl md:text-4xl font-black text-text-primary tracking-tight">
                             Welcome back, <span className="text-primary">{stats?.user?.name || 'Student'}</span>!
@@ -493,6 +509,93 @@ export default function DashboardHome() {
                     </div>
                 </div>
             </div>
+
+            {/* Subscription Alert Banners */}
+            {!isLoadingSubs && hasExpiredSubs && (
+                <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-gradient-to-r from-red-500/10 via-rose-500/5 to-transparent border border-rose-500/20 rounded-[2rem] p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4"
+                >
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-rose-500/10 text-rose-500 rounded-2xl flex items-center justify-center shrink-0">
+                            <AlertTriangle size={24} />
+                        </div>
+                        <div>
+                            <span className="text-[10px] font-black uppercase tracking-widest bg-rose-500/10 text-rose-500 px-2 py-0.5 rounded-md">
+                                Access Expired
+                            </span>
+                            <h3 className="text-lg font-black text-text-primary mt-1">Premium subscription has expired</h3>
+                            <p className="text-text-muted text-xs font-semibold mt-0.5">
+                                Renew now to regain instant access to all locked papers, full course lectures, and mock tests.
+                            </p>
+                        </div>
+                    </div>
+                    <Link
+                        to="/dashboard/subscription"
+                        className="bg-rose-500 hover:bg-rose-600 text-white px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-rose-500/20 transition-all hover:scale-[1.02] active:scale-98 shrink-0 w-full md:w-auto text-center"
+                    >
+                        <RefreshCw size={14} />
+                        <span>Renew Subscription</span>
+                    </Link>
+                </motion.div>
+            )}
+
+            {!isLoadingSubs && userSubscriptions.length === 0 && (
+                <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-gradient-to-r from-amber-500/10 via-yellow-500/5 to-transparent border border-amber-500/20 rounded-[2rem] p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4"
+                >
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-amber-500/10 text-amber-500 rounded-2xl flex items-center justify-center shrink-0">
+                            <Lock size={24} />
+                        </div>
+                        <div>
+                            <span className="text-[10px] font-black uppercase tracking-widest bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-md">
+                                Free Trial Account
+                            </span>
+                            <h3 className="text-lg font-black text-text-primary mt-1">Unlock Unlimited access</h3>
+                            <p className="text-text-muted text-xs font-semibold mt-0.5">
+                                You are currently on the free trial (limited to 2 free papers). Subscribe to premium to unlock all paper categories and tutor features.
+                            </p>
+                        </div>
+                    </div>
+                    <Link
+                        to="/dashboard/subscription"
+                        className="bg-amber-500 hover:bg-amber-600 text-white px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 transition-all hover:scale-[1.02] active:scale-98 shrink-0 w-full md:w-auto text-center"
+                    >
+                        <Sparkles size={14} className="fill-white" />
+                        <span>Upgrade to Premium</span>
+                    </Link>
+                </motion.div>
+            )}
+
+            {!isLoadingSubs && activeSub && (
+                <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-transparent border border-emerald-500/20 rounded-[2rem] p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4"
+                >
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-emerald-500/10 text-emerald-500 rounded-2xl flex items-center justify-center shrink-0">
+                            <CheckCircle2 size={24} />
+                        </div>
+                        <div>
+                            <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded-md">
+                                Active Subscription
+                            </span>
+                            <h3 className="text-lg font-black text-text-primary mt-1">Premium Access Active - {activeSub.plan_name}</h3>
+                            <p className="text-text-muted text-xs font-semibold mt-0.5">
+                                You have full access to all curriculum resources, question banks, and live study sessions.
+                            </p>
+                        </div>
+                    </div>
+                    <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-4 py-2.5 rounded-xl">
+                        Expires: {new Date(activeSub.end_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
+                    </div>
+                </motion.div>
+            )}
 
             {/* 2. QUICK STATS METRICS */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
@@ -995,7 +1098,7 @@ export default function DashboardHome() {
                                                                         </div>
                                                                         <div className="flex items-center gap-1.5 shrink-0">
                                                                             <Clock size={10} className="text-primary/70 shrink-0" />
-                                                                            <span>Duration: {sub.plan_duration === 9999 ? 'Lifetime' : `${sub.plan_duration || 30} Days`} ({sub.plan_billing_cycle?.replace('_', ' ') || 'Monthly'})</span>
+                                                                            <span>Duration: {sub.plan_duration === 9999 ? 'Lifetime' : `${sub.plan_billing_cycle === 'ATTEMPT_WISE' ? Math.max(1, Math.ceil((new Date(sub.end_date).getTime() - new Date(sub.start_date).getTime()) / (1000 * 60 * 60 * 24))) : (sub.plan_duration || 30)} Days`} ({sub.plan_billing_cycle?.replace('_', ' ') || 'Monthly'})</span>
                                                                         </div>
                                                                         <div className="flex items-center gap-1.5 shrink-0">
                                                                             <Calendar size={10} className="text-primary/70 shrink-0" />
@@ -1597,7 +1700,7 @@ export default function DashboardHome() {
                                                 </div>
                                                 <div className="flex items-center gap-1.5 shrink-0">
                                                     <Clock size={10} className="text-primary/70 shrink-0" />
-                                                    <span>Duration: {sub.plan_duration === 9999 ? 'Lifetime' : `${sub.plan_duration || 30} Days`} ({sub.plan_billing_cycle?.replace('_', ' ') || 'Monthly'})</span>
+                                                    <span>Duration: {sub.plan_duration === 9999 ? 'Lifetime' : `${sub.plan_billing_cycle === 'ATTEMPT_WISE' ? Math.max(1, Math.ceil((new Date(sub.end_date).getTime() - new Date(sub.start_date).getTime()) / (1000 * 60 * 60 * 24))) : (sub.plan_duration || 30)} Days`} ({sub.plan_billing_cycle?.replace('_', ' ') || 'Monthly'})</span>
                                                 </div>
                                                 <div className="flex items-center gap-1.5 shrink-0">
                                                     <Calendar size={10} className="text-primary/70 shrink-0" />

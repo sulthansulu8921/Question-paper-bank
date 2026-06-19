@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuthStore } from '@/store/useAuthStore';
 import {
@@ -76,13 +77,41 @@ const Sidebar = ({ open = false, collapsed = false, onNavigate, onToggleCollapse
         if (user?.is_superuser || role === 'SUPER_ADMIN') {
             return true;
         }
+
+        // Question Paper Admin sees only dashboard and question paper tasks
+        if (role === 'QUESTION_ADMIN') {
+            const allowed = [
+                '/admin',
+                '/admin/questions',
+                '/admin/questions/new',
+                '/admin/papers',
+                '/admin/answers',
+                '/admin/notes',
+                '/admin/mcq-bank',
+                '/admin/mcq-bank/new',
+                '/admin/mock-templates',
+                '/admin/sessions',
+            ];
+            return allowed.includes(item.path);
+        }
+
+        // Course & Subject Admin sees only dashboard and course/subject tasks
+        if (role === 'COURSE_ADMIN') {
+            const allowed = [
+                '/admin',
+                '/admin/programs',
+                '/admin/master',
+                '/admin/subjects',
+                '/admin/progression',
+            ];
+            return allowed.includes(item.path);
+        }
         
         // Institution Admins and Instructors can access admin panel
         if (role === 'INSTITUTION_ADMIN' || role === 'INSTRUCTOR') {
             const superAdminOnlyPaths = [
                 '/admin/users',
                 '/admin/coupons',
-                '/admin/pricing',
                 '/admin/payments',
                 '/admin/notifications',
                 '/admin/programs', // only Super Admin manages global course types
@@ -146,9 +175,9 @@ const Sidebar = ({ open = false, collapsed = false, onNavigate, onToggleCollapse
                             const items = visibleMenuItems.filter(i => (i as any).section === key);
                             if (items.length === 0) return null;
                             return (
-                                <>
+                                <Fragment key={key}>
                                     {!collapsed && (
-                                        <li key={`section-${key}`} style={{ padding: '8px 14px 4px', fontSize: '0.65rem', fontWeight: 800, color: key === 'assessment' ? '#a78bfa' : 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: key !== 'main' ? 8 : 0 }}>
+                                        <li style={{ padding: '8px 14px 4px', fontSize: '0.65rem', fontWeight: 800, color: key === 'assessment' ? '#a78bfa' : 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: key !== 'main' ? 8 : 0 }}>
                                             {label}
                                         </li>
                                     )}
@@ -170,7 +199,7 @@ const Sidebar = ({ open = false, collapsed = false, onNavigate, onToggleCollapse
                                             </li>
                                         );
                                     })}
-                                </>
+                                </Fragment>
                             );
                         });
                     })()}

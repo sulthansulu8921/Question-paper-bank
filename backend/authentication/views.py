@@ -348,15 +348,21 @@ class GrantAdminView(APIView):
 
     def post(self, request):
         email = request.data.get('email', '').strip().lower()
+        role = request.data.get('role', 'SUPER_ADMIN').strip().upper()
         if not email:
             return Response({'error': 'Email address is required.'}, status=400)
+        
+        allowed_roles = ['SUPER_ADMIN', 'INSTITUTION_ADMIN', 'INSTRUCTOR', 'QUESTION_ADMIN', 'COURSE_ADMIN']
+        if role not in allowed_roles:
+            return Response({'error': f"Invalid role '{role}'. Allowed roles are {allowed_roles}"}, status=400)
         
         try:
             user = User.objects.get(email=email)
             user.is_staff = True
+            user.role = role
             user.save()
             return Response({
-                'message': f"Admin privileges granted to {email} successfully.",
+                'message': f"Admin privileges granted to {email} with role {role} successfully.",
                 'user': UserSerializer(user).data
             })
         except User.DoesNotExist:

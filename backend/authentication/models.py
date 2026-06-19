@@ -24,6 +24,8 @@ class User(AbstractUser):
         ('SUPER_ADMIN', 'Super Admin'),
         ('INSTITUTION_ADMIN', 'Institution Admin'),
         ('INSTRUCTOR', 'Instructor'),
+        ('QUESTION_ADMIN', 'Question Paper Admin'),
+        ('COURSE_ADMIN', 'Course & Subject Admin'),
         ('STUDENT', 'Student'),
     ]
     mobile_number = models.CharField(max_length=15, unique=True, null=True, blank=True)

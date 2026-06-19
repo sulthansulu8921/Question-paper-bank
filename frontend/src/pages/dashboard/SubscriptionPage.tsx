@@ -297,6 +297,71 @@ export default function SubscriptionPage() {
         return Math.round((num + Number.EPSILON) * 100) / 100;
     }
 
+    const getExpiryDateStr = () => {
+        if (!matchingPlan) return 'Select Options';
+        
+        if (selectedCycle === 'ATTEMPT_WISE') {
+            const attemptMonth = selectedAttempt || 'january';
+            const yearVal = selectedYear || new Date().getFullYear();
+            
+            const monthsMap: { [key: string]: number } = {
+                january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+                july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+                jan: 0, feb: 1, mar: 2, apr: 3, jun: 5, jul: 6, aug: 7, sep: 8, sept: 8, oct: 9, nov: 10, dec: 11
+            };
+            
+            const monthLower = attemptMonth.trim().toLowerCase();
+            const monthIdx = monthLower in monthsMap ? monthsMap[monthLower] : 0;
+            
+            let targetYear = yearVal;
+            let end_date = new Date(targetYear, monthIdx + 1, 0, 23, 59, 59, 999);
+            const start_date = new Date();
+            
+            if (end_date <= start_date) {
+                targetYear += 1;
+                end_date = new Date(targetYear, monthIdx + 1, 0, 23, 59, 59, 999);
+            }
+            
+            return end_date.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+        } else {
+            const d = new Date();
+            d.setDate(d.getDate() + (matchingPlan.duration_days || 30));
+            return d.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+        }
+    };
+
+    const getPlanDurationDays = () => {
+        if (!matchingPlan) return 0;
+        if (selectedCycle === 'ATTEMPT_WISE') {
+            const attemptMonth = selectedAttempt || 'january';
+            const yearVal = selectedYear || new Date().getFullYear();
+            
+            const monthsMap: { [key: string]: number } = {
+                january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+                july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+                jan: 0, feb: 1, mar: 2, apr: 3, jun: 5, jul: 6, aug: 7, sep: 8, sept: 8, oct: 9, nov: 10, dec: 11
+            };
+            
+            const monthLower = attemptMonth.trim().toLowerCase();
+            const monthIdx = monthLower in monthsMap ? monthsMap[monthLower] : 0;
+            
+            let targetYear = yearVal;
+            let end_date = new Date(targetYear, monthIdx + 1, 0, 23, 59, 59, 999);
+            const start_date = new Date();
+            
+            if (end_date <= start_date) {
+                targetYear += 1;
+                end_date = new Date(targetYear, monthIdx + 1, 0, 23, 59, 59, 999);
+            }
+            
+            const diffTime = end_date.getTime() - start_date.getTime();
+            return Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+        } else {
+            return matchingPlan.duration_days || 30;
+        }
+    };
+
+
     // Coupon verification
     const handleApplyCoupon = async () => {
         if (!couponCodeInput.trim()) return;
@@ -769,7 +834,7 @@ export default function SubscriptionPage() {
                                                         onChange={(e) => setSelectedAttempt(e.target.value)}
                                                         className="w-full px-4 py-3 rounded-xl border border-border focus:outline-none focus:ring-4 focus:ring-primary/10 bg-bg text-xs font-bold text-text-primary"
                                                     >
-                                                        {currentAttempts.map(att => (
+                                                        {calendarMonths.map(att => (
                                                             <option key={att} value={att}>{att}</option>
                                                         ))}
                                                     </select>
@@ -851,10 +916,15 @@ export default function SubscriptionPage() {
                                             )}
 
                                             <div className="flex justify-between border-t border-border pt-2">
-                                                <span className="text-text-muted">Selected Attempt</span>
+                                                <span className="text-text-muted">Plan Duration</span>
                                                 <span className="font-bold text-text-primary">
-                                                    {selectedCycle === 'MONTHLY' ? '30 Days Duration' : `${selectedAttempt} ${selectedYear}`}
+                                                    {matchingPlan ? `${getPlanDurationDays()} Days` : '—'}
                                                 </span>
+                                            </div>
+
+                                            <div className="flex justify-between border-t border-border pt-2 text-amber-600 dark:text-amber-400 font-bold">
+                                                <span>Access Expiry</span>
+                                                <span className="font-black">{getExpiryDateStr()}</span>
                                             </div>
                                         </div>
 
@@ -952,6 +1022,10 @@ export default function SubscriptionPage() {
                                                     <div className="flex justify-between items-center gap-4">
                                                         <span className="text-emerald-600/70 whitespace-nowrap">Purchased Date</span>
                                                         <span className="font-bold text-emerald-700 text-right">{new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center gap-4 border-t border-emerald-500/10 pt-2.5">
+                                                        <span className="text-emerald-600/70 whitespace-nowrap font-bold">Expiry Date</span>
+                                                        <span className="font-black text-emerald-700 text-right">{getExpiryDateStr()}</span>
                                                     </div>
                                                 </div>
                                             </div>

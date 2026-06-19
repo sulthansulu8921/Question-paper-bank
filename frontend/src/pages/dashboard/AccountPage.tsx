@@ -19,6 +19,8 @@ interface Subscription {
     group?: string;
     exam_attempt?: string;
     year?: number;
+    plan_duration?: number;
+    plan_billing_cycle?: string;
 }
 
 interface PaymentRecord {
@@ -28,11 +30,14 @@ interface PaymentRecord {
     base_amount: string;
     gst_amount: string;
     transaction_id: string;
+    order_id?: string;
     status: 'SUCCESS' | 'PENDING' | 'FAILED';
     created_at: string;
     coupon_code?: string;
     discount_amount?: string;
     original_amount?: string;
+    expiry_date?: string;
+    subscription_details?: any;
 }
 
 interface ExpiryAlert {
@@ -52,6 +57,7 @@ export default function AccountPage() {
     const [fullName, setFullName] = useState(user?.full_name || 'Student User');
     const [activeTab, setActiveTab] = useState<'profile' | 'billing'>('profile');
     const [downloadingId, setDownloadingId] = useState<number | null>(null);
+    const [downloadingReceiptId, setDownloadingReceiptId] = useState<number | null>(null);
     const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
     const [targetCourseId, setTargetCourseId] = useState<string>('');
     const [masterLevels, setMasterLevels] = useState<any[]>([]);
@@ -184,6 +190,27 @@ export default function AccountPage() {
             alert('Unable to download tax invoice. Please try again.');
         } finally {
             setDownloadingId(null);
+        }
+    };
+
+    const handleDownloadReceipt = async (paymentId: number, transactionId: string) => {
+        setDownloadingReceiptId(paymentId);
+        try {
+            const response = await api.get(`/subscriptions/payments/${paymentId}/download_receipt/`, {
+                responseType: 'blob'
+            });
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `receipt_${transactionId}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } catch (error) {
+            console.error('Receipt download failed:', error);
+            alert('Unable to download receipt. Please try again.');
+        } finally {
+            setDownloadingReceiptId(null);
         }
     };
 
@@ -491,7 +518,10 @@ export default function AccountPage() {
                                                         {sub.subject_name || sub.group?.replace('_', ' ') || 'Full Course Access'}
                                                     </h4>
                                                     <p className="text-[10px] text-text-muted font-bold mt-1">
-                                                        {sub.exam_attempt ? `${sub.exam_attempt} ${sub.year} Attempt` : '30-Day Duration Plan'}
+                                                        {sub.exam_attempt 
+                                                            ? `${sub.exam_attempt} ${sub.year} Attempt (${sub.plan_billing_cycle === 'ATTEMPT_WISE' ? Math.max(1, Math.ceil((new Date(sub.end_date).getTime() - new Date(sub.start_date).getTime()) / (1000 * 60 * 60 * 24))) : (sub.plan_duration || 30)} Days)` 
+                                                            : `${sub.plan_duration || 30}-Day Duration Plan`
+                                                        }
                                                     </p>
                                                 </div>
                                                 <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
@@ -536,61 +566,87 @@ export default function AccountPage() {
                                 <p className="text-xs text-text-secondary font-semibold">No payments processed yet.</p>
                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left border-collapse text-xs">
-                                    <thead>
-                                        <tr className="border-b border-border text-text-muted uppercase tracking-wider font-bold">
-                                            <th className="py-3 px-2">Date</th>
-                                            <th className="py-3 px-2">Transaction ID</th>
-                                            <th className="py-3 px-2">Plan</th>
-                                            <th className="py-3 px-2 text-right">Tax (18%)</th>
-                                            <th className="py-3 px-2 text-right">Amount Paid</th>
-                                            <th className="py-3 px-2 text-center">Status</th>
-                                            <th className="py-3 px-2 text-center">Receipt</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="font-semibold text-text-secondary">
-                                        {paymentHistory.map((pmt) => (
-                                            <tr key={pmt.id} className="border-b border-border/50 hover:bg-bg-secondary transition-colors">
-                                                <td className="py-3.5 px-2">{new Date(pmt.created_at).toLocaleDateString()}</td>
-                                                <td className="py-3.5 px-2 text-text-muted font-mono text-[10px]">{pmt.transaction_id}</td>
-                                                <td className="py-3.5 px-2 text-text-primary font-bold">{pmt.plan_name}</td>
-                                                <td className="py-3.5 px-2 text-right">₹{parseFloat(pmt.gst_amount || '0').toFixed(2)}</td>
-                                                <td className="py-3.5 px-2 text-right text-primary font-black">₹{parseFloat(pmt.amount).toFixed(2)}</td>
-                                                <td className="py-3.5 px-2 text-center">
-                                                    <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
-                                                        pmt.status === 'SUCCESS' 
-                                                        ? 'bg-green-500/20 text-green-600 dark:text-green-400' 
-                                                        : pmt.status === 'PENDING' 
-                                                        ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400' 
-                                                        : 'bg-red-500/20 text-red-600 dark:text-red-400'
-                                                    }`}>
-                                                        {pmt.status}
-                                                    </span>
-                                                </td>
-                                                <td className="py-3.5 px-2 text-center">
-                                                    {pmt.status === 'SUCCESS' ? (
-                                                        <button
-                                                            onClick={() => handleDownloadInvoice(pmt.id, pmt.transaction_id)}
-                                                            disabled={downloadingId === pmt.id}
-                                                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-bg hover:bg-primary hover:text-white rounded-lg text-text-primary font-black uppercase tracking-wider text-[9px] transition-all disabled:opacity-50 border border-border"
-                                                        >
-                                                            {downloadingId === pmt.id ? (
-                                                                <Loader2 size={10} className="animate-spin" />
-                                                            ) : (
-                                                                <Download size={10} />
-                                                            )}
-                                                            <span>PDF</span>
-                                                        </button>
-                                                    ) : (
-                                                        <span className="text-[10px] text-text-muted">-</span>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                             <div className="overflow-x-auto">
+                                 <table className="w-full text-left border-collapse text-xs">
+                                     <thead>
+                                         <tr className="border-b border-border text-text-muted uppercase tracking-wider font-bold">
+                                             <th className="py-3 px-2">Invoice Number</th>
+                                             <th className="py-3 px-2">Order ID</th>
+                                             <th className="py-3 px-2">Transaction ID</th>
+                                             <th className="py-3 px-2">Plan Name</th>
+                                             <th className="py-3 px-2 text-right">Amount</th>
+                                             <th className="py-3 px-2">Payment Date</th>
+                                             <th className="py-3 px-2">Purchase Date</th>
+                                             <th className="py-3 px-2">Expiry Date</th>
+                                             <th className="py-3 px-2 text-center">Status</th>
+                                             <th className="py-3 px-2 text-center">Downloads</th>
+                                         </tr>
+                                     </thead>
+                                     <tbody className="font-semibold text-text-secondary">
+                                         {paymentHistory.map((pmt) => {
+                                             const invNumber = `INV-${String(pmt.id).padStart(6, '0')}`;
+                                             const purchaseDate = pmt.subscription_details ? new Date(pmt.subscription_details.start_date).toLocaleDateString() : new Date(pmt.created_at).toLocaleDateString();
+                                             const expiryDate = pmt.expiry_date ? new Date(pmt.expiry_date).toLocaleDateString() : '-';
+
+                                             return (
+                                                 <tr key={pmt.id} className="border-b border-border/50 hover:bg-bg-secondary transition-colors">
+                                                     <td className="py-3.5 px-2 font-bold text-text-primary">{invNumber}</td>
+                                                     <td className="py-3.5 px-2 text-text-muted font-mono text-[10px]">{pmt.order_id || '-'}</td>
+                                                     <td className="py-3.5 px-2 text-text-muted font-mono text-[10px]">{pmt.transaction_id}</td>
+                                                     <td className="py-3.5 px-2 text-text-primary font-bold">{pmt.plan_name}</td>
+                                                     <td className="py-3.5 px-2 text-right text-primary font-black">₹{parseFloat(pmt.amount).toFixed(2)}</td>
+                                                     <td className="py-3.5 px-2">{new Date(pmt.created_at).toLocaleDateString()}</td>
+                                                     <td className="py-3.5 px-2">{purchaseDate}</td>
+                                                     <td className="py-3.5 px-2">{expiryDate}</td>
+                                                     <td className="py-3.5 px-2 text-center">
+                                                         <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                                                             pmt.status === 'SUCCESS' 
+                                                             ? 'bg-green-500/20 text-green-600 dark:text-green-400' 
+                                                             : pmt.status === 'PENDING' 
+                                                             ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400' 
+                                                             : 'bg-red-500/20 text-red-600 dark:text-red-400'
+                                                         }`}>
+                                                             {pmt.status}
+                                                         </span>
+                                                     </td>
+                                                     <td className="py-3.5 px-2 text-center">
+                                                         {pmt.status === 'SUCCESS' ? (
+                                                             <div className="flex items-center justify-center gap-1.5">
+                                                                 <button
+                                                                     onClick={() => handleDownloadInvoice(pmt.id, pmt.transaction_id)}
+                                                                     disabled={downloadingId === pmt.id}
+                                                                     className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary text-white rounded-lg font-black uppercase tracking-wider text-[9px] hover:bg-primary/95 transition-all disabled:opacity-50"
+                                                                 >
+                                                                     {downloadingId === pmt.id ? (
+                                                                         <Loader2 size={10} className="animate-spin" />
+                                                                     ) : (
+                                                                         <Download size={10} />
+                                                                     )}
+                                                                     <span>Invoice</span>
+                                                                 </button>
+                                                                 <button
+                                                                     onClick={() => handleDownloadReceipt(pmt.id, pmt.transaction_id)}
+                                                                     disabled={downloadingReceiptId === pmt.id}
+                                                                     className="inline-flex items-center gap-1 px-2.5 py-1 bg-teal-600 text-white rounded-lg font-black uppercase tracking-wider text-[9px] hover:bg-teal-700 transition-all disabled:opacity-50"
+                                                                 >
+                                                                     {downloadingReceiptId === pmt.id ? (
+                                                                         <Loader2 size={10} className="animate-spin" />
+                                                                     ) : (
+                                                                         <Download size={10} />
+                                                                     )}
+                                                                     <span>Receipt</span>
+                                                                 </button>
+                                                             </div>
+                                                         ) : (
+                                                             <span className="text-[10px] text-text-muted">-</span>
+                                                         )}
+                                                     </td>
+                                                 </tr>
+                                             );
+                                         })}
+                                     </tbody>
+                                 </table>
+                             </div>
                         )}
                     </div>
                 </motion.div>

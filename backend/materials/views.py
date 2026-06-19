@@ -24,7 +24,20 @@ class IsStaffOrReadOnly(permissions.BasePermission):
     def has_permission(self, request, view):
         if request.method in permissions.SAFE_METHODS:
             return True
-        return request.user and request.user.is_staff
+        user = request.user
+        return bool(user and user.is_authenticated and (
+            user.is_superuser or 
+            user.role in ['SUPER_ADMIN', 'QUESTION_ADMIN']
+        ))
+
+
+class IsQuestionAdmin(permissions.BasePermission):
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated and (
+            user.is_superuser or 
+            user.role in ['SUPER_ADMIN', 'QUESTION_ADMIN']
+        ))
 
 
 class QuestionPagination(PageNumberPagination):
@@ -116,6 +129,7 @@ class SubjectiveQuestionViewSet(viewsets.ModelViewSet):
         Returns (limit, has_full_access):
         - Staff/superuser → -1 (unlimited)
         - Active premium subscription matching paper/group → -1 (unlimited)
+        - Within 2 free trial papers → -1 (unlimited)
         - Free user / no matching sub → plan's free_questions_per_chapter (default 3)
         """
         user = request.user
@@ -125,40 +139,91 @@ class SubjectiveQuestionViewSet(viewsets.ModelViewSet):
             return -1, True
 
         from django.utils import timezone
-        from subscriptions.models import UserSubscription
-        from subscriptions.permissions import user_has_active_subscription
+        from subscriptions.models import UserSubscription, UserViewedPaper
+        from master_data.models import ICAIPaper
 
         if user and user.is_authenticated:
+            # 1. Check if user has active subscription matching this content
             active_subs = UserSubscription.objects.filter(
                 user=user,
                 is_active=True,
                 end_date__gte=timezone.now()
-            ).select_related('plan', 'subject')
+            ).select_related('plan', 'subject', 'level')
 
+            paper_id = request.query_params.get('paper_id')
+            subject_id = request.query_params.get('subject_id')
+
+            has_sub_access = False
             for sub in active_subs:
-                # If question bank access is not enabled for this plan, skip it
                 if not getattr(sub.plan, 'question_bank_access', True):
                     continue
 
-                scope = sub.plan.scope
-                # GROUP_WISE = full access to all papers in group
-                if scope == 'GROUP_WISE':
+                if paper_id:
+                    try:
+                        paper = ICAIPaper.objects.get(id=paper_id)
+                        
+                        # Match level
+                        sub_level = sub.level or (sub.plan.level_specific if sub.plan else None)
+                        if sub_level and sub_level != paper.level:
+                            continue
+
+                        # Match scope
+                        if sub.plan.scope == 'GROUP_WISE':
+                            paper_num = None
+                            code_str = ((paper.code or '') + (paper.name or '')).lower()
+                            if any(x in code_str for x in ['paper 1', 'paper 2', 'paper 3']):
+                                paper_num = 1
+                            elif any(x in code_str for x in ['paper 4', 'paper 5', 'paper 6']):
+                                paper_num = 4
+                            else:
+                                if paper.order <= 3:
+                                    paper_num = 1
+                                else:
+                                    paper_num = 4
+
+                            if sub.group == 'ALL':
+                                has_sub_access = True
+                                break
+                            elif sub.group == 'GROUP_1' and paper_num is not None and paper_num <= 3:
+                                has_sub_access = True
+                                break
+                            elif sub.group == 'GROUP_2' and paper_num is not None and paper_num >= 4:
+                                has_sub_access = True
+                                break
+
+                        elif sub.plan.scope == 'PAPER_WISE':
+                            if sub.subject:
+                                sub_name = sub.subject.name.lower().strip()
+                                pap_name = paper.name.lower().strip()
+                                if sub_name in pap_name or pap_name in sub_name:
+                                    has_sub_access = True
+                                    break
+                    except ICAIPaper.DoesNotExist:
+                        pass
+
+                elif subject_id:
+                    if sub.plan.scope == 'GROUP_WISE':
+                        has_sub_access = True
+                        break
+                    elif sub.plan.scope == 'PAPER_WISE' and sub.subject_id and str(sub.subject_id) == str(subject_id):
+                        has_sub_access = True
+                        break
+                else:
+                    # Generic check if no paper_id/subject_id
+                    has_sub_access = True
+                    break
+
+            if has_sub_access:
+                return -1, True
+
+            # 2. Check if within 2 free trial papers
+            if paper_id:
+                already_viewed = UserViewedPaper.objects.filter(user=user, paper_id=paper_id).exists()
+                if already_viewed:
                     return -1, True
-                # PAPER_WISE = full access to that specific paper
-                if scope == 'PAPER_WISE':
-                    paper_id = request.query_params.get('paper_id')
-                    subject_id = request.query_params.get('subject_id')
-                    if paper_id and sub.subject:
-                        # Match by subject name against paper
-                        from master_data.models import ICAIPaper
-                        try:
-                            paper = ICAIPaper.objects.get(id=paper_id)
-                            if sub.subject.name.lower() in paper.name.lower() or paper.name.lower() in sub.subject.name.lower():
-                                return -1, True
-                        except ICAIPaper.DoesNotExist:
-                            pass
-                    if subject_id and sub.subject_id and str(sub.subject_id) == str(subject_id):
-                        return -1, True
+                viewed_count = UserViewedPaper.objects.filter(user=user).count()
+                if viewed_count < 2:
+                    return -1, True
 
             # Has active subscriptions but none match this content — use free limit from first plan
             if active_subs.exists():
@@ -169,6 +234,92 @@ class SubjectiveQuestionViewSet(viewsets.ModelViewSet):
         return 3, False
 
     def list(self, request, *args, **kwargs):
+        user = request.user
+        paper_id = request.query_params.get('paper_id')
+
+        # Gating check on list level
+        if paper_id:
+            from subscriptions.models import UserSubscription, UserViewedPaper
+            from django.utils import timezone
+            from master_data.models import ICAIPaper
+
+            has_sub_access = False
+            if user and user.is_authenticated:
+                if user.is_staff or user.is_superuser:
+                    has_sub_access = True
+                else:
+                    active_subs = UserSubscription.objects.filter(
+                        user=user,
+                        is_active=True,
+                        end_date__gte=timezone.now()
+                    ).select_related('plan', 'subject', 'level')
+
+                    try:
+                        paper = ICAIPaper.objects.get(id=paper_id)
+                        for sub in active_subs:
+                            if not getattr(sub.plan, 'question_bank_access', True):
+                                continue
+                            
+                            sub_level = sub.level or (sub.plan.level_specific if sub.plan else None)
+                            if sub_level and sub_level != paper.level:
+                                continue
+
+                            if sub.plan.scope == 'GROUP_WISE':
+                                paper_num = None
+                                code_str = ((paper.code or '') + (paper.name or '')).lower()
+                                if any(x in code_str for x in ['paper 1', 'paper 2', 'paper 3']):
+                                    paper_num = 1
+                                elif any(x in code_str for x in ['paper 4', 'paper 5', 'paper 6']):
+                                    paper_num = 4
+                                else:
+                                    if paper.order <= 3:
+                                        paper_num = 1
+                                    else:
+                                        paper_num = 4
+
+                                if sub.group == 'ALL':
+                                    has_sub_access = True
+                                    break
+                                elif sub.group == 'GROUP_1' and paper_num is not None and paper_num <= 3:
+                                    has_sub_access = True
+                                    break
+                                elif sub.group == 'GROUP_2' and paper_num is not None and paper_num >= 4:
+                                    has_sub_access = True
+                                    break
+                            elif sub.plan.scope == 'PAPER_WISE':
+                                if sub.subject:
+                                    sub_name = sub.subject.name.lower().strip()
+                                    pap_name = paper.name.lower().strip()
+                                    if sub_name in pap_name or pap_name in sub_name:
+                                        has_sub_access = True
+                                        break
+                    except ICAIPaper.DoesNotExist:
+                        pass
+
+            if not has_sub_access:
+                if not user or not user.is_authenticated:
+                    from rest_framework.exceptions import PermissionDenied
+                    raise PermissionDenied({
+                        "detail": "subscription_required",
+                        "message": "Authentication required. Please log in."
+                    })
+
+                already_viewed = UserViewedPaper.objects.filter(user=user, paper_id=paper_id).exists()
+                if not already_viewed:
+                    viewed_count = UserViewedPaper.objects.filter(user=user).count()
+                    if viewed_count >= 2:
+                        from rest_framework.exceptions import PermissionDenied
+                        raise PermissionDenied({
+                            "detail": "subscription_required",
+                            "message": "You have reached your limit of 2 free trial papers. Please select a plan to unlock more papers."
+                        })
+                    else:
+                        from django.db import IntegrityError
+                        try:
+                            UserViewedPaper.objects.create(user=user, paper_id=paper_id)
+                        except IntegrityError:
+                            pass
+
         queryset = self.filter_queryset(self.get_queryset())
         total_count = queryset.count()
 
@@ -442,7 +593,7 @@ from openpyxl.utils import get_column_letter
 from django.http import HttpResponse
 
 class ExportQuestionsExcelView(APIView):
-    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated, IsQuestionAdmin]
 
     def get(self, request):
         questions = SubjectiveQuestion.objects.select_related(
@@ -544,7 +695,7 @@ from rest_framework.parsers import MultiPartParser
 from courses.models import Subject
 
 class ImportQuestionsExcelView(APIView):
-    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated, IsQuestionAdmin]
     parser_classes     = [MultiPartParser]
 
     REQUIRED_COLS = {'source', 'year', 'attempt', 'q_no', 'question_text'}

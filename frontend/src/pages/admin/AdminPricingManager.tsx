@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/store/useAuthStore';
 import {
     CreditCard, Edit2, Loader2, Save, Shield, HelpCircle,
-    Lock, Unlock, Clock, BookOpen, Info, Plus, Trash2, Layers
+    Lock, Unlock, Clock, BookOpen, Info, Plus, Trash2, Layers, Calendar
 } from 'lucide-react';
 import '@/styles/admin/AddQuestion.css';
 import api from '@/api/axios';
@@ -16,6 +16,7 @@ interface Plan {
     level_name: string | null;
     scope: 'PAPER_WISE' | 'GROUP_WISE' | null;
     billing_cycle: 'MONTHLY' | 'ATTEMPT_WISE' | null;
+    plan_type: 'QUESTIONS' | 'FULL_COURSE';
     free_questions_per_chapter: number;
     category_specific: number | null;
     course_specific: number | null;
@@ -28,6 +29,9 @@ interface Plan {
     ai_assistant_access: boolean;
     live_class_access: boolean;
     download_permission: boolean;
+    purchase_start_date?: string | null;
+    purchase_end_date?: string | null;
+    fixed_expiry_date?: string | null;
 }
 
 type DurationUnit = 'days' | 'months' | 'years';
@@ -47,6 +51,19 @@ const fromDays = (days: number): { value: number; unit: DurationUnit } => {
 const formatDuration = (days: number) => {
     const { value, unit } = fromDays(days);
     return `${value} ${unit.charAt(0).toUpperCase() + unit.slice(1)}${value !== 1 ? '' : ''}`;
+};
+
+const formatToDatetimeLocal = (dateStr?: string | null): string => {
+    if (!dateStr) return '';
+    try {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return '';
+        const offset = date.getTimezoneOffset();
+        const localDate = new Date(date.getTime() - (offset * 60 * 1000));
+        return localDate.toISOString().slice(0, 16);
+    } catch {
+        return '';
+    }
 };
 
 const getAccessBadge = (limit: number) => {
@@ -82,6 +99,7 @@ export default function AdminPricingManager() {
     
     const [editScope, setEditScope] = useState<string>('');
     const [editBillingCycle, setEditBillingCycle] = useState<string>('');
+    const [editPlanType, setEditPlanType] = useState<'QUESTIONS' | 'FULL_COURSE'>('FULL_COURSE');
     
     // Dynamic targets
     const [editCategorySpecific, setEditCategorySpecific] = useState<string>('');
@@ -98,10 +116,14 @@ export default function AdminPricingManager() {
     const [editLiveClassAccess, setEditLiveClassAccess] = useState(true);
     const [editDownloadPermission, setEditDownloadPermission] = useState(true);
 
+    const [editPurchaseStartDate, setEditPurchaseStartDate] = useState('');
+    const [editPurchaseEndDate, setEditPurchaseEndDate] = useState('');
+    const [editFixedExpiryDate, setEditFixedExpiryDate] = useState('');
+
     const [errorMsg, setErrorMsg] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
 
-    const isAuthorized = !!user?.is_superuser;
+    const isAuthorized = !!(user?.is_superuser || user?.is_staff || user?.role === 'SUPER_ADMIN' || user?.role === 'INSTITUTION_ADMIN' || user?.role === 'INSTRUCTOR');
 
     const fetchPlans = async () => {
         if (!isAuthorized) return;
@@ -154,6 +176,7 @@ export default function AdminPricingManager() {
         setFreeQMode(fqc === -1 ? 'unlimited' : fqc === 0 ? 'none' : 'limited');
         setEditScope(plan.scope || '');
         setEditBillingCycle(plan.billing_cycle || '');
+        setEditPlanType(plan.plan_type || 'FULL_COURSE');
         setEditCategorySpecific(plan.category_specific ? plan.category_specific.toString() : '');
         setEditCourseSpecific(plan.course_specific ? plan.course_specific.toString() : '');
         setEditLevelSpecific(plan.level_specific ? plan.level_specific.toString() : '');
@@ -166,6 +189,10 @@ export default function AdminPricingManager() {
         setEditAIAssistantAccess(plan.ai_assistant_access !== false);
         setEditLiveClassAccess(plan.live_class_access !== false);
         setEditDownloadPermission(plan.download_permission !== false);
+
+        setEditPurchaseStartDate(formatToDatetimeLocal(plan.purchase_start_date));
+        setEditPurchaseEndDate(formatToDatetimeLocal(plan.purchase_end_date));
+        setEditFixedExpiryDate(formatToDatetimeLocal(plan.fixed_expiry_date));
 
         setErrorMsg('');
         setSuccessMsg('');
@@ -183,6 +210,7 @@ export default function AdminPricingManager() {
         setFreeQMode('limited');
         setEditScope('');
         setEditBillingCycle('');
+        setEditPlanType('FULL_COURSE');
         setEditCategorySpecific('');
         setEditCourseSpecific('');
         setEditLevelSpecific('');
@@ -195,6 +223,10 @@ export default function AdminPricingManager() {
         setEditAIAssistantAccess(true);
         setEditLiveClassAccess(true);
         setEditDownloadPermission(true);
+
+        setEditPurchaseStartDate('');
+        setEditPurchaseEndDate('');
+        setEditFixedExpiryDate('');
 
         setErrorMsg('');
         setSuccessMsg('');
@@ -218,7 +250,7 @@ export default function AdminPricingManager() {
             return;
         }
 
-        const totalDays = toDays(editDurationValue, editDurationUnit);
+        const totalDays = editBillingCycle === 'ATTEMPT_WISE' ? 1 : toDays(editDurationValue, editDurationUnit);
         if (totalDays < 1) {
             setErrorMsg('Duration must be at least 1 day.');
             return;
@@ -237,6 +269,7 @@ export default function AdminPricingManager() {
             free_questions_per_chapter: getEffectiveFreeQ(),
             scope: editScope || null,
             billing_cycle: editBillingCycle || null,
+            plan_type: editPlanType,
             category_specific: editCategorySpecific ? parseInt(editCategorySpecific) : null,
             course_specific: editCourseSpecific ? parseInt(editCourseSpecific) : null,
             level_specific: editLevelSpecific ? parseInt(editLevelSpecific) : null,
@@ -248,6 +281,9 @@ export default function AdminPricingManager() {
             ai_assistant_access: editAIAssistantAccess,
             live_class_access: editLiveClassAccess,
             download_permission: editDownloadPermission,
+            purchase_start_date: editPurchaseStartDate ? new Date(editPurchaseStartDate).toISOString() : null,
+            purchase_end_date: editPurchaseEndDate ? new Date(editPurchaseEndDate).toISOString() : null,
+            fixed_expiry_date: editFixedExpiryDate ? new Date(editFixedExpiryDate).toISOString() : null,
         };
 
 
@@ -408,7 +444,12 @@ export default function AdminPricingManager() {
                                                 }}
                                             >
                                                 <td style={{ padding: '0.875rem 1rem' }}>
-                                                    <div style={{ fontWeight: 800, color: '#1E293B', fontSize: '0.875rem' }}>{plan.name}</div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                                        <div style={{ fontWeight: 800, color: '#1E293B', fontSize: '0.875rem' }}>{plan.name}</div>
+                                                        <span style={{ fontSize: '0.6rem', fontWeight: 800, background: plan.plan_type === 'QUESTIONS' ? '#FEF2F2' : '#ECFDF5', color: plan.plan_type === 'QUESTIONS' ? '#EF4444' : '#10B981', padding: '0.1rem 0.35rem', borderRadius: '0.25rem' }}>
+                                                            {plan.plan_type === 'QUESTIONS' ? 'Q-Only' : 'Full Course'}
+                                                        </span>
+                                                    </div>
                                                     <div style={{ fontSize: '0.7rem', color: '#94A3B8', marginTop: '0.2rem', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                         {plan.description || 'No description'}
                                                     </div>
@@ -431,9 +472,11 @@ export default function AdminPricingManager() {
                                                 <td style={{ padding: '0.875rem 1rem', fontWeight: 700, color: '#334155', fontSize: '0.85rem' }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                                                         <Clock size={13} style={{ color: '#94A3B8' }} />
-                                                        {formatDuration(plan.duration_days)}
+                                                        {plan.billing_cycle === 'ATTEMPT_WISE' ? 'Attempt-Based' : formatDuration(plan.duration_days)}
                                                     </div>
-                                                    <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>{plan.duration_days} days total</div>
+                                                    <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>
+                                                        {plan.billing_cycle === 'ATTEMPT_WISE' ? 'Ends on attempt date' : `${plan.duration_days} days total`}
+                                                    </div>
                                                 </td>
                                                 <td style={{ padding: '0.875rem 1rem' }}>
                                                     <span style={{
@@ -530,54 +573,77 @@ export default function AdminPricingManager() {
                                         <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569', marginBottom: '0.35rem', display: 'block' }}>
                                             Subscription Duration
                                         </label>
-                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                            <input
-                                                type="number" min="1" required className="form-input"
-                                                style={{ flex: 1 }}
-                                                value={editDurationValue}
-                                                onChange={(e) => setEditDurationValue(parseInt(e.target.value) || 1)}
-                                            />
-                                            <select
-                                                className="form-input"
-                                                style={{ flex: '0 0 auto', width: '120px' }}
-                                                value={editDurationUnit}
-                                                onChange={(e) => setEditDurationUnit(e.target.value as DurationUnit)}
-                                            >
-                                                <option value="days">Days</option>
-                                                <option value="months">Months</option>
-                                                <option value="years">Years</option>
-                                            </select>
-                                        </div>
-                                        <div style={{ fontSize: '0.7rem', color: '#94A3B8', marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                                            <Clock size={11} />
-                                            = {toDays(editDurationValue, editDurationUnit)} days total
-                                        </div>
+                                        {editBillingCycle === 'ATTEMPT_WISE' ? (
+                                            <div style={{ padding: '0.75rem 1rem', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '0.75rem', fontSize: '0.75rem', color: '#16A34A', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <Calendar size={16} />
+                                                <span>Aligned with Attempt Month (Dynamic Duration)</span>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                    <input
+                                                        type="number" min="1" required className="form-input"
+                                                        style={{ flex: 1 }}
+                                                        value={editDurationValue}
+                                                        onChange={(e) => setEditDurationValue(parseInt(e.target.value) || 1)}
+                                                    />
+                                                    <select
+                                                        className="form-input"
+                                                        style={{ flex: '0 0 auto', width: '120px' }}
+                                                        value={editDurationUnit}
+                                                        onChange={(e) => setEditDurationUnit(e.target.value as DurationUnit)}
+                                                    >
+                                                        <option value="days">Days</option>
+                                                        <option value="months">Months</option>
+                                                        <option value="years">Years</option>
+                                                    </select>
+                                                </div>
+                                                <div style={{ fontSize: '0.7rem', color: '#94A3B8', marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                                    <Clock size={11} />
+                                                    = {toDays(editDurationValue, editDurationUnit)} days total
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
 
-                                    {/* Scope & Billing Cycle */}
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                    {/* Scope & Billing Cycle & Plan Type */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
                                         <div className="form-group">
-                                            <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569', marginBottom: '0.35rem', display: 'block' }}>Access Scope</label>
+                                            <label style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', marginBottom: '0.35rem', display: 'block' }}>Access Scope</label>
                                             <select 
                                                 className="form-input" 
+                                                style={{ fontSize: '0.75rem', padding: '0.4rem' }}
                                                 value={editScope} 
                                                 onChange={(e) => setEditScope(e.target.value)}
                                             >
-                                                <option value="">Course Wise (Full)</option>
-                                                <option value="PAPER_WISE">Paper Wise (Subject)</option>
+                                                <option value="">Course Wise</option>
+                                                <option value="PAPER_WISE">Paper Wise</option>
                                                 <option value="GROUP_WISE">Group Wise</option>
                                             </select>
                                         </div>
                                         <div className="form-group">
-                                            <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569', marginBottom: '0.35rem', display: 'block' }}>Billing Cycle</label>
+                                            <label style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', marginBottom: '0.35rem', display: 'block' }}>Billing Cycle</label>
                                             <select 
                                                 className="form-input" 
+                                                style={{ fontSize: '0.75rem', padding: '0.4rem' }}
                                                 value={editBillingCycle} 
                                                 onChange={(e) => setEditBillingCycle(e.target.value)}
                                             >
-                                                <option value="">Days/Days Count</option>
+                                                <option value="">Days Count</option>
                                                 <option value="MONTHLY">Monthly</option>
                                                 <option value="ATTEMPT_WISE">Attempt Wise</option>
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', marginBottom: '0.35rem', display: 'block' }}>Plan Type</label>
+                                            <select 
+                                                className="form-input" 
+                                                style={{ fontSize: '0.75rem', padding: '0.4rem' }}
+                                                value={editPlanType} 
+                                                onChange={(e) => setEditPlanType(e.target.value as 'QUESTIONS' | 'FULL_COURSE')}
+                                            >
+                                                <option value="FULL_COURSE">Full Course</option>
+                                                <option value="QUESTIONS">Questions Only</option>
                                             </select>
                                         </div>
                                     </div>
@@ -740,6 +806,38 @@ export default function AdminPricingManager() {
                                                     <span>{feature.label}</span>
                                                 </label>
                                             ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Date configurations */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1rem', background: '#F8FAFC', borderRadius: '1rem', border: '1px solid #E2E8F0' }}>
+                                        <h4 style={{ fontSize: '0.75rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>Date Configurations (Optional)</h4>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                            <div className="form-group">
+                                                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748B', marginBottom: '0.25rem', display: 'block' }}>Purchase Start</label>
+                                                <input
+                                                    type="datetime-local" className="form-input"
+                                                    value={editPurchaseStartDate}
+                                                    onChange={(e) => setEditPurchaseStartDate(e.target.value)}
+                                                />
+                                            </div>
+                                            <div className="form-group">
+                                                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748B', marginBottom: '0.25rem', display: 'block' }}>Purchase End</label>
+                                                <input
+                                                    type="datetime-local" className="form-input"
+                                                    value={editPurchaseEndDate}
+                                                    onChange={(e) => setEditPurchaseEndDate(e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="form-group" style={{ margin: 0 }}>
+                                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748B', marginBottom: '0.25rem', display: 'block' }}>Fixed Expiry Date</label>
+                                            <input
+                                                type="datetime-local" className="form-input"
+                                                value={editFixedExpiryDate}
+                                                onChange={(e) => setEditFixedExpiryDate(e.target.value)}
+                                            />
+                                            <span style={{ fontSize: '0.7rem', color: '#94A3B8', marginTop: '0.25rem', display: 'block' }}>If set, all purchased subscriptions expire exactly on this date instead of dynamic calculation.</span>
                                         </div>
                                     </div>
 

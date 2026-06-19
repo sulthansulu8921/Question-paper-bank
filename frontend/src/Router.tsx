@@ -25,7 +25,7 @@ import AdminCouponManager from '@/pages/admin/AdminCouponManager';
 import AdminPricingManager from '@/pages/admin/AdminPricingManager';
 import AdminPaymentManager from '@/pages/admin/AdminPaymentManager';
 import AdminNotificationManager from '@/pages/admin/AdminNotificationManager';
-import DashboardComingSoon from '@/pages/dashboard/DashboardComingSoon';
+import DownloadsPage from '@/pages/dashboard/DownloadsPage';
 import NotesPage from '@/pages/dashboard/NotesPage';
 import CourseDetailPage from '@/pages/dashboard/CourseDetailPage';
 import AdminClassroomHub from '@/pages/admin/AdminClassroomHub';
@@ -65,7 +65,13 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
     const user = useAuthStore((state) => state.user);
     if (!token) return <Navigate to="/auth?tab=login" replace />;
 
-    const isStaffOrAdmin = user?.is_staff || user?.role === 'SUPER_ADMIN' || user?.role === 'INSTITUTION_ADMIN' || user?.role === 'INSTRUCTOR';
+    const isStaffOrAdmin = user?.is_staff || 
+                           user?.role === 'SUPER_ADMIN' || 
+                           user?.role === 'INSTITUTION_ADMIN' || 
+                           user?.role === 'INSTRUCTOR' ||
+                           user?.role === 'QUESTION_ADMIN' ||
+                           user?.role === 'COURSE_ADMIN';
+                           
     if (!isStaffOrAdmin) return <Navigate to="/dashboard" replace />;
 
     return children;
@@ -76,12 +82,46 @@ const SuperAdminRoute = ({ children }: { children: React.ReactNode }) => {
     const user = useAuthStore((state) => state.user);
     if (!token) return <Navigate to="/auth?tab=login" replace />;
 
-    const isStaffOrAdmin = user?.is_staff || user?.role === 'SUPER_ADMIN' || user?.role === 'INSTITUTION_ADMIN' || user?.role === 'INSTRUCTOR';
+    const isStaffOrAdmin = user?.is_staff || 
+                           user?.role === 'SUPER_ADMIN' || 
+                           user?.role === 'INSTITUTION_ADMIN' || 
+                           user?.role === 'INSTRUCTOR' ||
+                           user?.role === 'QUESTION_ADMIN' ||
+                           user?.role === 'COURSE_ADMIN';
+                           
     if (!isStaffOrAdmin) return <Navigate to="/dashboard" replace />;
 
     // Only superusers or SUPER_ADMIN role can access this route
     const isSuperAdmin = user?.is_superuser || user?.role === 'SUPER_ADMIN';
     if (!isSuperAdmin) return <Navigate to="/admin/questions" replace />;
+
+    return children;
+};
+
+const QuestionAdminRoute = ({ children }: { children: React.ReactNode }) => {
+    const token = useAuthStore((state) => state.token);
+    const user = useAuthStore((state) => state.user);
+    if (!token) return <Navigate to="/auth?tab=login" replace />;
+
+    const isSuperOrQuestionAdmin = user?.is_superuser || 
+                                   user?.role === 'SUPER_ADMIN' || 
+                                   user?.role === 'QUESTION_ADMIN';
+                                   
+    if (!isSuperOrQuestionAdmin) return <Navigate to="/admin" replace />;
+
+    return children;
+};
+
+const CourseAdminRoute = ({ children }: { children: React.ReactNode }) => {
+    const token = useAuthStore((state) => state.token);
+    const user = useAuthStore((state) => state.user);
+    if (!token) return <Navigate to="/auth?tab=login" replace />;
+
+    const isSuperOrCourseAdmin = user?.is_superuser || 
+                                 user?.role === 'SUPER_ADMIN' || 
+                                 user?.role === 'COURSE_ADMIN';
+                                 
+    if (!isSuperOrCourseAdmin) return <Navigate to="/admin" replace />;
 
     return children;
 };
@@ -133,7 +173,7 @@ export default function AppRouter() {
                     <Route path="notes" element={<NotesPage />} />
                     <Route path="live-classes" element={<Navigate to="/dashboard/classroom?tab=live" replace />} />
                     <Route path="videos" element={<Navigate to="/dashboard/classroom?tab=recorded" replace />} />
-                    <Route path="downloads" element={<DashboardComingSoon title="Downloads" />} />
+                    <Route path="downloads" element={<DownloadsPage />} />
                     <Route path="saved" element={<SavedQuestionsPage />} />
                     <Route path="subscription" element={<SubscriptionPage />} />
                     <Route path="settings" element={<SettingsPage />} />
@@ -155,34 +195,34 @@ export default function AppRouter() {
                         </AdminRoute>
                     }
                 >
-                    <Route index element={<SuperAdminRoute><AdminDashboard /></SuperAdminRoute>} />
-                    <Route path="master" element={<AdminMasterDatabase />} />
-                    <Route path="programs" element={<AdminProgramManager />} />
+                    <Route index element={<AdminDashboard />} />
+                    <Route path="master" element={<CourseAdminRoute><AdminMasterDatabase /></CourseAdminRoute>} />
+                    <Route path="programs" element={<CourseAdminRoute><AdminProgramManager /></CourseAdminRoute>} />
                     <Route path="classroom" element={<AdminClassroomHub />} />
                     <Route path="courses" element={<Navigate to="/admin/classroom?tab=courses" replace />} />
-                    <Route path="questions" element={<AdminQuestionBank />} />
-                    <Route path="subjects" element={<AdminSubjectManager />} />
-                    <Route path="papers" element={<AdminPaperManager />} />
-                    <Route path="answers" element={<AdminAnswerManager />} />
-                    <Route path="notes" element={<AdminNotesManager />} />
+                    <Route path="questions" element={<QuestionAdminRoute><AdminQuestionBank /></QuestionAdminRoute>} />
+                    <Route path="subjects" element={<CourseAdminRoute><AdminSubjectManager /></CourseAdminRoute>} />
+                    <Route path="papers" element={<QuestionAdminRoute><AdminPaperManager /></QuestionAdminRoute>} />
+                    <Route path="answers" element={<QuestionAdminRoute><AdminAnswerManager /></QuestionAdminRoute>} />
+                    <Route path="notes" element={<QuestionAdminRoute><AdminNotesManager /></QuestionAdminRoute>} />
                     <Route path="videos" element={<Navigate to="/admin/classroom?tab=recorded" replace />} />
                     <Route path="live-classes" element={<Navigate to="/admin/classroom?tab=live" replace />} />
                     <Route path="notifications" element={<SuperAdminRoute><AdminNotificationManager /></SuperAdminRoute>} />
-                    <Route path="questions/new" element={<AddQuestion />} />
-                    <Route path="questions/:id/edit" element={<AddQuestion />} />
+                    <Route path="questions/new" element={<QuestionAdminRoute><AddQuestion /></QuestionAdminRoute>} />
+                    <Route path="questions/:id/edit" element={<QuestionAdminRoute><AddQuestion /></QuestionAdminRoute>} />
                     <Route path="analytics" element={<SuperAdminRoute><AdminAnalytics /></SuperAdminRoute>} />
                     <Route path="users" element={<SuperAdminRoute><AdminUserManager /></SuperAdminRoute>} />
                     <Route path="settings" element={<AdminSettings />} />
                     <Route path="coupons" element={<SuperAdminRoute><AdminCouponManager /></SuperAdminRoute>} />
-                    <Route path="pricing" element={<SuperAdminRoute><AdminPricingManager /></SuperAdminRoute>} />
+                    <Route path="pricing" element={<AdminPricingManager />} />
                     <Route path="payments" element={<SuperAdminRoute><AdminPaymentManager /></SuperAdminRoute>} />
                     <Route path="gamification" element={<AdminGamification />} />
-                    <Route path="mcq-bank" element={<AdminMCQBank />} />
-                    <Route path="mcq-bank/new" element={<AdminAddMCQ />} />
-                    <Route path="mcq-bank/:id/edit" element={<AdminAddMCQ />} />
-                    <Route path="sessions" element={<AdminAssessmentMonitor />} />
-                    <Route path="mock-templates" element={<AdminMockTestManager />} />
-                    <Route path="progression" element={<SuperAdminRoute><AdminProgressionManager /></SuperAdminRoute>} />
+                    <Route path="mcq-bank" element={<QuestionAdminRoute><AdminMCQBank /></QuestionAdminRoute>} />
+                    <Route path="mcq-bank/new" element={<QuestionAdminRoute><AdminAddMCQ /></QuestionAdminRoute>} />
+                    <Route path="mcq-bank/:id/edit" element={<QuestionAdminRoute><AdminAddMCQ /></QuestionAdminRoute>} />
+                    <Route path="sessions" element={<QuestionAdminRoute><AdminAssessmentMonitor /></QuestionAdminRoute>} />
+                    <Route path="mock-templates" element={<QuestionAdminRoute><AdminMockTestManager /></QuestionAdminRoute>} />
+                    <Route path="progression" element={<CourseAdminRoute><AdminProgressionManager /></CourseAdminRoute>} />
                 </Route>
             </Routes>
         </BrowserRouter>

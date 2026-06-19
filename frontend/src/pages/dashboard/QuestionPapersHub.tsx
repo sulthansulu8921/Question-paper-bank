@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpen, ArrowRight, Layout, Info, Search, Loader2, CheckCircle } from 'lucide-react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { BookOpen, ArrowRight, Layout, Info, Search, Loader2, CheckCircle, Lock, ShieldOff, CreditCard } from 'lucide-react';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import QuestionTable from '@/components/dashboard/QuestionTable';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/api/axios';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 
 export default function QuestionPapersHub() {
     const [searchParams] = useSearchParams();
@@ -13,6 +14,8 @@ export default function QuestionPapersHub() {
     const user = useAuthStore((state) => state.user);
     const updateProfile = useAuthStore((state) => state.updateProfile);
     const queryClient = useQueryClient();
+    const navigate = useNavigate();
+    const { hasQuestionBankAccess, isLoading: subLoading } = useSubscriptionAccess();
 
     // For inline level picker (when no course selected)
     const [pickerLevel, setPickerLevel] = useState('');
@@ -137,12 +140,42 @@ export default function QuestionPapersHub() {
     }
 
     // ── Loading ───────────────────────────────────────────────────────────────
-    if (isLoading) {
+    if (isLoading || subLoading) {
         return (
             <div className="min-h-[60vh] flex flex-col items-center justify-center bg-bg">
                 <Loader2 className="animate-spin text-primary mb-4" size={40} />
                 <p className="text-sm font-semibold text-text-secondary">Loading your papers...</p>
             </div>
+        );
+    }
+
+    // ── Subscription Gate ─────────────────────────────────────────────────────
+    if (!hasQuestionBankAccess) {
+        return (
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="min-h-[75vh] flex flex-col items-center justify-center text-center px-8 bg-bg"
+            >
+                <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-amber-500/10 to-red-500/10 flex items-center justify-center mb-6 border border-amber-500/20">
+                    <Lock size={36} className="text-amber-500" />
+                </div>
+                <div className="inline-flex items-center gap-2 bg-amber-500/10 text-amber-600 rounded-full px-4 py-1.5 text-xs font-black uppercase tracking-widest mb-4">
+                    <ShieldOff size={12} /> Premium Content Locked
+                </div>
+                <h2 className="text-3xl font-black text-text-primary tracking-tight mb-3">Question Bank Locked</h2>
+                <p className="text-sm text-text-secondary font-medium leading-relaxed max-w-sm mb-8">
+                    Access to all question papers and practice questions requires an active premium subscription. Upgrade your plan to unlock full access.
+                </p>
+                <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => navigate('/dashboard/subscription')}
+                    className="flex items-center gap-2 px-8 py-3.5 bg-primary text-white rounded-2xl font-black text-sm shadow-lg shadow-primary/30 hover:shadow-primary/50 transition-all"
+                >
+                    <CreditCard size={18} /> Upgrade to Premium
+                </motion.button>
+            </motion.div>
         );
     }
 

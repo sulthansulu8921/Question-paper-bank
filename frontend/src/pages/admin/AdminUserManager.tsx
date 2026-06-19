@@ -1,13 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/api/axios';
 import { 
     Search, Loader2, UserX, Shield, User, CreditCard, 
-    Activity, Calendar, CheckCircle2, XCircle, Eye, Tag, Clock, Trash2
+    Activity, Calendar, CheckCircle2, XCircle, Eye, Tag, Clock, Trash2, Plus
 } from 'lucide-react';
 import AdminModal from '@/components/admin/AdminModal';
 import AdminConfirmModal from '@/components/admin/AdminConfirmModal';
 import '@/styles/admin/QuestionManagement.css';
+
+const ROLE_EXPLANATIONS: Record<string, string> = {
+    SUPER_ADMIN: 'Full system control. Access to user accounts, coupons, payments, pricing plans, and system settings.',
+    QUESTION_ADMIN: 'Access to question banks, model test papers, suggested answers, study notes, templates, and student sessions.',
+    COURSE_ADMIN: 'Access to qualifications, global levels, course progression, subjects, chapters, and topics.',
+    INSTITUTION_ADMIN: 'Access to local institution portal, batch assignments, and regional student profiles.',
+    INSTRUCTOR: 'Limited administrative access. Can manage classroom discussions, live lectures, and basic classroom helper tools.',
+};
 
 const AdminUserManager = () => {
     const [activeTab, setActiveTab] = useState<'users' | 'subscriptions' | 'payments' | 'payment_status'>('users');
@@ -30,10 +38,177 @@ const AdminUserManager = () => {
 
     const [grantAdminOpen, setGrantAdminOpen] = useState(false);
     const [grantAdminEmail, setGrantAdminEmail] = useState('');
+    const [grantAdminRole, setGrantAdminRole] = useState('SUPER_ADMIN');
+
+    const [editRoleUser, setEditRoleUser] = useState<any | null>(null);
+    const [selectedRole, setSelectedRole] = useState('SUPER_ADMIN');
 
     // Custom actions for suspend/activate and override password
     const [resetPasswordUser, setResetPasswordUser] = useState<any | null>(null);
     const [newPassword, setNewPassword] = useState('');
+
+    const [addSubOpen, setAddSubOpen] = useState(false);
+    const [subUserId, setSubUserId] = useState('');
+    const [subPlanId, setSubPlanId] = useState('');
+    const [subLevelId, setSubLevelId] = useState('');
+    const [subSubjectId, setSubSubjectId] = useState('');
+    const [subGroup, setSubGroup] = useState('');
+    const [subAttempt, setSubAttempt] = useState('');
+    const [subMonth, setSubMonth] = useState('');
+    const [subYear, setSubYear] = useState(new Date().getFullYear().toString());
+    const [subStartDate, setSubStartDate] = useState('');
+    const [subEndDate, setSubEndDate] = useState('');
+
+    const { data: levels = [] } = useQuery({
+        queryKey: ['admin-levels'],
+        queryFn: async () => (await api.get('/courses/levels/')).data
+    });
+
+    const { data: plans = [] } = useQuery({
+        queryKey: ['admin-plans'],
+        queryFn: async () => (await api.get('/subscriptions/plans/')).data
+    });
+
+    const handlePlanSelectChange = (planIdStr: string) => {
+        setSubPlanId(planIdStr);
+        if (!planIdStr) return;
+        const plan = plans.find((p: any) => p.id === parseInt(planIdStr));
+        if (plan) {
+            setSubLevelId(plan.level_specific ? plan.level_specific.toString() : '');
+            setSubSubjectId(plan.subject_specific ? plan.subject_specific.toString() : '');
+            setSubGroup(plan.scope === 'GROUP_WISE' ? 'GROUP_1' : '');
+
+            const now = new Date();
+            const startISO = now.toISOString().slice(0, 16);
+            const end = new Date(now.getTime() + (plan.duration_days || 30) * 24 * 60 * 60 * 1000);
+            const endISO = end.toISOString().slice(0, 16);
+
+            setSubStartDate(startISO);
+            setSubEndDate(endISO);
+            setSubAttempt('');
+        }
+    };
+    const getAdminSubExpiryDateStr = () => {
+        if (!subPlanId) return 'No Plan Selected';
+        const plan = plans.find((p: any) => p.id === parseInt(subPlanId));
+        if (!plan) return 'No Plan Selected';
+
+        const start = subStartDate ? new Date(subStartDate) : new Date();
+        const billingCycle = plan.billing_cycle;
+        const attempt = subAttempt;
+        const month = subMonth;
+        const yearVal = parseInt(subYear) || start.getFullYear();
+
+        const monthsMap: Record<string, number> = {
+            january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+            july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
+        };
+
+        let targetMonth: number | null = null;
+        if (billingCycle === 'ATTEMPT_WISE' && attempt) {
+            targetMonth = monthsMap[attempt.toLowerCase()];
+        } else if (month) {
+            targetMonth = monthsMap[month.toLowerCase()];
+        }
+
+        let end: Date;
+        if (targetMonth !== null && targetMonth !== undefined) {
+            end = new Date(yearVal, targetMonth + 1, 0, 23, 59, 59);
+            if (end < start) {
+                end = new Date(yearVal + 1, targetMonth + 1, 0, 23, 59, 59);
+            }
+            return end.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }) + ` (End of ${attempt || month} Attempt/Month)`;
+        } else {
+            const duration = plan.duration_days || 30;
+            end = new Date(start.getTime() + duration * 24 * 60 * 60 * 1000);
+            return end.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }) + ` (${duration} Days Duration)`;
+        }
+    };
+
+    useEffect(() => {
+        if (!subPlanId) return;
+        const plan = plans.find((p: any) => p.id === parseInt(subPlanId));
+        if (!plan) return;
+
+        const start = subStartDate ? new Date(subStartDate) : new Date();
+        const billingCycle = plan.billing_cycle;
+        const attempt = subAttempt;
+        const month = subMonth;
+        const yearVal = parseInt(subYear) || start.getFullYear();
+
+        const monthsMap: Record<string, number> = {
+            january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+            july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
+        };
+
+        let targetMonth: number | null = null;
+        if (billingCycle === 'ATTEMPT_WISE' && attempt) {
+            targetMonth = monthsMap[attempt.toLowerCase()];
+        } else if (month) {
+            targetMonth = monthsMap[month.toLowerCase()];
+        }
+
+        let end: Date;
+        if (targetMonth !== null && targetMonth !== undefined) {
+            end = new Date(yearVal, targetMonth + 1, 0, 23, 59, 59);
+            if (end < start) {
+                end = new Date(yearVal + 1, targetMonth + 1, 0, 23, 59, 59);
+            }
+        } else {
+            const duration = plan.duration_days || 30;
+            end = new Date(start.getTime() + duration * 24 * 60 * 60 * 1000);
+        }
+
+        const localISO = new Date(end.getTime() - end.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        setSubEndDate(localISO);
+    }, [subPlanId, subStartDate, subAttempt, subMonth, subYear, plans]);
+
+
+    const handleAddSubSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!subUserId || !subPlanId) {
+            alert('Student user and subscription plan are required.');
+            return;
+        }
+        setIsActionPending(true);
+        try {
+            const payload: any = {
+                user: parseInt(subUserId),
+                plan_id: parseInt(subPlanId),
+                level_id: subLevelId ? parseInt(subLevelId) : null,
+                subject_id: subSubjectId ? parseInt(subSubjectId) : null,
+                group: subGroup || null,
+                exam_attempt: subAttempt || null,
+                calendar_month: subMonth || null,
+                year: subYear ? parseInt(subYear) : null,
+            };
+            if (subStartDate) {
+                payload.start_date = new Date(subStartDate).toISOString();
+            }
+            if (subEndDate) {
+                payload.end_date = new Date(subEndDate).toISOString();
+            }
+            await api.post('/subscriptions/my-subscriptions/', payload);
+            queryClient.invalidateQueries({ queryKey: ['admin-subscriptions'] });
+            queryClient.invalidateQueries({ queryKey: ['admin-payments'] });
+            setAddSubOpen(false);
+            setSubUserId('');
+            setSubPlanId('');
+            setSubLevelId('');
+            setSubSubjectId('');
+            setSubGroup('');
+            setSubAttempt('');
+            setSubMonth('');
+            setSubYear(new Date().getFullYear().toString());
+            setSubStartDate('');
+            setSubEndDate('');
+            alert('Subscription assigned successfully.');
+        } catch (err: any) {
+            alert(err.response?.data?.error || err.response?.data?.detail || 'Failed to assign subscription.');
+        } finally {
+            setIsActionPending(false);
+        }
+    };
 
     const handleToggleUserActive = async (user: any) => {
         setIsActionPending(true);
@@ -93,6 +268,8 @@ const AdminUserManager = () => {
         queryFn: async () => (await api.get('/courses/subjects/')).data
     });
 
+
+
     const toggleStaffMutation = useMutation({
         mutationFn: ({ id, is_staff }: { id: number; is_staff: boolean }) =>
             api.patch(`/auth/users/${id}/`, { is_staff }),
@@ -111,15 +288,30 @@ const AdminUserManager = () => {
     });
 
     const grantAdminMutation = useMutation({
-        mutationFn: (email: string) => api.post('/auth/users/grant-admin/', { email }),
+        mutationFn: ({ email, role }: { email: string; role: string }) => 
+            api.post('/auth/users/grant-admin/', { email, role }),
         onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ['admin-users'] });
             setGrantAdminOpen(false);
             setGrantAdminEmail('');
+            setGrantAdminRole('SUPER_ADMIN');
             alert(data.data.message || 'Admin privileges granted successfully.');
         },
         onError: (err: any) => {
             alert(err.response?.data?.error || 'Failed to grant admin privileges.');
+        }
+    });
+
+    const updateRoleMutation = useMutation({
+        mutationFn: ({ id, role }: { id: number; role: string }) =>
+            api.patch(`/auth/users/${id}/`, { role }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+            setEditRoleUser(null);
+            alert('User role updated successfully.');
+        },
+        onError: (err: any) => {
+            alert(err.response?.data?.error || 'Failed to update user role.');
         }
     });
 
@@ -320,6 +512,16 @@ const AdminUserManager = () => {
                         </button>
                     )}
 
+                    {activeTab === 'subscriptions' && (
+                        <button
+                            onClick={() => setAddSubOpen(true)}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm w-full md:w-auto justify-center"
+                        >
+                            <Plus size={14} />
+                            <span>Add Subscription</span>
+                        </button>
+                    )}
+
                     {activeTab === 'payment_status' && (
                         <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
                             <div className="flex items-center gap-2">
@@ -403,9 +605,31 @@ const AdminUserManager = () => {
                                             <td className="p-4 text-sm font-semibold text-slate-500">{u.mobile_number || '—'}</td>
                                             <td className="p-4">
                                                 {u.is_staff ? (
-                                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 uppercase">
-                                                        <Shield size={12} /> Admin
-                                                    </span>
+                                                    u.role === 'SUPER_ADMIN' ? (
+                                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 uppercase">
+                                                            <Shield size={12} /> Full Admin
+                                                        </span>
+                                                    ) : u.role === 'QUESTION_ADMIN' ? (
+                                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-100 uppercase">
+                                                            <Shield size={12} /> Question Admin
+                                                        </span>
+                                                    ) : u.role === 'COURSE_ADMIN' ? (
+                                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase">
+                                                            <Shield size={12} /> Course Admin
+                                                        </span>
+                                                    ) : u.role === 'INSTITUTION_ADMIN' ? (
+                                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100 uppercase">
+                                                            <Shield size={12} /> Inst Admin
+                                                        </span>
+                                                    ) : u.role === 'INSTRUCTOR' ? (
+                                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-100 uppercase">
+                                                            <Shield size={12} /> Instructor
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 uppercase">
+                                                            <Shield size={12} /> Admin
+                                                        </span>
+                                                    )
                                                 ) : (
                                                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-50 text-slate-500 border border-slate-100 uppercase">
                                                         <User size={12} /> Student
@@ -441,6 +665,18 @@ const AdminUserManager = () => {
                                                     >
                                                         {u.is_active ? 'Suspend' : 'Activate'}
                                                     </button>
+                                                    {u.is_staff && (
+                                                        <button
+                                                            onClick={() => {
+                                                                setEditRoleUser(u);
+                                                                setSelectedRole(u.role || 'SUPER_ADMIN');
+                                                            }}
+                                                            className="px-2.5 py-1.5 rounded-lg border border-purple-200 text-purple-600 text-xs font-bold hover:bg-purple-50"
+                                                            title="Change Admin Role"
+                                                        >
+                                                            Edit Role
+                                                        </button>
+                                                    )}
                                                     <button
                                                         className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-all ${u.is_staff ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-blue-200 text-blue-600 hover:bg-blue-50'}`}
                                                         title={u.is_staff ? 'Remove Admin privileges' : 'Grant Admin privileges'}
@@ -516,9 +752,16 @@ const AdminUserManager = () => {
                                             <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
                                                 <td className="p-4 text-sm font-bold text-slate-800">{maskEmail(s.user_email) || `User #${s.user}`}</td>
                                                 <td className="p-4 text-sm font-semibold text-slate-700">
-                                                    <span className="px-2.5 py-1 rounded bg-indigo-50 text-indigo-700 font-bold border border-indigo-100 text-xs">
-                                                        {s.plan_name || `Plan #${s.plan}`}
-                                                    </span>
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className="px-2.5 py-1 rounded bg-indigo-50 text-indigo-700 font-bold border border-indigo-100 text-xs w-fit">
+                                                            {s.plan_name || `Plan #${s.plan}`}
+                                                        </span>
+                                                        {s.plan_duration && (
+                                                            <span className="text-[10px] text-slate-400 font-semibold">
+                                                                Duration: {s.plan_billing_cycle === 'ATTEMPT_WISE' ? Math.max(1, Math.ceil((new Date(s.end_date).getTime() - new Date(s.start_date).getTime()) / (1000 * 60 * 60 * 24))) : s.plan_duration} Days
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td className="p-4 text-sm font-semibold text-slate-500">
                                                     <span className="flex items-center gap-1.5"><Calendar size={13} /> {formatDate(s.start_date)}</span>
@@ -527,15 +770,22 @@ const AdminUserManager = () => {
                                                     <span className="flex items-center gap-1.5"><Calendar size={13} /> {formatDate(s.end_date)}</span>
                                                 </td>
                                                 <td className="p-4">
-                                                    {isActive ? (
-                                                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-green-50 text-green-700 border border-green-200">
-                                                            Active
-                                                        </span>
-                                                    ) : (
-                                                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-red-50 text-red-700 border border-red-200">
-                                                            Expired / Inactive
-                                                        </span>
-                                                    )}
+                                                    <div className="flex flex-col gap-1">
+                                                        {isActive ? (
+                                                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-green-50 text-green-700 border border-green-200 w-fit">
+                                                                Active
+                                                             </span>
+                                                        ) : (
+                                                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-red-50 text-red-700 border border-red-200 w-fit">
+                                                                Expired / Inactive
+                                                            </span>
+                                                        )}
+                                                        {isActive && typeof s.days_remaining === 'number' && (
+                                                            <span className="text-[10px] text-slate-400 font-semibold">
+                                                                {s.days_remaining} days left
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td className="p-4 text-right">
                                                     <div className="flex justify-end items-center gap-2">
@@ -1010,7 +1260,7 @@ const AdminUserManager = () => {
                         id="grant-admin-form" 
                         onSubmit={(e) => {
                             e.preventDefault();
-                            grantAdminMutation.mutate(grantAdminEmail);
+                            grantAdminMutation.mutate({ email: grantAdminEmail, role: grantAdminRole });
                         }} 
                         className="space-y-4"
                     >
@@ -1019,7 +1269,7 @@ const AdminUserManager = () => {
                             <div>
                                 <h4 className="text-xs font-black text-slate-800 uppercase">Administrator Role</h4>
                                 <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
-                                    Promoting the selected registered user to full Administrator status.
+                                    Promoting the selected registered user to an administrative role with specific permissions.
                                 </p>
                             </div>
                         </div>
@@ -1035,6 +1285,29 @@ const AdminUserManager = () => {
                                 onChange={(e) => setGrantAdminEmail(e.target.value)}
                             />
                             <p className="text-[10px] text-slate-400 font-semibold">The user must already be registered on the platform to be promoted to administrator.</p>
+                        </div>
+
+                        <div className="form-group space-y-1">
+                            <label className="text-xs font-bold text-slate-700">Access Level / Role</label>
+                            <select
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-100 font-bold text-sm bg-white"
+                                value={grantAdminRole}
+                                onChange={(e) => setGrantAdminRole(e.target.value)}
+                            >
+                                <option value="SUPER_ADMIN">Full Administrator (Super Admin)</option>
+                                <option value="QUESTION_ADMIN">Question Paper Admin</option>
+                                <option value="COURSE_ADMIN">Course & Subject Admin</option>
+                                <option value="INSTITUTION_ADMIN">Institution Admin</option>
+                                <option value="INSTRUCTOR">Instructor</option>
+                            </select>
+                            <p className="text-[10px] text-slate-400 font-semibold">Select the appropriate permissions tier for this staff member.</p>
+
+                            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl mt-3">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Permissions Summary</span>
+                                <p className="text-xs text-slate-600 font-semibold leading-relaxed">
+                                    {ROLE_EXPLANATIONS[grantAdminRole] || 'No summary available.'}
+                                </p>
+                            </div>
                         </div>
                     </form>
                 </AdminModal>
@@ -1090,6 +1363,261 @@ const AdminUserManager = () => {
                                 onChange={(e) => setNewPassword(e.target.value)}
                             />
                         </div>
+                    </form>
+                </AdminModal>
+            )}
+
+            {/* Edit Admin Role Modal */}
+            {editRoleUser && (
+                <AdminModal
+                    open={!!editRoleUser}
+                    onClose={() => { setEditRoleUser(null); setSelectedRole('SUPER_ADMIN'); }}
+                    title="Change Administrator Role"
+                    footer={
+                        <div className="flex gap-2 justify-end w-full">
+                            <button
+                                type="button"
+                                className="secondary-btn text-xs font-bold"
+                                onClick={() => { setEditRoleUser(null); setSelectedRole('SUPER_ADMIN'); }}
+                                disabled={updateRoleMutation.isPending}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                form="edit-role-form"
+                                className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all disabled:opacity-50"
+                                disabled={updateRoleMutation.isPending}
+                            >
+                                {updateRoleMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : 'Update Role'}
+                            </button>
+                        </div>
+                    }
+                >
+                    <form 
+                        id="edit-role-form" 
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            updateRoleMutation.mutate({ id: editRoleUser.id, role: selectedRole });
+                        }} 
+                        className="space-y-4"
+                    >
+                        <div className="p-4 bg-purple-50/50 border border-purple-100 rounded-2xl flex items-center gap-3">
+                            <Shield className="text-purple-600 shrink-0" size={24} />
+                            <div>
+                                <h4 className="text-xs font-black text-slate-800 uppercase">Change Access Level</h4>
+                                <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                                    Updating administrative role for: <strong>{editRoleUser.email}</strong>
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="form-group space-y-1">
+                            <label className="text-xs font-bold text-slate-700">Access Level / Role</label>
+                            <select
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-purple-100 font-bold text-sm bg-white"
+                                value={selectedRole}
+                                onChange={(e) => setSelectedRole(e.target.value)}
+                            >
+                                <option value="SUPER_ADMIN">Full Administrator (Super Admin)</option>
+                                <option value="QUESTION_ADMIN">Question Paper Admin</option>
+                                <option value="COURSE_ADMIN">Course & Subject Admin</option>
+                                <option value="INSTITUTION_ADMIN">Institution Admin</option>
+                                <option value="INSTRUCTOR">Instructor</option>
+                            </select>
+
+                            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl mt-3">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Permissions Summary</span>
+                                <p className="text-xs text-slate-600 font-semibold leading-relaxed">
+                                    {ROLE_EXPLANATIONS[selectedRole] || 'No summary available.'}
+                                </p>
+                            </div>
+                        </div>
+                    </form>
+                </AdminModal>
+            )}
+
+            {/* Manual Subscription Modal */}
+            {addSubOpen && (
+                <AdminModal
+                    open={addSubOpen}
+                    onClose={() => setAddSubOpen(false)}
+                    title="Assign Manual Subscription"
+                    footer={
+                        <div className="flex gap-2 justify-end w-full">
+                            <button
+                                type="button"
+                                className="secondary-btn text-xs font-bold"
+                                onClick={() => setAddSubOpen(false)}
+                                disabled={isActionPending}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                form="add-subscription-form"
+                                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all disabled:opacity-50"
+                                disabled={isActionPending}
+                            >
+                                {isActionPending ? <Loader2 size={12} className="animate-spin" /> : 'Assign Plan'}
+                            </button>
+                        </div>
+                    }
+                >
+                    <form id="add-subscription-form" onSubmit={handleAddSubSubmit} className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+                        <div className="form-group space-y-1">
+                            <label className="text-xs font-bold text-slate-700">Select Student</label>
+                            <select
+                                required
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-100 font-bold text-sm bg-white"
+                                value={subUserId}
+                                onChange={(e) => setSubUserId(e.target.value)}
+                            >
+                                <option value="">-- Choose Student --</option>
+                                {users.filter((u: any) => !u.is_staff && !u.is_superuser).map((u: any) => (
+                                    <option key={u.id} value={u.id}>
+                                        {u.email} ({u.first_name || 'No Name'})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="form-group space-y-1">
+                            <label className="text-xs font-bold text-slate-700">Select Subscription Plan</label>
+                            <select
+                                required
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-100 font-bold text-sm bg-white"
+                                value={subPlanId}
+                                onChange={(e) => handlePlanSelectChange(e.target.value)}
+                            >
+                                <option value="">-- Choose Plan --</option>
+                                {plans.map((p: any) => (
+                                    <option key={p.id} value={p.id}>
+                                        {p.name} - ₹{p.price} {p.billing_cycle === 'ATTEMPT_WISE' ? '(Attempt Wise)' : `(${p.duration_days} days)`}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="form-group space-y-1">
+                                <label className="text-xs font-bold text-slate-700">Target Level</label>
+                                <select
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-100 font-bold text-sm bg-white"
+                                    value={subLevelId}
+                                    onChange={(e) => setSubLevelId(e.target.value)}
+                                >
+                                    <option value="">-- All Levels --</option>
+                                    {levels.map((l: any) => (
+                                        <option key={l.id} value={l.id}>{l.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="form-group space-y-1">
+                                <label className="text-xs font-bold text-slate-700">Target Subject</label>
+                                <select
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-100 font-bold text-sm bg-white"
+                                    value={subSubjectId}
+                                    onChange={(e) => setSubSubjectId(e.target.value)}
+                                >
+                                    <option value="">-- All Subjects --</option>
+                                    {subjects.filter((s: any) => !subLevelId || s.level === parseInt(subLevelId)).map((s: any) => (
+                                        <option key={s.id} value={s.id}>{s.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="form-group space-y-1">
+                                <label className="text-xs font-bold text-slate-700">Group Override</label>
+                                <select
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-100 font-bold text-sm bg-white"
+                                    value={subGroup}
+                                    onChange={(e) => setSubGroup(e.target.value)}
+                                >
+                                    <option value="">-- None --</option>
+                                    <option value="GROUP_1">Group 1</option>
+                                    <option value="GROUP_2">Group 2</option>
+                                    <option value="ALL">All Groups</option>
+                                </select>
+                            </div>
+
+                            <div className="form-group space-y-1">
+                                <label className="text-xs font-bold text-slate-700">Attempt Month Override</label>
+                                <select
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-100 font-bold text-sm bg-white"
+                                    value={subAttempt}
+                                    onChange={(e) => setSubAttempt(e.target.value)}
+                                >
+                                    <option value="">-- None --</option>
+                                    {['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'].map(m => (
+                                        <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="form-group space-y-1">
+                                <label className="text-xs font-bold text-slate-700">Calendar Month</label>
+                                <select
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-100 font-bold text-sm bg-white"
+                                    value={subMonth}
+                                    onChange={(e) => setSubMonth(e.target.value)}
+                                >
+                                    <option value="">-- None --</option>
+                                    {['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'].map(m => (
+                                        <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="form-group space-y-1">
+                                <label className="text-xs font-bold text-slate-700">Year</label>
+                                <input
+                                    type="number"
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-100 font-bold text-sm bg-white"
+                                    value={subYear}
+                                    onChange={(e) => setSubYear(e.target.value)}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="form-group space-y-1">
+                                <label className="text-xs font-bold text-slate-700">Custom Start Date</label>
+                                <input
+                                    type="datetime-local"
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-100 font-bold text-sm bg-white"
+                                    value={subStartDate}
+                                    onChange={(e) => setSubStartDate(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="form-group space-y-1">
+                                <label className="text-xs font-bold text-slate-700">Custom End Date</label>
+                                <input
+                                    type="datetime-local"
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-100 font-bold text-sm bg-white"
+                                    value={subEndDate}
+                                    onChange={(e) => setSubEndDate(e.target.value)}
+                                />
+                            </div>
+                        </div>
+
+                        {subPlanId && (
+                            <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl space-y-1.5 text-left">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700 block">Computed Plan Expiry</span>
+                                <div className="text-sm font-black text-indigo-900">
+                                    {getAdminSubExpiryDateStr()}
+                                </div>
+                                <p className="text-[10px] text-indigo-500 font-semibold leading-relaxed">
+                                    This date dynamically calculates standard duration or rollover rules. You can manually adjust the "Custom End Date" input above if needed.
+                                </p>
+                            </div>
+                        )}
                     </form>
                 </AdminModal>
             )}

@@ -18,7 +18,7 @@ from reportlab.lib import colors
 
 from subscriptions.models import SubscriptionPlan, UserSubscription, Payment, Coupon, PlatformSetting, SubscriptionAuditLog
 from subscriptions.serializers import SubscriptionPlanSerializer, UserSubscriptionSerializer, PaymentSerializer, CouponSerializer, PlatformSettingSerializer, SubscriptionAuditLogSerializer
-from authentication.permissions import IsSuperUser
+from authentication.permissions import IsSuperUser, IsStaffOrAdmin
 from django.db.models import Sum, Count
 from django.db.models.functions import TruncMonth
 
@@ -43,7 +43,7 @@ class SubscriptionPlanViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+            return [permissions.IsAuthenticated(), IsStaffOrAdmin()]
         return [permissions.AllowAny()]
 
 class CouponViewSet(viewsets.ModelViewSet):
@@ -117,13 +117,22 @@ class UserSubscriptionViewSet(viewsets.ModelViewSet):
         except SubscriptionPlan.DoesNotExist:
             return Response({'error': 'Plan not found'}, status=404)
 
+        # Allow staff to manually select target student user
+        target_user = request.user
+        is_admin = request.user and (request.user.is_staff or request.user.is_superuser)
+        if is_admin and request.data.get('user'):
+            try:
+                target_user = User.objects.get(id=request.data.get('user'))
+            except User.DoesNotExist:
+                return Response({'error': 'Target student user not found'}, status=404)
+
         # 1. Coupon validation if coupon_code is provided
         discount_percent = 0
         discount_amount = 0.0
         if coupon_code:
             try:
                 coupon = Coupon.objects.get(code__iexact=coupon_code.strip(), is_active=True)
-                if coupon.restricted_email and coupon.restricted_email.strip().lower() != request.user.email.strip().lower():
+                if coupon.restricted_email and coupon.restricted_email.strip().lower() != target_user.email.strip().lower():
                     return Response({'error': 'This coupon code is restricted to a different email address.'}, status=400)
                 if coupon.restricted_course_id and plan.course_specific_id != coupon.restricted_course_id:
                     return Response({'error': f'This coupon is only valid for subscriptions in the course "{coupon.restricted_course.name}".'}, status=400)
@@ -132,49 +141,80 @@ class UserSubscriptionViewSet(viewsets.ModelViewSet):
             except Coupon.DoesNotExist:
                 return Response({'error': 'Invalid or inactive coupon'}, status=400)
 
-        # 2. Block duplicate active subscription
-        existing_active = UserSubscription.objects.filter(
-            user=request.user,
-            plan=plan,
-            is_active=True,
-            end_date__gt=timezone.now()
-        )
-        if level_id:
-            existing_active = existing_active.filter(level_id=level_id)
-        if subject_id:
-            existing_active = existing_active.filter(subject_id=subject_id)
-        elif group:
-            existing_active = existing_active.filter(group=group)
+        # 2. Block duplicate active subscription (skip for manual admin overrides)
+        if not is_admin:
+            existing_active = UserSubscription.objects.filter(
+                user=target_user,
+                plan=plan,
+                is_active=True,
+                end_date__gt=timezone.now()
+            )
+            if level_id:
+                existing_active = existing_active.filter(level_id=level_id)
+            if subject_id:
+                existing_active = existing_active.filter(subject_id=subject_id)
+            elif group:
+                existing_active = existing_active.filter(group=group)
 
-        if existing_active.exists():
-            return Response({'error': 'You already have an active subscription for this target plan.'}, status=400)
+            if existing_active.exists():
+                return Response({'error': 'You already have an active subscription for this target plan.'}, status=400)
 
         # 3. Calculate start and end date
+        from django.utils.dateparse import parse_datetime
+        
         start_date = timezone.now()
-        end_date = start_date + timedelta(days=plan.duration_days)
-        year_val = int(year) if year else start_date.year
+        if is_admin and request.data.get('start_date'):
+            parsed_start = parse_datetime(request.data.get('start_date'))
+            if parsed_start:
+                start_date = parsed_start
 
-        months_map = {
-            'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6,
-            'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12,
-            'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
-            'jul': 7, 'aug': 8, 'sep': 9, 'sept': 9, 'oct': 10, 'nov': 11, 'dec': 12
-        }
+        # Calculate end_date based on fixed_expiry_date, attempt, calendar month, or duration
+        custom_end = request.data.get('end_date')
+        if custom_end:
+            parsed_end = parse_datetime(custom_end)
+            if parsed_end:
+                end_date = parsed_end
+        elif plan.fixed_expiry_date:
+            end_date = plan.fixed_expiry_date
+        else:
+            end_date = start_date + timedelta(days=plan.duration_days)
+            year_val = int(year) if year else start_date.year
 
-        if plan.billing_cycle == 'ATTEMPT_WISE' and exam_attempt:
-            attempt_name = exam_attempt.strip().lower()
-            if attempt_name in months_map:
-                month_num = months_map[attempt_name]
+            months_map = {
+                'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6,
+                'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12,
+                'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+                'jul': 7, 'aug': 8, 'sep': 9, 'sept': 9, 'oct': 10, 'nov': 11, 'dec': 12
+            }
+
+            # Calculate end_date based on attempt or calendar month if no end_date is provided
+            target_month_name = None
+            if plan.billing_cycle == 'ATTEMPT_WISE' and exam_attempt:
+                target_month_name = exam_attempt.strip().lower()
+            elif plan.billing_cycle == 'ATTEMPT_WISE' and calendar_month:
+                target_month_name = calendar_month.strip().lower()
+
+            if target_month_name and target_month_name in months_map:
+                from calendar import monthrange
+                from datetime import datetime
+                from django.utils import timezone as dj_timezone
+                month_num = months_map[target_month_name]
                 last_day = monthrange(year_val, month_num)[1]
-                end_date = datetime(year_val, month_num, last_day, 23, 59, 59, tzinfo=timezone.get_current_timezone())
+                end_date = dj_timezone.make_aware(
+                    datetime(year_val, month_num, last_day, 23, 59, 59),
+                    dj_timezone.get_current_timezone()
+                )
                 if end_date <= start_date:
                     year_val += 1
                     last_day = monthrange(year_val, month_num)[1]
-                    end_date = datetime(year_val, month_num, last_day, 23, 59, 59, tzinfo=timezone.get_current_timezone())
+                    end_date = dj_timezone.make_aware(
+                        datetime(year_val, month_num, last_day, 23, 59, 59),
+                        dj_timezone.get_current_timezone()
+                    )
 
         # Create subscription
         subscription = UserSubscription.objects.create(
-            user=request.user,
+            user=target_user,
             plan=plan,
             start_date=start_date,
             end_date=end_date,
@@ -192,8 +232,8 @@ class UserSubscriptionViewSet(viewsets.ModelViewSet):
         gst_amount = round(subtotal * 0.18, 2) if is_gst_enabled() else 0.0
         total_amount = round(subtotal + gst_amount, 2)
 
-        Payment.objects.create(
-            user=request.user,
+        payment = Payment.objects.create(
+            user=target_user,
             plan=plan,
             subscription=subscription,
             amount=total_amount,
@@ -205,6 +245,18 @@ class UserSubscriptionViewSet(viewsets.ModelViewSet):
             discount_amount=discount_amount,
             original_amount=plan.price
         )
+
+        # Log manual assignment audit event
+        if is_admin:
+            SubscriptionAuditLog.objects.create(
+                subscription=subscription,
+                payment=payment,
+                actor=request.user,
+                action='CREATE',
+                notes=f"Manually assigned plan '{plan.name}' to user {target_user.email}.",
+                new_end_date=end_date,
+                new_status=True
+            )
 
         serializer = self.get_serializer(subscription)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -547,6 +599,207 @@ class PaymentViewSet(viewsets.ModelViewSet):
             return Payment.objects.all().order_by('-created_at')
         return Payment.objects.filter(user=self.request.user).order_by('-created_at')
 
+    @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def download_invoice(self, request, pk=None):
+        try:
+            payment = Payment.objects.get(pk=pk)
+        except Payment.DoesNotExist:
+            return Response({'error': 'Payment record not found'}, status=404)
+
+        if not request.user.is_superuser and payment.user != request.user:
+            return Response({'error': 'Permission denied'}, status=403)
+
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="invoice_{payment.transaction_id}.pdf"'
+
+        doc = SimpleDocTemplate(response, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+        story = []
+        styles = getSampleStyleSheet()
+
+        title_style = ParagraphStyle(
+            'InvoiceTitle', parent=styles['Heading1'], fontName='Helvetica-Bold',
+            fontSize=24, textColor=colors.HexColor('#1E293B'), spaceAfter=15
+        )
+        h2_style = ParagraphStyle(
+            'Heading2', parent=styles['Heading2'], fontName='Helvetica-Bold',
+            fontSize=14, textColor=colors.HexColor('#475569'), spaceAfter=10
+        )
+        body_style = ParagraphStyle(
+            'InvoiceBody', parent=styles['Normal'], fontName='Helvetica',
+            fontSize=10, textColor=colors.HexColor('#334155'), leading=14
+        )
+        body_bold = ParagraphStyle('InvoiceBodyBold', parent=body_style, fontName='Helvetica-Bold')
+
+        logo_path = os.path.join(settings.BASE_DIR, '../frontend/public/logo-light.png')
+        logo_img = None
+        if os.path.exists(logo_path):
+            try:
+                logo_img = Image(logo_path, width=103.3, height=30)
+            except Exception as e:
+                print(f"Error loading logo in invoice: {e}")
+
+        if logo_img:
+            header_title_style = ParagraphStyle(
+                'InvoiceHeaderTitle', parent=styles['Heading1'], fontName='Helvetica-Bold',
+                fontSize=20, textColor=colors.HexColor('#1E293B'), alignment=2
+            )
+            header_data = [[logo_img, Paragraph("TAX INVOICE", header_title_style)]]
+            header_table = Table(header_data, colWidths=[200, 320])
+            header_table.setStyle(TableStyle([
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('ALIGN', (1,0), (1,0), 'RIGHT'),
+                ('PADDING', (0,0), (-1,-1), 0),
+            ]))
+            story.append(header_table)
+        else:
+            story.append(Paragraph("QUBOOK TAX INVOICE", title_style))
+        story.append(Spacer(1, 15))
+
+        billing_info = [[
+            Paragraph("<b>Provider:</b><br/>Qubook.in Learning Platform<br/>GSTIN: 27AAAAA1111A1Z1<br/>Support: support@qubook.in", body_style),
+            Paragraph(f"<b>Invoice To:</b><br/>{payment.user.first_name} {payment.user.last_name}<br/>Email: {payment.user.email}<br/>Date: {payment.created_at.strftime('%d-%m-%Y %H:%M')}", body_style)
+        ]]
+        t1 = Table(billing_info, colWidths=[260, 260])
+        t1.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('PADDING', (0,0), (-1,-1), 0)]))
+        story.append(t1)
+        story.append(Spacer(1, 20))
+        story.append(Paragraph("Transaction Summary", h2_style))
+        story.append(Spacer(1, 5))
+
+        if payment.gst_amount > 0:
+            headers = [
+                Paragraph("<b>Description</b>", body_bold), Paragraph("<b>Original Price</b>", body_bold),
+                Paragraph("<b>Discount</b>", body_bold), Paragraph("<b>Base Price</b>", body_bold),
+                Paragraph("<b>GST (18%)</b>", body_bold), Paragraph("<b>Total Paid</b>", body_bold)
+            ]
+            row1 = [
+                Paragraph(f"Subscription: {payment.plan.name if payment.plan else 'Premium Access'}", body_style),
+                Paragraph(f"INR {payment.original_amount}", body_style),
+                Paragraph(f"INR {payment.discount_amount}", body_style),
+                Paragraph(f"INR {payment.base_amount}", body_style),
+                Paragraph(f"INR {payment.gst_amount}", body_style),
+                Paragraph(f"INR {payment.amount}", body_bold)
+            ]
+            t2 = Table([headers, row1], colWidths=[150, 75, 65, 75, 75, 80])
+        else:
+            headers = [
+                Paragraph("<b>Description</b>", body_bold), Paragraph("<b>Original Price</b>", body_bold),
+                Paragraph("<b>Discount</b>", body_bold), Paragraph("<b>Total Paid</b>", body_bold)
+            ]
+            row1 = [
+                Paragraph(f"Subscription: {payment.plan.name if payment.plan else 'Premium Access'}", body_style),
+                Paragraph(f"INR {payment.original_amount}", body_style),
+                Paragraph(f"INR {payment.discount_amount}", body_style),
+                Paragraph(f"INR {payment.amount}", body_bold)
+            ]
+            t2 = Table([headers, row1], colWidths=[220, 100, 100, 100])
+
+        t2.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F1F5F9')),
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('PADDING', (0,0), (-1,-1), 8), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
+        ]))
+        story.append(t2)
+        story.append(Spacer(1, 40))
+        story.append(Paragraph("Thank you for learning with Qubook! This is an electronically generated tax invoice. No signature required.", body_style))
+        doc.build(story)
+        return response
+
+    @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def download_receipt(self, request, pk=None):
+        try:
+            payment = Payment.objects.get(pk=pk)
+        except Payment.DoesNotExist:
+            return Response({'error': 'Payment record not found'}, status=404)
+
+        if not request.user.is_superuser and payment.user != request.user:
+            return Response({'error': 'Permission denied'}, status=403)
+
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="receipt_{payment.transaction_id}.pdf"'
+
+        doc = SimpleDocTemplate(response, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+        story = []
+        styles = getSampleStyleSheet()
+
+        body_style = ParagraphStyle(
+            'ReceiptBody', parent=styles['Normal'], fontName='Helvetica',
+            fontSize=10, textColor=colors.HexColor('#334155'), leading=14
+        )
+        body_bold = ParagraphStyle('ReceiptBodyBold', parent=body_style, fontName='Helvetica-Bold')
+        h2_style = ParagraphStyle(
+            'ReceiptH2', parent=styles['Heading2'], fontName='Helvetica-Bold',
+            fontSize=14, textColor=colors.HexColor('#0F766E'), spaceAfter=10
+        )
+        title_style = ParagraphStyle(
+            'ReceiptTitle', parent=styles['Heading1'], fontName='Helvetica-Bold',
+            fontSize=24, textColor=colors.HexColor('#0F766E'), spaceAfter=15
+        )
+
+        logo_path = os.path.join(settings.BASE_DIR, '../frontend/public/logo-light.png')
+        logo_img = None
+        if os.path.exists(logo_path):
+            try:
+                logo_img = Image(logo_path, width=103.3, height=30)
+            except Exception as e:
+                print(f"Error loading logo in receipt: {e}")
+
+        if logo_img:
+            header_title_style = ParagraphStyle(
+                'ReceiptHeaderTitle', parent=styles['Heading1'], fontName='Helvetica-Bold',
+                fontSize=20, textColor=colors.HexColor('#0F766E'), alignment=2
+            )
+            header_data = [[logo_img, Paragraph("PAYMENT RECEIPT", header_title_style)]]
+            header_table = Table(header_data, colWidths=[200, 320])
+            header_table.setStyle(TableStyle([
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('ALIGN', (1,0), (1,0), 'RIGHT'),
+                ('PADDING', (0,0), (-1,-1), 0),
+            ]))
+            story.append(header_table)
+        else:
+            story.append(Paragraph("QUBOOK PAYMENT RECEIPT", title_style))
+        story.append(Spacer(1, 15))
+
+        receipt_info = [[
+            Paragraph("<b>Qubook.in Learning</b><br/>Support: support@qubook.in", body_style),
+            Paragraph(f"<b>Receipt No:</b> REC-{payment.id}<br/><b>Order ID:</b> {payment.order_id or '-'}<br/><b>Transaction ID:</b> {payment.transaction_id or '-'}<br/><b>Payment Date:</b> {payment.created_at.strftime('%d-%m-%Y %H:%M')}", body_style)
+        ]]
+        t1 = Table(receipt_info, colWidths=[260, 260])
+        t1.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('PADDING', (0,0), (-1,-1), 0)]))
+        story.append(t1)
+        story.append(Spacer(1, 20))
+        story.append(Paragraph("Payment Details", h2_style))
+        story.append(Spacer(1, 5))
+
+        headers = [
+            Paragraph("<b>Plan Name</b>", body_bold), Paragraph("<b>Paid By</b>", body_bold),
+            Paragraph("<b>Duration</b>", body_bold), Paragraph("<b>Expiry Date</b>", body_bold),
+            Paragraph("<b>Amount Paid</b>", body_bold)
+        ]
+        duration_desc = f"{payment.plan.duration_days} Days" if payment.plan else "-"
+        if payment.subscription and payment.subscription.plan.billing_cycle == 'ATTEMPT_WISE':
+            duration_desc = "Attempt-Based"
+        expiry_desc = payment.subscription.end_date.strftime('%d-%m-%Y') if payment.subscription else '-'
+        row1 = [
+            Paragraph(f"{payment.plan.name if payment.plan else 'Premium Access'}", body_style),
+            Paragraph(f"{payment.user.first_name} {payment.user.last_name}<br/>({payment.user.email})", body_style),
+            Paragraph(duration_desc, body_style),
+            Paragraph(expiry_desc, body_style),
+            Paragraph(f"INR {payment.amount}", body_bold)
+        ]
+        t2 = Table([headers, row1], colWidths=[130, 150, 80, 80, 80])
+        t2.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F1F5F9')),
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('PADDING', (0,0), (-1,-1), 8), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
+        ]))
+        story.append(t2)
+        story.append(Spacer(1, 40))
+        story.append(Paragraph("Thank you for your payment! Your subscription is active. This is a computer-generated payment receipt.", body_style))
+        doc.build(story)
+        return response
+
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated, IsSuperUser])
     def revenue_report(self, request):
         """Admin revenue analytics report."""
@@ -712,6 +965,13 @@ class PaymentViewSet(viewsets.ModelViewSet):
         except SubscriptionPlan.DoesNotExist:
             return Response({'error': 'Plan not found'}, status=404)
 
+        # Check purchase dates if configured
+        now = timezone.now()
+        if plan.purchase_start_date and now < plan.purchase_start_date:
+            return Response({'error': f'Purchase for this plan opens on {plan.purchase_start_date.strftime("%d-%m-%Y")}.'}, status=400)
+        if plan.purchase_end_date and now > plan.purchase_end_date:
+            return Response({'error': 'The purchase window for this plan has closed.'}, status=400)
+
         base_price = float(plan.price)
         discount_percent = 0
         discount_amount = 0.0
@@ -782,6 +1042,13 @@ class PaymentViewSet(viewsets.ModelViewSet):
         except SubscriptionPlan.DoesNotExist:
             return Response({'error': 'Plan not found'}, status=404)
 
+        # Check purchase dates if configured
+        now = timezone.now()
+        if plan.purchase_start_date and now < plan.purchase_start_date:
+            return Response({'error': f'Purchase for this plan opens on {plan.purchase_start_date.strftime("%d-%m-%Y")}.'}, status=400)
+        if plan.purchase_end_date and now > plan.purchase_end_date:
+            return Response({'error': 'The purchase window for this plan has closed.'}, status=400)
+
         verified = False
         if is_sandbox or (order_id and order_id.startswith('order_mock_')):
             verified = True
@@ -814,7 +1081,6 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
         # Dates
         start_date = timezone.now()
-        end_date = start_date + timedelta(days=plan.duration_days)
         year_val = int(year) if year else start_date.year
 
         months_map = {
@@ -823,6 +1089,35 @@ class PaymentViewSet(viewsets.ModelViewSet):
             'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
             'jul': 7, 'aug': 8, 'sep': 9, 'sept': 9, 'oct': 10, 'nov': 11, 'dec': 12
         }
+
+        # Calculate end_date based on fixed_expiry_date, attempt, calendar month, or duration
+        if plan.fixed_expiry_date:
+            end_date = plan.fixed_expiry_date
+        else:
+            end_date = start_date + timedelta(days=plan.duration_days)
+            target_month_name = None
+            if plan.billing_cycle == 'ATTEMPT_WISE' and exam_attempt:
+                target_month_name = exam_attempt.strip().lower()
+            elif plan.billing_cycle == 'ATTEMPT_WISE' and calendar_month:
+                target_month_name = calendar_month.strip().lower()
+
+            if target_month_name and target_month_name in months_map:
+                from calendar import monthrange
+                from datetime import datetime
+                from django.utils import timezone as dj_timezone
+                month_num = months_map[target_month_name]
+                last_day = monthrange(year_val, month_num)[1]
+                end_date = dj_timezone.make_aware(
+                    datetime(year_val, month_num, last_day, 23, 59, 59),
+                    dj_timezone.get_current_timezone()
+                )
+                if end_date <= start_date:
+                    year_val += 1
+                    last_day = monthrange(year_val, month_num)[1]
+                    end_date = dj_timezone.make_aware(
+                        datetime(year_val, month_num, last_day, 23, 59, 59),
+                        dj_timezone.get_current_timezone()
+                    )
 
         base_price = float(plan.price)
         discount_percent = 0
@@ -844,17 +1139,6 @@ class PaymentViewSet(viewsets.ModelViewSet):
             gst_amount = 0.0
         total_amount = round(subtotal + gst_amount, 2)
 
-        if plan.billing_cycle == 'ATTEMPT_WISE' and exam_attempt:
-            attempt_name = exam_attempt.strip().lower()
-            if attempt_name in months_map:
-                month_num = months_map[attempt_name]
-                last_day = monthrange(year_val, month_num)[1]
-                end_date = datetime(year_val, month_num, last_day, 23, 59, 59, tzinfo=timezone.get_current_timezone())
-                if end_date <= start_date:
-                    year_val += 1
-                    last_day = monthrange(year_val, month_num)[1]
-                    end_date = datetime(year_val, month_num, last_day, 23, 59, 59, tzinfo=timezone.get_current_timezone())
-
         # Create Subscription
         subscription = UserSubscription.objects.create(
             user=request.user,
@@ -867,7 +1151,8 @@ class PaymentViewSet(viewsets.ModelViewSet):
             group=group,
             calendar_month=calendar_month,
             exam_attempt=exam_attempt,
-            year=year_val
+            year=year_val,
+            order_id=order_id
         )
 
         # Create Payment
@@ -879,6 +1164,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             base_amount=subtotal,
             gst_amount=gst_amount,
             transaction_id=payment_id or f"TXN-{uuid.uuid4().hex[:8].upper()}",
+            order_id=order_id,
             status='SUCCESS',
             coupon_code=coupon_code.strip() if coupon_code else None,
             discount_amount=discount_amount,
@@ -887,145 +1173,6 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
         return Response(UserSubscriptionSerializer(subscription).data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
-    def download_invoice(self, request, pk=None):
-        try:
-            payment = Payment.objects.get(pk=pk)
-        except Payment.DoesNotExist:
-            return Response({'error': 'Payment record not found'}, status=404)
-
-        if not request.user.is_superuser and payment.user != request.user:
-            return Response({'error': 'Permission denied'}, status=403)
-
-        response = HttpResponse(content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="invoice_{payment.transaction_id}.pdf"'
-
-        doc = SimpleDocTemplate(response, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
-        story = []
-        styles = getSampleStyleSheet()
-
-        title_style = ParagraphStyle(
-            'InvoiceTitle',
-            parent=styles['Heading1'],
-            fontName='Helvetica-Bold',
-            fontSize=24,
-            textColor=colors.HexColor('#1E293B'),
-            spaceAfter=15
-        )
-        h2_style = ParagraphStyle(
-            'Heading2',
-            parent=styles['Heading2'],
-            fontName='Helvetica-Bold',
-            fontSize=14,
-            textColor=colors.HexColor('#475569'),
-            spaceAfter=10
-        )
-        body_style = ParagraphStyle(
-            'InvoiceBody',
-            parent=styles['Normal'],
-            fontName='Helvetica',
-            fontSize=10,
-            textColor=colors.HexColor('#334155'),
-            leading=14
-        )
-        body_bold = ParagraphStyle(
-            'InvoiceBodyBold',
-            parent=body_style,
-            fontName='Helvetica-Bold'
-        )
-
-        logo_path = os.path.join(settings.BASE_DIR, '../frontend/public/logo-light.png')
-        logo_img = None
-        if os.path.exists(logo_path):
-            try:
-                # 799 x 232 aspect ratio ~ 3.44:1
-                logo_img = Image(logo_path, width=103.3, height=30)
-            except Exception as e:
-                print(f"Error loading logo in invoice: {e}")
-
-        if logo_img:
-            header_title_style = ParagraphStyle(
-                'InvoiceHeaderTitle',
-                parent=styles['Heading1'],
-                fontName='Helvetica-Bold',
-                fontSize=20,
-                textColor=colors.HexColor('#1E293B'),
-                alignment=2 # Right aligned
-            )
-            header_data = [[logo_img, Paragraph("TAX INVOICE", header_title_style)]]
-            header_table = Table(header_data, colWidths=[200, 320])
-            header_table.setStyle(TableStyle([
-                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('ALIGN', (1,0), (1,0), 'RIGHT'),
-                ('PADDING', (0,0), (-1,-1), 0),
-            ]))
-            story.append(header_table)
-        else:
-            story.append(Paragraph("QUBOOK TAX INVOICE", title_style))
-        story.append(Spacer(1, 15))
-
-        billing_info = [
-            [Paragraph("<b>Provider:</b><br/>Qubook.in Learning Platform<br/>GSTIN: 27AAAAA1111A1Z1<br/>Support: support@qubook.in", body_style),
-             Paragraph(f"<b>Invoice To:</b><br/>{payment.user.first_name} {payment.user.last_name}<br/>Email: {payment.user.email}<br/>Date: {payment.created_at.strftime('%d-%m-%Y %H:%M')}", body_style)]
-        ]
-        t1 = Table(billing_info, colWidths=[260, 260])
-        t1.setStyle(TableStyle([
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('PADDING', (0,0), (-1,-1), 0),
-        ]))
-        story.append(t1)
-        story.append(Spacer(1, 20))
-
-        story.append(Paragraph("Transaction Summary", h2_style))
-        story.append(Spacer(1, 5))
-
-        if payment.gst_amount > 0:
-            headers = [
-                Paragraph("<b>Description</b>", body_bold), 
-                Paragraph("<b>Original Price</b>", body_bold), 
-                Paragraph("<b>Discount</b>", body_bold),
-                Paragraph("<b>Base Price</b>", body_bold), 
-                Paragraph("<b>GST (18%)</b>", body_bold), 
-                Paragraph("<b>Total Paid</b>", body_bold)
-            ]
-            row1 = [
-                Paragraph(f"Subscription: {payment.plan.name if payment.plan else 'Premium Access'}", body_style),
-                Paragraph(f"INR {payment.original_amount}", body_style),
-                Paragraph(f"INR {payment.discount_amount}", body_style),
-                Paragraph(f"INR {payment.base_amount}", body_style),
-                Paragraph(f"INR {payment.gst_amount}", body_style),
-                Paragraph(f"INR {payment.amount}", body_bold)
-            ]
-            t2 = Table([headers, row1], colWidths=[150, 75, 65, 75, 75, 80])
-        else:
-            headers = [
-                Paragraph("<b>Description</b>", body_bold), 
-                Paragraph("<b>Original Price</b>", body_bold), 
-                Paragraph("<b>Discount</b>", body_bold),
-                Paragraph("<b>Total Paid</b>", body_bold)
-            ]
-            row1 = [
-                Paragraph(f"Subscription: {payment.plan.name if payment.plan else 'Premium Access'}", body_style),
-                Paragraph(f"INR {payment.original_amount}", body_style),
-                Paragraph(f"INR {payment.discount_amount}", body_style),
-                Paragraph(f"INR {payment.amount}", body_bold)
-            ]
-            t2 = Table([headers, row1], colWidths=[220, 100, 100, 100])
-
-        t2.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F1F5F9')),
-            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('PADDING', (0,0), (-1,-1), 8),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
-        ]))
-        story.append(t2)
-        story.append(Spacer(1, 40))
-
-        story.append(Paragraph("Thank you for learning with Qubook! This is an electronically generated tax invoice. No signature required.", body_style))
-
-        doc.build(story)
-        return response
 
 class PlatformSettingViewSet(viewsets.ModelViewSet):
     queryset = PlatformSetting.objects.all()

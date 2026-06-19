@@ -43,7 +43,7 @@ class UserSubscriptionSerializer(serializers.ModelSerializer):
             'start_date', 'end_date', 'is_active', 'days_remaining',
             'level', 'level_title', 'subject', 'subject_name',
             'group', 'calendar_month', 'exam_attempt', 'year',
-            'amount_paid', 'transaction_id', 'plan_details',
+            'amount_paid', 'transaction_id', 'plan_details', 'order_id',
         ]
 
 
@@ -109,7 +109,7 @@ class PaymentSerializer(serializers.ModelSerializer):
         model = Payment
         fields = [
             'id', 'user', 'user_email', 'user_name', 'user_mobile', 'plan', 'plan_name',
-            'plan_price', 'plan_duration', 'amount', 'transaction_id', 'status',
+            'plan_price', 'plan_duration', 'amount', 'transaction_id', 'order_id', 'status',
             'created_at', 'coupon_code', 'discount_amount', 'original_amount',
             'gst_amount', 'base_amount', 'subscription_details', 'expiry_date'
         ]
