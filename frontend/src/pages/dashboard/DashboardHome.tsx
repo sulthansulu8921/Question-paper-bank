@@ -858,6 +858,48 @@ export default function DashboardHome() {
                                     </div>
                                 </>
                             )}
+
+                            {/* ── Universal Fallback: any course category not matching named groups above (e.g. "CA", UPSC, or custom admin-created category) ── */}
+                            {user?.selected_course && !['Professional Courses', 'Government Exams', 'Entrance Exams', 'Academic Courses', 'Skill Development'].includes(user?.selected_course_category || '') && (
+                                <>
+                                    <Link to="/dashboard/notes" className="bg-bg border border-border rounded-2xl p-5 hover:border-primary/40 hover:shadow-[0_0_15px_rgba(79,70,229,0.05)] transition-all cursor-pointer group flex items-start gap-4">
+                                        <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                                            <FileText size={18} />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <h4 className="text-xs font-black text-text-primary uppercase tracking-wider">{user?.selected_course_name || 'Course'} Notes</h4>
+                                            <p className="text-[10px] text-text-muted font-medium">Revision notes, PDF resources, and chapter summaries for your level.</p>
+                                        </div>
+                                    </Link>
+                                    <Link to="/dashboard/mock-tests" className="bg-bg border border-border rounded-2xl p-5 hover:border-emerald-500/40 hover:shadow-[0_0_15px_rgba(16,185,129,0.05)] transition-all cursor-pointer group flex items-start gap-4">
+                                        <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                                            <Trophy size={18} />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <h4 className="text-xs font-black text-text-primary uppercase tracking-wider">{user?.selected_course_name || 'Course'} Mock Tests</h4>
+                                            <p className="text-[10px] text-text-muted font-medium">Timed exam simulations, full-length and sectional practice tests.</p>
+                                        </div>
+                                    </Link>
+                                    <Link to="/dashboard/papers" className="bg-bg border border-border rounded-2xl p-5 hover:border-indigo-500/40 hover:shadow-[0_0_15px_rgba(99,102,241,0.05)] transition-all cursor-pointer group flex items-start gap-4">
+                                        <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                                            <BookOpen size={18} />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <h4 className="text-xs font-black text-text-primary uppercase tracking-wider">{user?.selected_course_name || 'Course'} Question Papers</h4>
+                                            <p className="text-[10px] text-text-muted font-medium">Chapter-wise and year-wise past question papers for targeted practice.</p>
+                                        </div>
+                                    </Link>
+                                    <Link to="/dashboard/live-classes" className="bg-bg border border-border rounded-2xl p-5 hover:border-accent/40 hover:shadow-[0_0_15px_rgba(0,180,216,0.05)] transition-all cursor-pointer group flex items-start gap-4">
+                                        <div className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                                            <Video size={18} />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <h4 className="text-xs font-black text-text-primary uppercase tracking-wider">{user?.selected_course_name || 'Course'} Live Classes</h4>
+                                            <p className="text-[10px] text-text-muted font-medium">Attend live sessions and access recorded class archives anytime.</p>
+                                        </div>
+                                    </Link>
+                                </>
+                            )}
                         </div>
                     </div>
 
