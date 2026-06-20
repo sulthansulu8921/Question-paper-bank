@@ -54,6 +54,14 @@ export default function AuthPage() {
     const [sendingOtp, setSendingOtp] = useState(false);
     const [otpSentMsg, setOtpSentMsg] = useState('');
 
+    // Google Onboarding Modal state
+    const [showGoogleOnboarding, setShowGoogleOnboarding] = useState(false);
+    const [googleMobile, setGoogleMobile] = useState('');
+    const [googleQualification, setGoogleQualification] = useState('');
+    const [googleCourseId, setGoogleCourseId] = useState('');
+    const [googleOnboardingLoading, setGoogleOnboardingLoading] = useState(false);
+    const [googleOnboardingError, setGoogleOnboardingError] = useState('');
+
     const selectedCourse = searchParams.get('course');
     // masterLevels: real-time data from admin's Master Database (/master/levels/)
     const [masterLevels, setMasterLevels] = useState<any[]>([]);
@@ -110,9 +118,16 @@ export default function AuthPage() {
         setError('');
         try {
             await googleLogin(response.credential, selectedCourseId);
-            const user = useAuthStore.getState().user;
-            if (user?.is_staff) {
+            const loggedUser = useAuthStore.getState().user;
+            if (loggedUser?.is_staff) {
                 navigate('/admin');
+                return;
+            }
+            // If missing mobile or course — show onboarding modal
+            const needsOnboarding = !loggedUser?.mobile_number || !loggedUser?.selected_course;
+            if (needsOnboarding) {
+                setGoogleOnboardingError('');
+                setShowGoogleOnboarding(true);
             } else {
                 navigate('/dashboard');
             }
@@ -120,6 +135,43 @@ export default function AuthPage() {
             setError(err.response?.data?.error || 'Google Authentication failed.');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleGoogleOnboardingSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!googleMobile.trim()) {
+            setGoogleOnboardingError('Mobile number is required.');
+            return;
+        }
+        if (!googleCourseId) {
+            setGoogleOnboardingError('Please select your course level.');
+            return;
+        }
+        setGoogleOnboardingLoading(true);
+        setGoogleOnboardingError('');
+        try {
+            const updateProfile = useAuthStore.getState().updateProfile;
+            await updateProfile({
+                mobile_number: googleMobile.trim(),
+                selected_course: parseInt(googleCourseId)
+            });
+            setShowGoogleOnboarding(false);
+            navigate('/dashboard');
+        } catch (err: any) {
+            const errData = err.response?.data;
+            if (errData && typeof errData === 'object') {
+                const msgs: string[] = [];
+                Object.entries(errData).forEach(([, v]) => {
+                    if (Array.isArray(v)) msgs.push(v[0] as string);
+                    else if (typeof v === 'string') msgs.push(v);
+                });
+                setGoogleOnboardingError(msgs[0] || 'Failed to save. Please try again.');
+            } else {
+                setGoogleOnboardingError('Failed to save. Please try again.');
+            }
+        } finally {
+            setGoogleOnboardingLoading(false);
         }
     };
 
@@ -367,6 +419,7 @@ export default function AuthPage() {
     ];
 
     return (
+        <>
         <div className="min-h-screen bg-slate-50 font-sans flex items-center justify-center p-4 md:p-8 lg:p-12 relative overflow-hidden text-slate-800 selection:bg-blue-200">
             {/* Ambient Background Glows */}
             <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-blue-50/50 via-slate-50 to-transparent -z-10" />
@@ -927,5 +980,120 @@ export default function AuthPage() {
                 </div>
             </motion.div>
         </div>
+
+        {/* ── Google Onboarding Modal ────────────────────────────────────────── */}
+        {showGoogleOnboarding && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ duration: 0.3, ease: 'easeOut' }}
+                    className="w-full max-w-md bg-white rounded-[2rem] shadow-2xl border border-slate-100 overflow-hidden"
+                >
+                    {/* Header */}
+                    <div className="bg-gradient-to-br from-blue-600 to-indigo-700 px-8 pt-10 pb-8 text-white text-center relative overflow-hidden">
+                        <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl" />
+                        <div className="relative z-10">
+                            <div className="w-14 h-14 bg-white/10 border border-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+                                <ShieldCheck size={28} className="text-white" />
+                            </div>
+                            <h2 className="text-xl font-black tracking-tight">Complete Your Profile</h2>
+                            <p className="text-blue-100/80 text-xs font-bold mt-2 uppercase tracking-wider">One more step to access the platform</p>
+                        </div>
+                    </div>
+
+                    {/* Body */}
+                    <form onSubmit={handleGoogleOnboardingSubmit} className="px-8 py-7 space-y-5">
+                        {googleOnboardingError && (
+                            <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-600 text-xs font-bold rounded-2xl text-center">
+                                {googleOnboardingError}
+                            </div>
+                        )}
+
+                        {/* Mobile Number */}
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Mobile Number *</label>
+                            <div className="relative group">
+                                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors" size={18} />
+                                <input
+                                    id="google-onboarding-mobile"
+                                    type="tel"
+                                    required
+                                    value={googleMobile}
+                                    onChange={e => setGoogleMobile(e.target.value)}
+                                    placeholder="+91 99999 99999"
+                                    className="w-full bg-slate-50 border border-slate-200/80 rounded-2xl py-4 pl-12 pr-6 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:bg-white focus:border-blue-500/30 transition-all"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Learning Stream (Qualification) */}
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Learning Stream *</label>
+                            <div className="relative group">
+                                <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500/60 group-focus-within:text-blue-600 transition-colors" size={18} />
+                                <select
+                                    id="google-onboarding-qualification"
+                                    value={googleQualification}
+                                    onChange={e => { setGoogleQualification(e.target.value); setGoogleCourseId(''); }}
+                                    className="w-full bg-white border border-slate-200 rounded-2xl py-3.5 pl-12 pr-10 text-xs font-bold text-slate-800 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/40 transition-all appearance-none cursor-pointer"
+                                    required
+                                >
+                                    <option value="">Select Stream (e.g. CA, UPSC)</option>
+                                    {qualifications.map(q => (
+                                        <option key={q} value={q}>{q}</option>
+                                    ))}
+                                </select>
+                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Course Level */}
+                        {googleQualification && (
+                            <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-300">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Course Level *</label>
+                                <div className="relative group">
+                                    <BookOpen className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500/60 group-focus-within:text-blue-600 transition-colors" size={18} />
+                                    <select
+                                        id="google-onboarding-level"
+                                        value={googleCourseId}
+                                        onChange={e => setGoogleCourseId(e.target.value)}
+                                        className="w-full bg-white border border-slate-200 rounded-2xl py-3.5 pl-12 pr-10 text-xs font-bold text-slate-800 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/40 transition-all appearance-none cursor-pointer"
+                                        required
+                                    >
+                                        <option value="">Select Level</option>
+                                        {masterLevels
+                                            .filter((l: any) => l.qualification === googleQualification)
+                                            .map((level: any) => (
+                                                <option key={level.id} value={level.course_id ?? ''}>
+                                                    {level.name}
+                                                </option>
+                                            ))
+                                        }
+                                    </select>
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <button
+                            type="submit"
+                            disabled={googleOnboardingLoading}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-blue-500/20 hover:translate-y-[-1px] active:translate-y-[1px] transition-all flex items-center justify-center gap-3 disabled:opacity-70 mt-2"
+                        >
+                            {googleOnboardingLoading
+                                ? <Loader2 size={20} className="animate-spin" />
+                                : <><ArrowRight size={18} /> Enter Platform</>
+                            }
+                        </button>
+                    </form>
+                </motion.div>
+            </div>
+        )}
+        </>
     );
 }
