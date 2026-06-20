@@ -993,6 +993,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
         total_amount = round(subtotal + gst_amount, 2)
         amount_in_paise = int(total_amount * 100)
 
+        # Validate amount >= 100 paise
+        if amount_in_paise < 100:
+            return Response({'error': 'Amount must be at least 100 paise.'}, status=400)
+
         order_id = f"order_mock_{uuid.uuid4().hex[:12].upper()}"
         if not is_sandbox:
             try:
@@ -1005,7 +1009,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 order_id = razorpay_order['id']
             except Exception as e:
                 print("Razorpay Error:", e)
-                pass
+                err_str = str(e).lower()
+                if "401" in err_str or "unauthorized" in err_str or "invalid key" in err_str:
+                    return Response({'error': f'Razorpay authentication failed: {str(e)}'}, status=401)
+                return Response({'error': f'Failed to create Razorpay order: {str(e)}'}, status=500)
 
         return Response({
             'order_id': order_id,
@@ -1024,6 +1031,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
         payment_id = request.data.get('razorpay_payment_id')
         order_id = request.data.get('razorpay_order_id')
         signature = request.data.get('razorpay_signature')
+
+        # Check for missing fields
+        if not all([payment_id, order_id, signature]):
+            return Response({'error': 'Missing required fields: razorpay_payment_id, razorpay_order_id, and razorpay_signature are required.'}, status=400)
 
         plan_id = request.data.get('plan_id')
         level_id = request.data.get('level_id')
@@ -1064,7 +1075,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 verified = True
             except Exception as e:
                 print("Razorpay verification failed:", e)
-                return Response({'error': 'Payment verification failed'}, status=400)
+                return Response({'error': f'Payment signature verification failed: {str(e)}'}, status=400)
 
         if not verified:
             return Response({'error': 'Payment verification failed'}, status=400)
