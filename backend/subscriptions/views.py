@@ -997,22 +997,24 @@ class PaymentViewSet(viewsets.ModelViewSet):
         if amount_in_paise < 100:
             return Response({'error': 'Amount must be at least 100 paise.'}, status=400)
 
-        order_id = f"order_mock_{uuid.uuid4().hex[:12].upper()}"
-        if not is_sandbox:
-            try:
-                client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
-                razorpay_order = client.order.create({
-                    'amount': amount_in_paise,
-                    'currency': 'INR',
-                    'payment_capture': '1'
-                })
-                order_id = razorpay_order['id']
-            except Exception as e:
-                print("Razorpay Error:", e)
-                err_str = str(e).lower()
-                if "401" in err_str or "unauthorized" in err_str or "invalid key" in err_str:
-                    return Response({'error': f'Razorpay authentication failed: {str(e)}'}, status=401)
-                return Response({'error': f'Failed to create Razorpay order: {str(e)}'}, status=500)
+        # Check configuration
+        if not RAZORPAY_KEY_ID or RAZORPAY_KEY_ID == 'rzp_test_placeholder_key':
+            return Response({'error': 'Razorpay is not configured on this server.'}, status=400)
+
+        try:
+            client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+            razorpay_order = client.order.create({
+                'amount': amount_in_paise,
+                'currency': 'INR',
+                'payment_capture': '1'
+            })
+            order_id = razorpay_order['id']
+        except Exception as e:
+            print("Razorpay Error:", e)
+            err_str = str(e).lower()
+            if "401" in err_str or "unauthorized" in err_str or "invalid key" in err_str:
+                return Response({'error': f'Razorpay authentication failed: {str(e)}'}, status=401)
+            return Response({'error': f'Failed to create Razorpay order: {str(e)}'}, status=500)
 
         return Response({
             'order_id': order_id,
@@ -1023,7 +1025,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             'gst_amount': gst_amount,
             'total_amount': total_amount,
             'razorpay_key_id': RAZORPAY_KEY_ID,
-            'is_sandbox': is_sandbox
+            'is_sandbox': False
         })
 
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
@@ -1061,21 +1063,18 @@ class PaymentViewSet(viewsets.ModelViewSet):
             return Response({'error': 'The purchase window for this plan has closed.'}, status=400)
 
         verified = False
-        if is_sandbox or (order_id and order_id.startswith('order_mock_')):
+        try:
+            client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+            params_dict = {
+                'razorpay_order_id': order_id,
+                'razorpay_payment_id': payment_id,
+                'razorpay_signature': signature
+            }
+            client.utility.verify_payment_signature(params_dict)
             verified = True
-        else:
-            try:
-                client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
-                params_dict = {
-                    'razorpay_order_id': order_id,
-                    'razorpay_payment_id': payment_id,
-                    'razorpay_signature': signature
-                }
-                client.utility.verify_payment_signature(params_dict)
-                verified = True
-            except Exception as e:
-                print("Razorpay verification failed:", e)
-                return Response({'error': f'Payment signature verification failed: {str(e)}'}, status=400)
+        except Exception as e:
+            print("Razorpay verification failed:", e)
+            return Response({'error': f'Payment signature verification failed: {str(e)}'}, status=400)
 
         if not verified:
             return Response({'error': 'Payment verification failed'}, status=400)

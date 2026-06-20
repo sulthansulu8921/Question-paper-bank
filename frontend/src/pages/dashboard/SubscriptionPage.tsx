@@ -426,7 +426,7 @@ export default function SubscriptionPage() {
                 coupon_code: appliedCoupon?.code || null
             });
 
-            const { order_id, amount, currency, razorpay_key_id, is_sandbox } = orderRes.data;
+            const { order_id, amount, currency, razorpay_key_id } = orderRes.data;
 
             const checkoutPayload = {
                 plan_id: matchingPlan.id,
@@ -439,97 +439,76 @@ export default function SubscriptionPage() {
                 coupon_code: appliedCoupon?.code || null
             };
 
-            // 2. Open Razorpay Checkout or auto-verify if Sandbox Mode is active
-            if (is_sandbox) {
-                // Auto verify Sandbox Mode
-                await api.post('/subscriptions/payments/verify_payment/', {
-                    razorpay_order_id: order_id,
-                    razorpay_payment_id: `pay_mock_${Math.random().toString(36).substring(7).toUpperCase()}`,
-                    razorpay_signature: 'sandbox_mock_signature',
-                    ...checkoutPayload
-                });
-
-                setPaymentSuccess(true);
-                await hydrate();
-                queryClient.invalidateQueries({ queryKey: ['user-subscriptions'] });
-                queryClient.invalidateQueries({ queryKey: ['user-payments'] });
-                setTimeout(() => {
-                    setPaymentSuccess(false);
-                    setIsProcessing(false);
-                    handleRemoveCoupon();
-                }, 3000);
-            } else {
-                // Real Razorpay modal
-                const options = {
-                    key: razorpay_key_id,
-                    amount: amount,
-                    currency: currency,
-                    name: "Qubook.in",
-                    description: matchingPlan.name,
-                    order_id: order_id,
-                    handler: async function (response: any) {
+            // 2. Open Razorpay Checkout modal
+            const options = {
+                key: razorpay_key_id,
+                amount: amount,
+                currency: currency,
+                name: "Qubook.in",
+                description: matchingPlan.name,
+                order_id: order_id,
+                handler: async function (response: any) {
+                    try {
+                        await api.post('/subscriptions/payments/verify_payment/', {
+                            razorpay_order_id: response.razorpay_order_id,
+                            razorpay_payment_id: response.razorpay_payment_id,
+                            razorpay_signature: response.razorpay_signature,
+                            ...checkoutPayload
+                        });
+                        setPaymentSuccess(true);
+                        await hydrate();
+                        queryClient.invalidateQueries({ queryKey: ['user-subscriptions'] });
+                        queryClient.invalidateQueries({ queryKey: ['user-payments'] });
+                        setTimeout(() => {
+                            setPaymentSuccess(false);
+                            setIsProcessing(false);
+                            handleRemoveCoupon();
+                        }, 3000);
+                    } catch (err: any) {
+                        const errorMsg = err.response?.data?.error || 'Verification of signature failed.';
+                        setPaymentError(errorMsg);
+                        setIsProcessing(false);
+                        // Log failed payment on the backend
                         try {
-                            await api.post('/subscriptions/payments/verify_payment/', {
-                                razorpay_order_id: response.razorpay_order_id,
-                                razorpay_payment_id: response.razorpay_payment_id,
-                                razorpay_signature: response.razorpay_signature,
-                                ...checkoutPayload
+                            await api.post('/subscriptions/payments/record_failed/', {
+                                plan_id: matchingPlan.id,
+                                coupon_code: appliedCoupon?.code || null,
+                                error_description: errorMsg,
+                                transaction_id: response.razorpay_payment_id
                             });
-                            setPaymentSuccess(true);
-                            await hydrate();
-                            queryClient.invalidateQueries({ queryKey: ['user-subscriptions'] });
                             queryClient.invalidateQueries({ queryKey: ['user-payments'] });
-                            setTimeout(() => {
-                                setPaymentSuccess(false);
-                                setIsProcessing(false);
-                                handleRemoveCoupon();
-                            }, 3000);
-                        } catch (err: any) {
-                            const errorMsg = err.response?.data?.error || 'Verification of signature failed.';
-                            setPaymentError(errorMsg);
-                            setIsProcessing(false);
-                            // Log failed payment on the backend
-                            try {
-                                await api.post('/subscriptions/payments/record_failed/', {
-                                    plan_id: matchingPlan.id,
-                                    coupon_code: appliedCoupon?.code || null,
-                                    error_description: errorMsg,
-                                    transaction_id: response.razorpay_payment_id
-                                });
-                                queryClient.invalidateQueries({ queryKey: ['user-payments'] });
-                            } catch (e) {
-                                console.error('Failed to log failed payment:', e);
-                            }
-                        }
-                    },
-                    prefill: {
-                        name: `${user?.first_name || ''} ${user?.last_name || ''}`,
-                        email: user?.email || '',
-                        contact: user?.mobile_number || ''
-                    },
-                    theme: {
-                        color: "#4F46E5"
-                    },
-                    modal: {
-                        ondismiss: async function () {
-                            setIsProcessing(false);
-                            // Log user cancelled checkout
-                            try {
-                                await api.post('/subscriptions/payments/record_failed/', {
-                                    plan_id: matchingPlan.id,
-                                    coupon_code: appliedCoupon?.code || null,
-                                    error_description: 'Checkout modal dismissed by user'
-                                });
-                                queryClient.invalidateQueries({ queryKey: ['user-payments'] });
-                            } catch (e) {
-                                console.error('Failed to log cancelled payment:', e);
-                            }
+                        } catch (e) {
+                            console.error('Failed to log failed payment:', e);
                         }
                     }
-                };
-                const rzp = new (window as any).Razorpay(options);
-                rzp.open();
-            }
+                },
+                prefill: {
+                    name: `${user?.first_name || ''} ${user?.last_name || ''}`,
+                    email: user?.email || '',
+                    contact: user?.mobile_number || ''
+                },
+                theme: {
+                    color: "#4F46E5"
+                },
+                modal: {
+                    ondismiss: async function () {
+                        setIsProcessing(false);
+                        // Log user cancelled checkout
+                        try {
+                            await api.post('/subscriptions/payments/record_failed/', {
+                                plan_id: matchingPlan.id,
+                                coupon_code: appliedCoupon?.code || null,
+                                error_description: 'Checkout modal dismissed by user'
+                            });
+                            queryClient.invalidateQueries({ queryKey: ['user-payments'] });
+                        } catch (e) {
+                            console.error('Failed to log cancelled payment:', e);
+                        }
+                    }
+                }
+            };
+            const rzp = new (window as any).Razorpay(options);
+            rzp.open();
 
         } catch (err: any) {
             const errorMsg = err.response?.data?.error || 'Unable to initialize checkout. Please try again.';
