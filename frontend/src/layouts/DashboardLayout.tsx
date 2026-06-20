@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/api/axios';
+import FloatingPeerChat from '@/components/FloatingPeerChat';
 
 interface ExpiryAlert {
     id: string;
@@ -286,6 +287,9 @@ export default function DashboardLayout() {
                     </div>
                 )}
             </AnimatePresence>
+            
+            {/* Ephemeral Peer Chat Floating Widget */}
+            <FloatingPeerChat />
         </div>
     );
 }

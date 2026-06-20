@@ -63,7 +63,9 @@ export default function LeaderboardPage() {
             
             if (diffMins < 1) return 'Just now';
             if (diffMins < 60) return `${diffMins}m ago`;
-            return '1h ago';
+            const diffHours = Math.floor(diffMins / 60);
+            if (diffHours < 24) return `${diffHours}h ago`;
+            return date.toLocaleDateString();
         } catch {
             return '';
         }
@@ -223,7 +225,7 @@ export default function LeaderboardPage() {
                                 <h3 className="font-black text-sm text-text-primary uppercase tracking-wider">Peer Study Room</h3>
                             </div>
                             <span className="text-[9px] font-black text-orange-500 bg-orange-500/10 border border-orange-500/20 px-2.5 py-0.5 rounded-full uppercase flex items-center gap-1">
-                                <Clock size={10} /> 1-Hour Limit
+                                <Clock size={10} /> 24-Hour Limit
                             </span>
                         </div>
 
@@ -236,7 +238,7 @@ export default function LeaderboardPage() {
                                     </div>
                                     <div>
                                         <p className="text-xs font-bold text-text-primary">No comments yet</p>
-                                        <p className="text-[10px] text-text-secondary mt-0.5 max-w-[200px]">Start the conversation! Messages automatically delete after 1 hour.</p>
+                                        <p className="text-[10px] text-text-secondary mt-0.5 max-w-[200px]">Start the conversation! Messages automatically delete after 24 hours.</p>
                                     </div>
                                 </div>
                             ) : (

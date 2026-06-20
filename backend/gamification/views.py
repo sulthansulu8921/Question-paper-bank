@@ -422,15 +422,15 @@ class ChatMessageView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        one_hour_ago = timezone.now() - timedelta(hours=1)
-        ChatMessage.objects.filter(created_at__lt=one_hour_ago).delete()
-        messages = ChatMessage.objects.filter(created_at__gte=one_hour_ago).order_by('created_at')
+        twenty_four_hours_ago = timezone.now() - timedelta(hours=24)
+        ChatMessage.objects.filter(created_at__lt=twenty_four_hours_ago).delete()
+        messages = ChatMessage.objects.filter(created_at__gte=twenty_four_hours_ago).order_by('created_at')
         serializer = ChatMessageSerializer(messages, many=True)
         return Response(serializer.data)
 
     def post(self, request):
-        one_hour_ago = timezone.now() - timedelta(hours=1)
-        ChatMessage.objects.filter(created_at__lt=one_hour_ago).delete()
+        twenty_four_hours_ago = timezone.now() - timedelta(hours=24)
+        ChatMessage.objects.filter(created_at__lt=twenty_four_hours_ago).delete()
         serializer = ChatMessageSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save(user=request.user)
