@@ -804,7 +804,7 @@ export default function SubscriptionPage() {
                                                         <CheckCircle size={14} className="text-primary shrink-0" />
                                                         <span>30 Days (Active Immediately)</span>
                                                     </div>
-                                                </div>
+                                                 </div>
                                             ) : (
                                                 <div className="md:col-span-2 space-y-2">
                                                     <label className="block text-[10px] font-black text-text-muted uppercase tracking-wider">Exam Attempt Month</label>
@@ -813,7 +813,7 @@ export default function SubscriptionPage() {
                                                         onChange={(e) => setSelectedAttempt(e.target.value)}
                                                         className="w-full px-4 py-3 rounded-xl border border-border focus:outline-none focus:ring-4 focus:ring-primary/10 bg-bg text-xs font-bold text-text-primary"
                                                     >
-                                                        {calendarMonths.map(att => (
+                                                        {currentAttempts.map(att => (
                                                             <option key={att} value={att}>{att}</option>
                                                         ))}
                                                     </select>

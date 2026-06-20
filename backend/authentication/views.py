@@ -247,7 +247,15 @@ class ProfileView(APIView):
                 user.email = new_email
                 user.username = new_email
         if 'mobile_number' in request.data:
-            user.mobile_number = request.data['mobile_number']
+            mobile = request.data['mobile_number']
+            if mobile is not None:
+                mobile = str(mobile).strip()
+            if not mobile:
+                user.mobile_number = None
+            else:
+                if User.objects.filter(mobile_number=mobile).exclude(id=user.id).exists():
+                    return Response({'error': 'This mobile number is already in use by another account.'}, status=400)
+                user.mobile_number = mobile
         if 'selected_course' in request.data:
             selected_course_id = request.data['selected_course']
             if selected_course_id:

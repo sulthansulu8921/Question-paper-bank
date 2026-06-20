@@ -21,16 +21,14 @@ export default function DashboardLayout() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const user = useAuthStore((state) => state.user);
     const updateProfile = useAuthStore((state) => state.updateProfile);
+    const logout = useAuthStore((state) => state.logout);
 
     // Mobile verification modal state
     const [mobileInput, setMobileInput] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [modalError, setModalError] = useState('');
 
-    const [hasDismissed, setHasDismissed] = useState(() => {
-        if (!user) return false;
-        return localStorage.getItem(`dismissed_mobile_prompt_${user.id}`) === 'true';
-    });
+
 
     // Expiry banner dismissed state per-user
     const [dismissedAlertIds, setDismissedAlertIds] = useState<string[]>(() => {
@@ -44,7 +42,6 @@ export default function DashboardLayout() {
 
     useEffect(() => {
         if (user) {
-            setHasDismissed(localStorage.getItem(`dismissed_mobile_prompt_${user.id}`) === 'true');
             try {
                 const stored = localStorage.getItem(`dismissed_alerts_${user.id}`);
                 setDismissedAlertIds(stored ? JSON.parse(stored) : []);
@@ -54,7 +51,7 @@ export default function DashboardLayout() {
         }
     }, [user]);
 
-    const showMobilePrompt = user && !user.mobile_number?.trim() && !hasDismissed;
+    const showMobilePrompt = user && !user.is_staff && !user.mobile_number?.trim();
 
     // Fetch expiry alerts (only for non-staff students)
     const { data: expiryAlerts = [] } = useQuery<ExpiryAlert[]>({
@@ -206,19 +203,6 @@ export default function DashboardLayout() {
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             className="bg-card border border-border rounded-[2.5rem] p-8 md:p-10 max-w-md w-full shadow-2xl relative overflow-hidden"
                         >
-                            {/* Close Button */}
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (user) {
-                                        localStorage.setItem(`dismissed_mobile_prompt_${user.id}`, 'true');
-                                        setHasDismissed(true);
-                                    }
-                                }}
-                                className="absolute top-6 right-6 text-text-muted hover:text-text-primary p-2 hover:bg-bg rounded-xl transition-all"
-                            >
-                                <X size={16} />
-                            </button>
 
                             {/* Accent Glow */}
                             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-36 h-36 bg-primary/20 rounded-full blur-3xl -z-10" />
@@ -271,15 +255,10 @@ export default function DashboardLayout() {
 
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            if (user) {
-                                                localStorage.setItem(`dismissed_mobile_prompt_${user.id}`, 'true');
-                                                setHasDismissed(true);
-                                            }
-                                        }}
-                                        className="w-full text-text-muted hover:text-text-primary py-2 text-xs font-black uppercase tracking-widest transition-colors text-center"
+                                        onClick={logout}
+                                        className="w-full text-text-muted hover:text-text-primary py-2 text-xs font-black uppercase tracking-widest transition-colors text-center animate-pulse"
                                     >
-                                        Skip for Now
+                                        Sign Out
                                     </button>
                                 </div>
                             </form>

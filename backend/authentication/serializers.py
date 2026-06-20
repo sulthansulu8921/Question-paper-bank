@@ -96,11 +96,14 @@ class UserSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
+        mobile = validated_data.get('mobile_number')
+        if mobile is not None:
+            mobile = str(mobile).strip()
         user = User.objects.create_user(
             email=validated_data['email'],
             username=validated_data['email'],
             password=validated_data['password'],
-            mobile_number=validated_data.get('mobile_number', ''),
+            mobile_number=mobile or None,
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', ''),
             selected_course=validated_data.get('selected_course'),

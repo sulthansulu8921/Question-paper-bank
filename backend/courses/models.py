@@ -44,9 +44,10 @@ class Course(models.Model):
         try:
             from master_data.models import CALevel
             qualification_name = self.category.name if self.category else 'CA'
-            calevel_qs = CALevel.objects.filter(name=self.name)
+            calevel_qs = CALevel.objects.filter(name__iexact=self.name)
             if calevel_qs.exists():
                 calevel_qs.update(
+                    name=self.name,
                     qualification=qualification_name,
                     is_active=self.is_active
                 )
@@ -64,7 +65,7 @@ class Course(models.Model):
         super().delete(*args, **kwargs)
         try:
             from master_data.models import CALevel
-            CALevel.objects.filter(name=name).delete()
+            CALevel.objects.filter(name__iexact=name).delete()
         except Exception:
             pass
 

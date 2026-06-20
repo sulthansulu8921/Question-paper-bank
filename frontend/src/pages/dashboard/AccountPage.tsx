@@ -3,7 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import api from '@/api/axios';
 import { useAuthStore } from '@/store/useAuthStore';
 import { 
-    User, Mail, Shield, Award, Calendar, ExternalLink, Loader2, Edit3, Check, 
+    User, Mail, Phone, Shield, Award, Calendar, ExternalLink, Loader2, Edit3, Check, 
     CreditCard, Download, AlertTriangle, BookOpen, Zap, MessageSquare, Sparkles
 } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -55,6 +55,7 @@ export default function AccountPage() {
     const [isEditing, setIsEditing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [fullName, setFullName] = useState(user?.full_name || 'Student User');
+    const [mobileNumber, setMobileNumber] = useState(user?.mobile_number || '');
     const [activeTab, setActiveTab] = useState<'profile' | 'billing'>('profile');
     const [downloadingId, setDownloadingId] = useState<number | null>(null);
     const [downloadingReceiptId, setDownloadingReceiptId] = useState<number | null>(null);
@@ -71,6 +72,14 @@ export default function AccountPage() {
             })
             .catch(err => console.error("Failed to fetch master levels", err));
     }, []);
+
+    // Sync user details to local state when user updates or on initial load
+    useEffect(() => {
+        if (user && !isEditing) {
+            setFullName(user.full_name || 'Student User');
+            setMobileNumber(user.mobile_number || '');
+        }
+    }, [user, isEditing]);
 
     // Fetch student progress for progression path triggers
     const { data: myProgress, refetch: refetchProgress } = useQuery({
@@ -158,12 +167,13 @@ export default function AccountPage() {
         if (!isEditing) {
             setIsEditing(true);
             setFullName(user?.full_name || 'Student User');
+            setMobileNumber(user?.mobile_number || '');
             return;
         }
 
         setIsSaving(true);
         try {
-            await updateProfile({ full_name: fullName });
+            await updateProfile({ full_name: fullName, mobile_number: mobileNumber });
             setIsEditing(false);
         } catch (error) {
             console.error('Failed to update profile', error);
@@ -346,6 +356,25 @@ export default function AccountPage() {
                                         <div>
                                             <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">Email Address</p>
                                             <p className="text-sm font-black text-text-primary">{user?.email || 'student@example.com'}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-start gap-4">
+                                        <div className="w-10 h-10 bg-bg text-text-muted rounded-xl flex items-center justify-center shrink-0">
+                                            <Phone size={18} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">Mobile Number</p>
+                                            {isEditing ? (
+                                                <input
+                                                    type="tel"
+                                                    value={mobileNumber}
+                                                    onChange={(e) => setMobileNumber(e.target.value)}
+                                                    placeholder="Enter mobile number"
+                                                    className="text-sm font-black text-text-primary bg-bg border border-border rounded-xl px-3 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-sans"
+                                                />
+                                            ) : (
+                                                <p className="text-sm font-black text-text-primary">{user?.mobile_number || 'Not Provided'}</p>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

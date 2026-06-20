@@ -26,9 +26,10 @@ class CALevel(models.Model):
             category_obj, _ = Category.objects.get_or_create(
                 name=self.qualification
             )
-            course_qs = Course.objects.filter(name=self.name)
+            course_qs = Course.objects.filter(name__iexact=self.name)
             if course_qs.exists():
                 course_qs.update(
+                    name=self.name,
                     category=category_obj,
                     is_active=self.is_active
                 )
@@ -47,7 +48,7 @@ class CALevel(models.Model):
         super().delete(*args, **kwargs)
         try:
             from courses.models import Course
-            Course.objects.filter(name=name).delete()
+            Course.objects.filter(name__iexact=name).delete()
         except Exception:
             pass
 

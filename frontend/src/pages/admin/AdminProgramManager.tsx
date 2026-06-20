@@ -194,6 +194,10 @@ export default function AdminProgramManager() {
     };
 
     const handleCourseSave = () => {
+        if (!courseForm.category) {
+            show('Parent qualification stream is required.', 'error');
+            return;
+        }
         if (!courseForm.name.trim()) {
             show('Course level name is required.', 'error');
             return;
