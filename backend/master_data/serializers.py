@@ -81,11 +81,12 @@ class CALevelListSerializer(serializers.ModelSerializer):
     def get_course_id(self, obj):
         """
         Returns the courses.Course ID that was auto-created when this CALevel was saved.
+        Uses case-insensitive lookup so "CA FOUNDATION" matches "CA Foundation".
         Used by the frontend registration form to pass the correct selected_course ID.
         """
         try:
             from courses.models import Course
-            course = Course.objects.filter(name=obj.name).first()
+            course = Course.objects.filter(name__iexact=obj.name).first()
             return course.id if course else None
         except Exception:
             return None
