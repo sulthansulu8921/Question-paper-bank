@@ -7,6 +7,7 @@ import Logo from '@/components/Logo';
 import api from '@/api/axios';
 import lightBg from '@/assets/light-portal-bg.png';
 import { useAuthStore } from '@/store/useAuthStore';
+import SEO from '@/components/SEO';
 
 const fadeUp = {
     initial: { opacity: 0, y: 30 },
@@ -59,6 +60,10 @@ export default function PortalHomePage() {
 
     return (
         <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-800 overflow-x-hidden selection:bg-primary/30">
+            <SEO 
+                title="Premium Entrance Exam Prep & AI Study Partner" 
+                description="StudyQue (qubook.in) is a premium entrance exam preparation platform offering mock tests, study materials, and AI-powered learning assistance for CA, NEET, JEE, and KEAM exams."
+            />
             {/* PREMIUM MIXED THEME BACKGROUND SYSTEM */}
             <div className="fixed inset-0 z-0 bg-[#F8FAFC]">
                 {/* Base Image with Light Overlay */}

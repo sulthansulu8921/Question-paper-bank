@@ -22,6 +22,7 @@ const fadeUp = {
 };
 
 import Logo from '@/components/Logo';
+import SEO from '@/components/SEO';
 
 export default function ContactPage() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -75,6 +76,10 @@ I would like to contact you. Here are my details:
 
     return (
         <div className="min-h-screen bg-light font-sans text-dark overflow-x-hidden">
+            <SEO 
+                title="Contact Us | Support & Helpline" 
+                description="Have any questions or need support? Contact StudyQue's academic helpline via email, phone, or instant WhatsApp support."
+            />
             {/* TOP NAVBAR */}
             <nav className="w-full h-20 flex items-center justify-between px-6 md:px-12 glass fixed top-0 z-[100] border-b border-white/20 transition-all">
                 <div className="flex items-center gap-2">

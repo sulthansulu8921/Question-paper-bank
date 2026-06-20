@@ -31,6 +31,7 @@ const fadeUp = {
 interface TeamMember { id: number; name: string; role: string; image: string | null; description: string; social_links: Record<string, string>; }
 
 import Logo from '@/components/Logo';
+import SEO from '@/components/SEO';
 
 export default function AboutPage() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -41,6 +42,10 @@ export default function AboutPage() {
 
     return (
         <div className="min-h-screen bg-light font-sans text-dark overflow-x-hidden">
+            <SEO 
+                title="About Us | Our Mission & Learning Ecosystem" 
+                description="Learn about StudyQue's mission to empower students with smart, accessible, and high-quality preparation materials for CA, NEET, JEE, and KEAM exams."
+            />
             {/* TOP NAVBAR */}
             <nav className="w-full h-20 flex items-center justify-between px-6 md:px-12 glass fixed top-0 z-[100] border-b border-white/20 transition-all">
                 <div className="flex items-center gap-2">

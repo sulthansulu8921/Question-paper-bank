@@ -2,10 +2,15 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Clock, Sparkles } from 'lucide-react';
 import lightBg from '@/assets/light-portal-bg.png';
+import SEO from '@/components/SEO';
 
 export default function ComingSoonPage() {
     return (
         <div className="min-h-[100dvh] bg-[#F8FAFC] font-sans flex items-center justify-center p-6 relative overflow-hidden">
+            <SEO 
+                title="Launching Soon | New Courses & Syllabus" 
+                description="We're currently preparing premium previous year papers, answers, and study materials for this academic track. Sign up to get notified when they launch."
+            />
             {/* BACKGROUND SYSTEM */}
             <div className="absolute inset-0 z-0">
                 <div
