@@ -247,7 +247,7 @@ export default function PracticeSession() {
                         </div>
 
                         {/* Question text */}
-                        <div className="text-sm font-black text-slate-800 leading-relaxed white-space-pre-line">
+                        <div className="text-sm font-black text-slate-800 leading-relaxed whitespace-pre-wrap" style={{ whiteSpace: 'pre-wrap' }}>
                             {currentQuestion?.question_text}
                         </div>
 

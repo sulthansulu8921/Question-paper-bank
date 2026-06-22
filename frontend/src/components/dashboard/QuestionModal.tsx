@@ -146,7 +146,7 @@ const renderTextWithInlineTables = (text: string, tableJson: string) => {
         : (text.includes('[TABLE]') ? tables : []);
 
     if (activeCursorTables.length === 0 || !text.includes('[TABLE')) {
-        return <div className="white-space-pre-wrap">{parseFormattingTags(text)}</div>;
+        return <div className="whitespace-pre-wrap" style={{ whiteSpace: 'pre-wrap' }}>{parseFormattingTags(text)}</div>;
     }
 
     const regex = /(\[TABLE(?:_\d+)?\])/g;
@@ -154,7 +154,7 @@ const renderTextWithInlineTables = (text: string, tableJson: string) => {
     let generalCursorIndex = 0;
 
     return (
-        <div className="white-space-pre-wrap">
+        <div className="whitespace-pre-wrap" style={{ whiteSpace: 'pre-wrap' }}>
             {parts.map((part, index) => {
                 if (part.startsWith('[TABLE')) {
                     let targetTable = null;
@@ -532,7 +532,7 @@ export default function QuestionModal({
 
                                 {/* Case Scenario Passage Context */}
                                 {question.question_type === 'CASE_SCENARIO' && question.case_scenario_passage && (
-                                    <div className="border-l-4 border-amber-500 bg-amber-500/10 rounded-r-2xl p-6 text-sm font-semibold text-text-primary leading-relaxed white-space-pre-wrap">
+                                    <div className="border-l-4 border-amber-500 bg-amber-500/10 rounded-r-2xl p-6 text-sm font-semibold text-text-primary leading-relaxed whitespace-pre-wrap" style={{ whiteSpace: 'pre-wrap' }}>
                                         <h4 className="text-xs font-black uppercase text-amber-500 tracking-wider mb-2">Case Scenario Passage / Context</h4>
                                         {question.case_scenario_passage}
                                     </div>
