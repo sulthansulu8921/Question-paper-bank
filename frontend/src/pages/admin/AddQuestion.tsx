@@ -926,11 +926,114 @@ export default function AddQuestion() {
                                 </h2>
                             </div>
                             <textarea
+                                id="case-scenario-passage-text"
                                 className="w-full min-h-[220px] p-4 border border-amber-200 focus:border-amber-400 focus:ring-2 focus:ring-amber-100 rounded-lg text-sm bg-white outline-none transition-all font-semibold text-slate-700"
                                 placeholder="Type or paste the main Case Scenario/Passage here. Students will read this text before answering the sub-questions below."
                                 value={form.case_scenario_passage}
                                 onChange={e => set('case_scenario_passage', e.target.value)}
                             />
+
+                            {/* Case Scenario Toolbar Options */}
+                            <div className="flex gap-2.5 pb-2 flex-wrap">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowQTable(!showQTable)}
+                                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${showQTable ? 'bg-red-50 text-red-600 border-red-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}
+                                >
+                                    {showQTable ? '[-] Remove Table' : '[+] Add Table'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowQTable(true);
+                                        const currentTables = parseTablesHelper(form.table_data);
+                                        const cursorTablesCount = currentTables.filter((t: any) => t.type === 'cursor').length;
+                                        const newTablePlaceholder = `[TABLE_${cursorTablesCount + 1}]`;
+                                        const newTable = {
+                                            type: 'cursor',
+                                            headers: ['Header 1', 'Header 2'],
+                                            rows: [['', '']]
+                                        };
+                                        set('table_data', JSON.stringify([...currentTables, newTable]));
+                                        insertTextAtCursor('case-scenario-passage-text', ` ${newTablePlaceholder} `, val => set('case_scenario_passage', val));
+                                    }}
+                                    className="px-3.5 py-1.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-bold transition-all hover:bg-slate-200"
+                                >
+                                    [+ Table @ Cursor]
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        insertTextAtCursor(
+                                            'case-scenario-passage-text',
+                                            '\n(A) \n(B) \n(C) \n(D) ',
+                                            val => set('case_scenario_passage', val)
+                                        );
+                                    }}
+                                    className="px-3.5 py-1.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-bold transition-all hover:bg-slate-200"
+                                >
+                                    [+ MCQ @ Cursor]
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        insertTextAtCursor(
+                                            'case-scenario-passage-text',
+                                            '\n(a) \n(b) \n(c) ',
+                                            val => set('case_scenario_passage', val)
+                                        );
+                                    }}
+                                    className="px-3.5 py-1.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-bold transition-all hover:bg-slate-200"
+                                >
+                                    [+ Sub-Q @ Cursor]
+                                </button>
+                                <span className="w-[1px] h-6 bg-slate-200 self-center mx-1" />
+                                <button
+                                    type="button"
+                                    onClick={() => insertFormattedTextAtCursor('case-scenario-passage-text', 'B', val => set('case_scenario_passage', val))}
+                                    className="p-1.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-lg transition-all hover:bg-slate-200"
+                                    title="Bold"
+                                >
+                                    <Bold size={14} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => insertFormattedTextAtCursor('case-scenario-passage-text', 'U', val => set('case_scenario_passage', val))}
+                                    className="p-1.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-lg transition-all hover:bg-slate-200"
+                                    title="Underline"
+                                >
+                                    <Underline size={14} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => insertFormattedTextAtCursor('case-scenario-passage-text', 'CENTER', val => set('case_scenario_passage', val))}
+                                    className="p-1.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-lg transition-all hover:bg-slate-200"
+                                    title="Center"
+                                >
+                                    <AlignCenter size={14} />
+                                </button>
+                                <span className="w-[1px] h-6 bg-slate-200 self-center mx-1" />
+                                <button
+                                    type="button"
+                                    onClick={addSubQuestion}
+                                    className="px-3.5 py-1.5 border rounded-lg text-xs font-bold transition-all flex items-center gap-1 bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100"
+                                >
+                                    <Plus size={13} /> Add MCQ Sub-Question
+                                </button>
+                            </div>
+
+                            {/* Inline Case Scenario Table Builder */}
+                            {showQTable && (
+                                <MultiTableManager
+                                    label="Case Scenario Tabular Data"
+                                    value={form.table_data}
+                                    onChange={val => set('table_data', val)}
+                                    textareaId="case-scenario-passage-text"
+                                    insertTextAtCursor={insertTextAtCursor}
+                                    onUpdateText={val => set('case_scenario_passage', val)}
+                                />
+                            )}
+
                             <p className="text-[10px] text-amber-600 font-bold mt-1">This passage will serve as the shared context for all MCQ sub-questions below.</p>
                         </div>
                     )}

@@ -534,7 +534,7 @@ export default function QuestionModal({
                                 {question.question_type === 'CASE_SCENARIO' && question.case_scenario_passage && (
                                     <div className="border-l-4 border-amber-500 bg-amber-500/10 rounded-r-2xl p-6 text-sm font-semibold text-text-primary leading-relaxed whitespace-pre-wrap" style={{ whiteSpace: 'pre-wrap' }}>
                                         <h4 className="text-xs font-black uppercase text-amber-500 tracking-wider mb-2">Case Scenario Passage / Context</h4>
-                                        {question.case_scenario_passage}
+                                        {renderTextWithInlineTables(question.case_scenario_passage, question.table_data)}
                                     </div>
                                 )}
 
@@ -560,7 +560,7 @@ export default function QuestionModal({
                                 )}
 
                                 {/* Main Table */}
-                                <RenderNormalTables tableJson={question.table_data} text={question.question_text || ''} />
+                                <RenderNormalTables tableJson={question.table_data} text={question.case_scenario_passage || question.question_text || ''} />
 
                                 {/* MCQ Options (Top Level) */}
                                 {question.question_type === 'MCQ' && question.options && question.options.length > 0 && (
