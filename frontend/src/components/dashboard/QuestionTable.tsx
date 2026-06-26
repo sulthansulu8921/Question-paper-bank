@@ -26,13 +26,13 @@ export default function QuestionTable({
     hideTabs = false
 }: {
     onShowQuestion?: (q: Question) => void;
-    defaultFilter?: 'subjective' | 'mcq' | 'important' | 'saved';
+    defaultFilter?: 'subjective' | 'mcq' | 'case_scenario' | 'important' | 'saved';
     hideTabs?: boolean;
 }) {
     const { user } = useAuthStore();
     const { id: routeSubjectId } = useParams<{ id: string }>();
     const [activeRowId, setActiveRowId] = useState<number | null>(null);
-    const [filter, setFilter] = useState<'subjective' | 'mcq' | 'important' | 'saved'>(defaultFilter || 'subjective');
+    const [filter, setFilter] = useState<'subjective' | 'mcq' | 'case_scenario' | 'important' | 'saved'>(defaultFilter || 'subjective');
     const [searchParams] = useSearchParams();
 
     // Read global search from Topbar
@@ -174,7 +174,8 @@ export default function QuestionTable({
             let matchesType = true;
             if (filter === 'important') matchesType = isStarred;
             if (filter === 'saved') matchesType = isBookmarkedRow;
-            if (filter === 'mcq') matchesType = q.question_type === 'MCQ' || q.question_type === 'CASE_SCENARIO';
+            if (filter === 'mcq') matchesType = q.question_type === 'MCQ';
+            if (filter === 'case_scenario') matchesType = q.question_type === 'CASE_SCENARIO';
             if (filter === 'subjective') matchesType = q.question_type !== 'MCQ' && q.question_type !== 'CASE_SCENARIO';
 
             const searchStr = searchQuery.toLowerCase();
@@ -375,6 +376,16 @@ export default function QuestionTable({
                             }`}
                         >
                             MCQs
+                        </button>
+                        <button
+                            onClick={() => setFilter('case_scenario')}
+                            className={`px-4 sm:px-8 py-2 sm:py-2.5 text-xs font-black rounded-lg transition-all border ${
+                                filter === 'case_scenario'
+                                    ? 'bg-primary text-white border-primary shadow-md shadow-primary/10'
+                                    : 'bg-bg hover:bg-slate-100 text-text-secondary border-border shadow-sm'
+                            }`}
+                        >
+                            Case Scenario
                         </button>
                         <button
                             onClick={() => setFilter('important')}
