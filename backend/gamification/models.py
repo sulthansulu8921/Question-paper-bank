@@ -2,6 +2,8 @@ from django.db import models
 from django.conf import settings
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from courses.models import Subject, Topic
+
 
 class StudentStats(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='stats')
@@ -133,4 +135,88 @@ class ChatMessage(models.Model):
 
     def __str__(self):
         return f"{self.user.email}: {self.text[:30]} at {self.created_at}"
+
+
+class StudySession(models.Model):
+    SESSION_TYPES = [
+        ('POMODORO', 'Pomodoro'),
+        ('DEEP_FOCUS', 'Deep Focus'),
+        ('STOPWATCH', 'Stopwatch'),
+        ('COUNTDOWN', 'Countdown'),
+        ('CUSTOM', 'Custom')
+    ]
+    STATUS_CHOICES = [
+        ('ACTIVE', 'Active'),
+        ('PAUSED', 'Paused'),
+        ('COMPLETED', 'Completed'),
+        ('CANCELLED', 'Cancelled')
+    ]
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='study_sessions')
+    subject = models.ForeignKey(Subject, on_delete=models.SET_NULL, null=True, blank=True, related_name='study_sessions')
+    topic = models.ForeignKey(Topic, on_delete=models.SET_NULL, null=True, blank=True, related_name='study_sessions')
+    subject_name = models.CharField(max_length=200, blank=True, null=True)
+    topic_name = models.CharField(max_length=200, blank=True, null=True)
+    study_goal = models.TextField(blank=True, null=True)
+    session_type = models.CharField(max_length=20, choices=SESSION_TYPES, default='STOPWATCH')
+    target_duration = models.IntegerField(default=0) # in seconds
+    duration = models.IntegerField(default=0) # in seconds (actual elapsed active study time)
+    started_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ACTIVE')
+    xp_earned = models.IntegerField(default=0)
+    coins_earned = models.IntegerField(default=0)
+    focus_percentage = models.FloatField(default=100.0)
+    notes = models.TextField(blank=True, null=True)
+    
+    # State tracking for page reloads / reconnects
+    is_paused = models.BooleanField(default=False)
+    last_paused_at = models.DateTimeField(null=True, blank=True)
+    total_paused_duration = models.IntegerField(default=0) # in seconds
+    auto_saved_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'study_sessions'
+
+    def __str__(self):
+        return f"{self.user.email} - {self.session_type} ({self.duration}s)"
+
+
+class TimerSettings(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='timer_settings')
+    pomodoro_work_duration = models.IntegerField(default=1500) # 25 mins
+    pomodoro_break_duration = models.IntegerField(default=300) # 5 mins
+    short_break_duration = models.IntegerField(default=300)
+    long_break_duration = models.IntegerField(default=900)
+    auto_start_breaks = models.BooleanField(default=False)
+    sound_enabled = models.BooleanField(default=True)
+    sound_type = models.CharField(max_length=50, default='bell')
+
+    class Meta:
+        db_table = 'timer_settings'
+
+    def __str__(self):
+        return f"Timer settings for {self.user.email}"
+
+
+class SessionBreak(models.Model):
+    session = models.ForeignKey(StudySession, on_delete=models.CASCADE, related_name='breaks')
+    started_at = models.DateTimeField()
+    ended_at = models.DateTimeField(null=True, blank=True)
+    duration = models.IntegerField(default=0) # in seconds
+
+    class Meta:
+        db_table = 'session_breaks'
+
+    def __str__(self):
+        return f"Break for session {self.session.id} ({self.duration}s)"
+
+
+@receiver(post_save, sender=settings.AUTH_USER_MODEL)
+def create_timer_settings(sender, instance, created, **kwargs):
+    if created:
+        TimerSettings.objects.get_or_create(user=instance)
+
+
+
+
 

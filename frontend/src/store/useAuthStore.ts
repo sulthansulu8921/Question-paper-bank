@@ -12,6 +12,7 @@ interface AuthState {
     googleLogin: (credential: string, selectedCourseId?: string) => Promise<void>;
     updateProfile: (data: any) => Promise<void>;
     hydrate: () => Promise<void>;
+    updateCredits: (credits: number) => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -94,5 +95,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             localStorage.removeItem('token');
             set({ user: null, token: null, isHydrating: false });
         }
-    }
+    },
+    updateCredits: (credits) => set((state) => ({
+        user: state.user ? { ...state.user, ai_credits: credits } : null
+    }))
 }))

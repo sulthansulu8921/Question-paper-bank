@@ -44,6 +44,7 @@ export interface SubscriptionAccessFlags {
     activeSubscriptions: ActiveSubscription[];
     expiringSubscriptions: ActiveSubscription[]; // expires in ≤ 7 days
     daysUntilExpiry: number | null;
+    aiCredits: number;
 }
 
 export function useSubscriptionAccess(): SubscriptionAccessFlags {
@@ -75,6 +76,7 @@ export function useSubscriptionAccess(): SubscriptionAccessFlags {
             activeSubscriptions: [],
             expiringSubscriptions: [],
             daysUntilExpiry: null,
+            aiCredits: 999999,
         };
     }
 
@@ -86,7 +88,9 @@ export function useSubscriptionAccess(): SubscriptionAccessFlags {
     const hasNotesAccess = hasActiveSubscription && activeSubs.some((s) => s.plan_details ? s.plan_details.notes_access : true);
     const hasMockTestAccess = hasActiveSubscription && activeSubs.some((s) => s.plan_details ? s.plan_details.mock_test_access : true);
     const hasLiveClassAccess = hasActiveSubscription && activeSubs.some((s) => s.plan_details ? s.plan_details.live_class_access : true);
-    const hasAIAccess = hasActiveSubscription && activeSubs.some((s) => s.plan_details ? s.plan_details.ai_assistant_access : true);
+    const hasAIAccess = 
+        (user && (user.ai_credits ?? 0) > 0) || 
+        (hasActiveSubscription && activeSubs.some((s) => s.plan_details ? s.plan_details.ai_assistant_access : true));
     const hasDownloadAccess = hasActiveSubscription && activeSubs.some((s) => s.plan_details ? s.plan_details.download_permission : true);
     const hasQuestionBankAccess = hasActiveSubscription && activeSubs.some((s) => s.plan_details ? s.plan_details.question_bank_access : true);
 
@@ -118,5 +122,6 @@ export function useSubscriptionAccess(): SubscriptionAccessFlags {
         activeSubscriptions: activeSubs,
         expiringSubscriptions,
         daysUntilExpiry,
+        aiCredits: user?.ai_credits ?? 0,
     };
 }

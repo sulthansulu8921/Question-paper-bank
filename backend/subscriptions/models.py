@@ -60,6 +60,7 @@ class SubscriptionPlan(models.Model):
     ai_assistant_access = models.BooleanField(default=True)
     live_class_access = models.BooleanField(default=True)
     download_permission = models.BooleanField(default=True)
+    is_trial = models.BooleanField(default=False, help_text="If True, this plan will be automatically assigned to new users on signup.")
 
     # Date configuration fields
     purchase_start_date = models.DateTimeField(null=True, blank=True)
@@ -181,4 +182,35 @@ class UserViewedPaper(models.Model):
 
     class Meta:
         unique_together = ('user', 'paper_id')
+
+
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+@receiver(post_save, sender=UserSubscription)
+def grant_credits_on_subscription(sender, instance, created, **kwargs):
+    if created and instance.is_active:
+        plan = instance.plan
+        # Study Pass has ai_assistant_access = False
+        if not plan.ai_assistant_access:
+            user = instance.user
+            user.ai_credits = (user.ai_credits or 0) + 100
+            user.save(update_fields=['ai_credits'])
+
+
+@receiver(post_save, sender=settings.AUTH_USER_MODEL)
+def grant_trial_subscription_on_signup(sender, instance, created, **kwargs):
+    if created:
+        trial_plan = SubscriptionPlan.objects.filter(is_trial=True, status='ACTIVE').first()
+        if trial_plan:
+            from django.utils import timezone
+            from datetime import timedelta
+            if not UserSubscription.objects.filter(user=instance, is_active=True).exists():
+                UserSubscription.objects.create(
+                    user=instance,
+                    plan=trial_plan,
+                    end_date=timezone.now() + timedelta(days=trial_plan.duration_days),
+                    is_active=True
+                )
+
 

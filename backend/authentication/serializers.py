@@ -34,7 +34,8 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'email', 'mobile_number', 'first_name', 'last_name', 'full_name', 
             'password', 'settings', 'is_staff', 'is_superuser', 'subscription_tier', 
             'date_joined', 'last_login', 'selected_course', 'selected_course_name',
-            'selected_course_category', 'role', 'institution', 'institution_name'
+            'selected_course_category', 'role', 'institution', 'institution_name',
+            'ai_credits'
         ]
         extra_kwargs = {'password': {'write_only': True}}
     
@@ -79,12 +80,13 @@ class UserSerializer(serializers.ModelSerializer):
             
             period_str = " ".join(period)
             details_str = " - ".join(details)
+            tier_suffix = "Mentor Pass" if active_sub.plan.ai_assistant_access else "Study Pass"
             
             if details_str and period_str:
-                return f"{details_str} ({period_str})"
+                return f"{details_str} - {tier_suffix} ({period_str})"
             elif details_str:
-                return details_str
-            return active_sub.plan.name
+                return f"{details_str} - {tier_suffix}"
+            return f"{active_sub.plan.name} - {tier_suffix}"
         return "Free Account"
 
 

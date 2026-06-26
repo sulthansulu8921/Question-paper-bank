@@ -99,7 +99,7 @@ class PaymentSerializer(serializers.ModelSerializer):
     user_email = serializers.ReadOnlyField(source='user.email')
     user_name = serializers.SerializerMethodField()
     user_mobile = serializers.ReadOnlyField(source='user.mobile_number')
-    plan_name = serializers.ReadOnlyField(source='plan.name')
+    plan_name = serializers.SerializerMethodField()
     plan_price = serializers.ReadOnlyField(source='plan.price')
     plan_duration = serializers.ReadOnlyField(source='plan.duration_days')
     subscription_details = UserSubscriptionSerializer(source='subscription', read_only=True)
@@ -119,6 +119,17 @@ class PaymentSerializer(serializers.ModelSerializer):
             full_name = f"{obj.user.first_name} {obj.user.last_name}".strip()
             return full_name or obj.user.email.split('@')[0]
         return ""
+
+    def get_plan_name(self, obj):
+        if obj.plan:
+            return obj.plan.name
+        if obj.original_amount:
+            try:
+                credits_count = int(obj.original_amount)
+                return f"AI Credits Pack ({credits_count} Credits)"
+            except Exception:
+                pass
+        return "AI Credits Pack"
 
     def get_expiry_date(self, obj):
         if obj.subscription:

@@ -34,6 +34,7 @@ class User(AbstractUser):
     selected_course = models.ForeignKey('courses.Course', on_delete=models.SET_NULL, null=True, blank=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='STUDENT')
     institution = models.ForeignKey(Institution, on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
+    ai_credits = models.IntegerField(default=100)
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username']

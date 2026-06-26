@@ -166,10 +166,14 @@ class HasMockTestAccess(BaseGranularAccessPermission):
 
 class HasAIAssistantAccess(permissions.BasePermission):
     def has_permission(self, request, view):
-        if request.user and (request.user.is_staff or request.user.is_superuser or request.user.role in ['SUPER_ADMIN', 'INSTITUTION_ADMIN', 'INSTRUCTOR']):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_staff or request.user.is_superuser or request.user.role in ['SUPER_ADMIN', 'INSTITUTION_ADMIN', 'INSTRUCTOR']:
             return True
-        # AI assistant requires active subscription with AI access
-        return user_has_active_subscription(request.user, None, check_type='ai')
+        # AI assistant requires active subscription with AI access OR user must have remaining credits
+        if user_has_active_subscription(request.user, None, check_type='ai'):
+            return True
+        return getattr(request.user, 'ai_credits', 0) > 0
 
 class HasLiveClassAccess(BaseGranularAccessPermission):
     check_type = 'live_class'

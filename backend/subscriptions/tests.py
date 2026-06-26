@@ -437,3 +437,182 @@ class CourseRestrictedCouponAndGstTests(APITestCase):
         self.assertEqual(float(payment.amount), 118.0)  # Base 100 + 18 GST
 
 
+class BasicPremiumSubscriptionTests(APITestCase):
+    def test_seed_basic_plans_command(self):
+        from django.core.management import call_command
+        from subscriptions.models import SubscriptionPlan
+        
+        # Ensure we have active plans to seed
+        plan1 = SubscriptionPlan.objects.create(
+            name="CA Final Paper Wise Monthly",
+            price=200.00,
+            duration_days=30,
+            status="ACTIVE",
+            billing_cycle="MONTHLY",
+            scope="PAPER_WISE"
+        )
+        
+        call_command("seed_basic_plans")
+        
+        # Check if original was updated with Premium
+        plan1.refresh_from_db()
+        self.assertEqual(plan1.name, "CA Final Paper Wise Monthly (Premium)")
+        self.assertTrue(plan1.ai_assistant_access)
+        
+        # Check if Basic counterpart was created
+        basic_exists = SubscriptionPlan.objects.filter(
+            name="CA Final Paper Wise Monthly (Basic)",
+            price=120.00, # 60% of 200
+            ai_assistant_access=False
+        ).exists()
+        self.assertTrue(basic_exists)
+
+    def test_serializer_subscription_tier_suffix(self):
+        from subscriptions.models import SubscriptionPlan, UserSubscription
+        from django.utils import timezone
+        from datetime import timedelta
+        from authentication.serializers import UserSerializer
+        
+        user = User.objects.create_user(
+            username='tier_test_user',
+            email='tiertest@example.com',
+            password='password123'
+        )
+        
+        # 1. Free account has no suffix
+        serializer = UserSerializer(user)
+        self.assertEqual(serializer.data['subscription_tier'], "Free Account")
+        
+        # 2. Premium account has suffix
+        premium_plan = SubscriptionPlan.objects.create(
+            name="CA Final Group Wise Monthly (Premium)",
+            price=450.00,
+            duration_days=30,
+            status="ACTIVE",
+            billing_cycle="MONTHLY",
+            scope="GROUP_WISE",
+            ai_assistant_access=True
+        )
+        
+        sub_premium = UserSubscription.objects.create(
+            user=user,
+            plan=premium_plan,
+            end_date=timezone.now() + timedelta(days=5),
+            is_active=True
+        )
+        
+        serializer = UserSerializer(user)
+        self.assertIn("Mentor Pass", serializer.data['subscription_tier'])
+        
+        # Remove active premium sub
+        sub_premium.is_active = False
+        sub_premium.save()
+        
+        # 3. Basic account has suffix
+        basic_plan = SubscriptionPlan.objects.create(
+            name="CA Final Group Wise Monthly (Basic)",
+            price=270.00,
+            duration_days=30,
+            status="ACTIVE",
+            billing_cycle="MONTHLY",
+            scope="GROUP_WISE",
+            ai_assistant_access=False
+        )
+        
+        UserSubscription.objects.create(
+            user=user,
+            plan=basic_plan,
+            end_date=timezone.now() + timedelta(days=5),
+            is_active=True
+        )
+        
+        serializer = UserSerializer(user)
+        self.assertIn("Study Pass", serializer.data['subscription_tier'])
+
+
+class AICreditSystemTests(APITestCase):
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        from subscriptions.models import PlatformSetting
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username='creditstudent',
+            email='creditstudent@example.com',
+            password='password123'
+        )
+        self.client.force_authenticate(user=self.user)
+        PlatformSetting.objects.create(key="ENABLE_GST", value="true")
+
+    def test_credit_pack_order_creation(self):
+        response = self.client.post('/api/subscriptions/payments/create_credit_order/', {
+            'pack_id': 'pack_100'
+        }, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('order_id', response.data)
+        self.assertEqual(response.data['amount'], 5782)  # 49 + 18% GST in paise
+
+    def test_signal_grants_credits_on_study_pass(self):
+        from subscriptions.models import SubscriptionPlan, UserSubscription
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        study_pass_plan = SubscriptionPlan.objects.create(
+            name="CA Final Group Wise Monthly (Study Pass)",
+            price=299.00,
+            duration_days=30,
+            status="ACTIVE",
+            billing_cycle="MONTHLY",
+            scope="GROUP_WISE",
+            ai_assistant_access=False
+        )
+        
+        # User starts with 0 credits
+        self.user.ai_credits = 0
+        self.user.save()
+        
+        UserSubscription.objects.create(
+            user=self.user,
+            plan=study_pass_plan,
+            end_date=timezone.now() + timedelta(days=30),
+            is_active=True
+        )
+        
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.ai_credits, 100)
+
+
+class FreeTrialSubscriptionTests(APITestCase):
+    def test_new_user_gets_free_trial(self):
+        from subscriptions.models import SubscriptionPlan, UserSubscription
+        from django.contrib.auth import get_user_model
+        
+        # Create a trial plan
+        trial_plan = SubscriptionPlan.objects.create(
+            name="7-Day Free Trial",
+            price=0.00,
+            duration_days=7,
+            status="ACTIVE",
+            billing_cycle="MONTHLY",
+            is_trial=True,
+            ai_assistant_access=False
+        )
+        
+        User = get_user_model()
+        new_user = User.objects.create_user(
+            username='trialstudent',
+            email='trialstudent@example.com',
+            password='password123'
+        )
+        
+        # Verify user automatically has a trial subscription
+        user_subs = UserSubscription.objects.filter(user=new_user, plan=trial_plan, is_active=True)
+        self.assertTrue(user_subs.exists())
+        self.assertEqual(user_subs.count(), 1)
+        
+        # Verify user also gets 100 additional credits (total 200) since ai_assistant_access is False
+        new_user.refresh_from_db()
+        self.assertEqual(new_user.ai_credits, 200)
+
+
+
+

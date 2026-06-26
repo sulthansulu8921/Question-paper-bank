@@ -29,6 +29,7 @@ interface Plan {
     ai_assistant_access: boolean;
     live_class_access: boolean;
     download_permission: boolean;
+    is_trial: boolean;
     purchase_start_date?: string | null;
     purchase_end_date?: string | null;
     fixed_expiry_date?: string | null;
@@ -115,6 +116,7 @@ export default function AdminPricingManager() {
     const [editAIAssistantAccess, setEditAIAssistantAccess] = useState(true);
     const [editLiveClassAccess, setEditLiveClassAccess] = useState(true);
     const [editDownloadPermission, setEditDownloadPermission] = useState(true);
+    const [editIsTrial, setEditIsTrial] = useState(false);
 
     const [editPurchaseStartDate, setEditPurchaseStartDate] = useState('');
     const [editPurchaseEndDate, setEditPurchaseEndDate] = useState('');
@@ -189,6 +191,7 @@ export default function AdminPricingManager() {
         setEditAIAssistantAccess(plan.ai_assistant_access !== false);
         setEditLiveClassAccess(plan.live_class_access !== false);
         setEditDownloadPermission(plan.download_permission !== false);
+        setEditIsTrial(!!plan.is_trial);
 
         setEditPurchaseStartDate(formatToDatetimeLocal(plan.purchase_start_date));
         setEditPurchaseEndDate(formatToDatetimeLocal(plan.purchase_end_date));
@@ -223,6 +226,7 @@ export default function AdminPricingManager() {
         setEditAIAssistantAccess(true);
         setEditLiveClassAccess(true);
         setEditDownloadPermission(true);
+        setEditIsTrial(false);
 
         setEditPurchaseStartDate('');
         setEditPurchaseEndDate('');
@@ -281,6 +285,7 @@ export default function AdminPricingManager() {
             ai_assistant_access: editAIAssistantAccess,
             live_class_access: editLiveClassAccess,
             download_permission: editDownloadPermission,
+            is_trial: editIsTrial,
             purchase_start_date: editPurchaseStartDate ? new Date(editPurchaseStartDate).toISOString() : null,
             purchase_end_date: editPurchaseEndDate ? new Date(editPurchaseEndDate).toISOString() : null,
             fixed_expiry_date: editFixedExpiryDate ? new Date(editFixedExpiryDate).toISOString() : null,
@@ -449,6 +454,11 @@ export default function AdminPricingManager() {
                                                         <span style={{ fontSize: '0.6rem', fontWeight: 800, background: plan.plan_type === 'QUESTIONS' ? '#FEF2F2' : '#ECFDF5', color: plan.plan_type === 'QUESTIONS' ? '#EF4444' : '#10B981', padding: '0.1rem 0.35rem', borderRadius: '0.25rem' }}>
                                                             {plan.plan_type === 'QUESTIONS' ? 'Q-Only' : 'Full Course'}
                                                         </span>
+                                                        {plan.is_trial && (
+                                                            <span style={{ fontSize: '0.6rem', fontWeight: 800, background: '#F5F3FF', color: '#8B5CF6', padding: '0.1rem 0.35rem', borderRadius: '0.25rem', border: '1px solid #DDD6FE' }}>
+                                                                Trial
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div style={{ fontSize: '0.7rem', color: '#94A3B8', marginTop: '0.2rem', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                         {plan.description || 'No description'}
@@ -795,6 +805,7 @@ export default function AdminPricingManager() {
                                                 { key: 'ai', label: '✨ AI Assistant Access', state: editAIAssistantAccess, setter: setEditAIAssistantAccess },
                                                 { key: 'live', label: '💻 Live Class Access', state: editLiveClassAccess, setter: setEditLiveClassAccess },
                                                 { key: 'download', label: '📥 Download Permission', state: editDownloadPermission, setter: setEditDownloadPermission },
+                                                { key: 'trial', label: '🎁 Free Trial (Auto-applied on signup)', state: editIsTrial, setter: setEditIsTrial },
                                             ].map((feature) => (
                                                 <label key={feature.key} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, color: '#334155' }}>
                                                     <input

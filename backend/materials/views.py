@@ -2300,7 +2300,10 @@ Daily study goal: {study_hours} hours.
 Please generate a highly customized 7-day study plan matching the schema.
 """
             
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_api_key}"
+            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+            headers = {
+                "x-goog-api-key": gemini_api_key
+            }
             payload = {
                 "contents": [{
                     "parts": [{"text": system_instruction + "\n\nUser request:\n" + prompt}]
@@ -2312,7 +2315,7 @@ Please generate a highly customized 7-day study plan matching the schema.
             
             try:
                 import requests
-                response = requests.post(url, json=payload, timeout=15)
+                response = requests.post(url, json=payload, headers=headers, timeout=15)
                 if response.status_code == 200:
                     res_data = response.json()
                     raw_text = res_data['candidates'][0]['content']['parts'][0]['text']

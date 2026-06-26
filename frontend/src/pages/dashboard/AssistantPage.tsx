@@ -313,6 +313,19 @@ export default function AssistantPage() {
                             </p>
                         </div>
                     </div>
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5 bg-primary/5 px-3 py-1.5 rounded-xl border border-primary/10">
+                            <Sparkles size={12} className="text-primary animate-pulse" />
+                            <span className="text-[9px] text-text-secondary font-extrabold uppercase">AI Credits:</span>
+                            <span className="text-xs font-black text-primary">{user?.ai_credits ?? 0}</span>
+                        </div>
+                        <button
+                            onClick={() => navigate('/dashboard/subscription')}
+                            className="text-[9px] font-black uppercase tracking-wider text-primary border border-primary/20 bg-primary/5 hover:bg-primary/10 px-3 py-1.5 rounded-xl transition-all"
+                        >
+                            Buy Pack
+                        </button>
+                    </div>
                 </div>
 
                 {/* Messages Body */}

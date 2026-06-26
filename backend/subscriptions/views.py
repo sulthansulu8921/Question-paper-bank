@@ -1183,6 +1183,134 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
         return Response(UserSubscriptionSerializer(subscription).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def create_credit_order(self, request):
+        pack_id = request.data.get('pack_id')
+        if not pack_id:
+            return Response({'error': 'pack_id is required'}, status=400)
+
+        CREDIT_PACKS = {
+            'pack_100': {'credits': 100, 'price': 49.00},
+            'pack_250': {'credits': 250, 'price': 99.00},
+            'pack_500': {'credits': 500, 'price': 179.00},
+        }
+
+        pack = CREDIT_PACKS.get(pack_id)
+        if not pack:
+            return Response({'error': 'Invalid pack_id'}, status=400)
+
+        base_price = pack['price']
+        if is_gst_enabled():
+            gst_amount = round(base_price * 0.18, 2)
+        else:
+            gst_amount = 0.0
+        total_amount = round(base_price + gst_amount, 2)
+        amount_in_paise = int(total_amount * 100)
+
+        if amount_in_paise < 100:
+            return Response({'error': 'Amount must be at least 100 paise.'}, status=400)
+
+        if not RAZORPAY_KEY_ID or RAZORPAY_KEY_ID == 'rzp_test_placeholder_key':
+            return Response({'error': 'Razorpay is not configured on this server.'}, status=400)
+
+        try:
+            client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+            razorpay_order = client.order.create({
+                'amount': amount_in_paise,
+                'currency': 'INR',
+                'payment_capture': '1'
+            })
+            order_id = razorpay_order['id']
+        except Exception as e:
+            print("Razorpay Error:", e)
+            err_str = str(e).lower()
+            if "401" in err_str or "unauthorized" in err_str or "invalid key" in err_str:
+                return Response({'error': f'Razorpay authentication failed: {str(e)}'}, status=401)
+            return Response({'error': f'Failed to create Razorpay order: {str(e)}'}, status=500)
+
+        return Response({
+            'order_id': order_id,
+            'amount': amount_in_paise,
+            'currency': 'INR',
+            'base_amount': base_price,
+            'discount_amount': 0.0,
+            'gst_amount': gst_amount,
+            'total_amount': total_amount,
+            'razorpay_key_id': RAZORPAY_KEY_ID,
+            'is_sandbox': False
+        })
+
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def verify_credit_payment(self, request):
+        payment_id = request.data.get('razorpay_payment_id')
+        order_id = request.data.get('razorpay_order_id')
+        signature = request.data.get('razorpay_signature')
+        pack_id = request.data.get('pack_id')
+
+        if not all([payment_id, order_id, signature, pack_id]):
+            return Response({'error': 'Missing required fields: razorpay_payment_id, razorpay_order_id, razorpay_signature, and pack_id are required.'}, status=400)
+
+        CREDIT_PACKS = {
+            'pack_100': {'credits': 100, 'price': 49.00},
+            'pack_250': {'credits': 250, 'price': 99.00},
+            'pack_500': {'credits': 500, 'price': 179.00},
+        }
+
+        pack = CREDIT_PACKS.get(pack_id)
+        if not pack:
+            return Response({'error': 'Invalid pack_id'}, status=400)
+
+        verified = False
+        try:
+            client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+            params_dict = {
+                'razorpay_order_id': order_id,
+                'razorpay_payment_id': payment_id,
+                'razorpay_signature': signature
+            }
+            client.utility.verify_payment_signature(params_dict)
+            verified = True
+        except Exception as e:
+            print("Razorpay verification failed:", e)
+            return Response({'error': f'Payment signature verification failed: {str(e)}'}, status=400)
+
+        if not verified:
+            return Response({'error': 'Payment verification failed'}, status=400)
+
+        base_price = pack['price']
+        if is_gst_enabled():
+            gst_amount = round(base_price * 0.18, 2)
+        else:
+            gst_amount = 0.0
+        total_amount = round(base_price + gst_amount, 2)
+
+        # Create Payment
+        payment = Payment.objects.create(
+            user=request.user,
+            plan=None,
+            subscription=None,
+            amount=total_amount,
+            base_amount=base_price,
+            gst_amount=gst_amount,
+            transaction_id=payment_id or f"TXN-{uuid.uuid4().hex[:8].upper()}",
+            order_id=order_id,
+            status='SUCCESS',
+            coupon_code=None,
+            discount_amount=0.0,
+            original_amount=pack['credits'] # Store credits count in original_amount
+        )
+
+        # Award Credits
+        request.user.ai_credits = (request.user.ai_credits or 0) + pack['credits']
+        request.user.save(update_fields=['ai_credits'])
+
+        return Response({
+            'success': True,
+            'message': f"Successfully purchased {pack['credits']} AI credits.",
+            'ai_credits': request.user.ai_credits,
+            'payment': PaymentSerializer(payment).data
+        })
+
 
 class PlatformSettingViewSet(viewsets.ModelViewSet):
     queryset = PlatformSetting.objects.all()

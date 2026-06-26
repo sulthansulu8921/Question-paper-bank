@@ -44,6 +44,76 @@ export default function SubscriptionPage() {
     const user = useAuthStore((state) => state.user);
     const hydrate = useAuthStore((state) => state.hydrate);
     const queryClient = useQueryClient();
+    const updateCredits = useAuthStore((state) => state.updateCredits);
+
+    const [isProcessingCredits, setIsProcessingCredits] = useState<string | null>(null);
+    const [creditsError, setCreditsError] = useState<string | null>(null);
+    const [creditsSuccess, setCreditsSuccess] = useState<string | null>(null);
+
+    const handlePurchaseCredits = async (packId: string) => {
+        setIsProcessingCredits(packId);
+        setCreditsError(null);
+        setCreditsSuccess(null);
+
+        try {
+            const orderRes = await api.post('/subscriptions/payments/create_credit_order/', {
+                pack_id: packId
+            });
+
+            const { order_id, amount, currency, razorpay_key_id } = orderRes.data;
+
+            const options = {
+                key: razorpay_key_id,
+                amount: amount,
+                currency: currency,
+                name: "Qubook.in Credits Pack",
+                description: `Purchase of ${packId === 'pack_100' ? '100' : packId === 'pack_250' ? '250' : '500'} AI Credits`,
+                order_id: order_id,
+                handler: async function (response: any) {
+                    try {
+                        const verifyRes = await api.post('/subscriptions/payments/verify_credit_payment/', {
+                            razorpay_order_id: response.razorpay_order_id,
+                            razorpay_payment_id: response.razorpay_payment_id,
+                            razorpay_signature: response.razorpay_signature,
+                            pack_id: packId
+                        });
+                        setCreditsSuccess(`Successfully purchased credits!`);
+                        updateCredits(verifyRes.data.ai_credits);
+                        await hydrate();
+                        queryClient.invalidateQueries({ queryKey: ['user-payments'] });
+                        setTimeout(() => {
+                            setCreditsSuccess(null);
+                            setIsProcessingCredits(null);
+                        }, 3000);
+                    } catch (err: any) {
+                        const errorMsg = err.response?.data?.error || 'Verification of signature failed.';
+                        setCreditsError(errorMsg);
+                        setIsProcessingCredits(null);
+                    }
+                },
+                prefill: {
+                    name: `${user?.first_name || ''} ${user?.last_name || ''}`,
+                    email: user?.email || '',
+                    contact: user?.mobile_number || ''
+                },
+                theme: {
+                    color: "#4F46E5"
+                },
+                modal: {
+                    ondismiss: function () {
+                        setIsProcessingCredits(null);
+                    }
+                }
+            };
+            const rzp = new (window as any).Razorpay(options);
+            rzp.open();
+
+        } catch (err: any) {
+            const errorMsg = err.response?.data?.error || 'Unable to initialize checkout. Please try again.';
+            setCreditsError(errorMsg);
+            setIsProcessingCredits(null);
+        }
+    };
 
     // Fetch active course details (levels and subjects)
     const { data: activeCourse } = useQuery<any>({
@@ -134,6 +204,7 @@ export default function SubscriptionPage() {
     const [paymentSuccess, setPaymentSuccess] = useState(false);
     const [paymentError, setPaymentError] = useState('');
     const [downloadingId, setDownloadingId] = useState<number | null>(null);
+    const [selectedTier, setSelectedTier] = useState<'BASIC' | 'PREMIUM' | null>(null);
 
     // Fetch plans
     const { data: plans = [], isLoading: plansLoading } = useQuery<Plan[]>({
@@ -252,6 +323,7 @@ export default function SubscriptionPage() {
         setAppliedCoupon(null);
         setCouponSuccess('');
         setCouponError('');
+        setSelectedTier(null);
 
         if (selectedCycle === 'MONTHLY') {
             const currentMonthName = calendarMonths[new Date().getMonth()];
@@ -263,8 +335,8 @@ export default function SubscriptionPage() {
         }
     }, [selectedLevelId, selectedScope, selectedCycle, selectedLevel]);
 
-    // Active matching plan
-    const matchingPlan = plans.find(p => {
+    // Active matching plans
+    const matchingPlans = plans.filter(p => {
         // If a plan is course-specific, it must match the active course ID
         if (p.course_specific) {
             if (p.course_specific !== user?.selected_course) return false;
@@ -285,6 +357,11 @@ export default function SubscriptionPage() {
         }
         return p.scope === selectedScope && p.billing_cycle === selectedCycle;
     });
+
+    const basicPlan = matchingPlans.find(p => p.name.includes('(Basic)'));
+    const premiumPlan = matchingPlans.find(p => p.name.includes('(Premium)'));
+
+    const matchingPlan = selectedTier === 'BASIC' ? basicPlan : (selectedTier === 'PREMIUM' ? premiumPlan : null);
 
     // Cost Breakdown Calculation (GST 18% if enabled)
     const basePrice = matchingPlan ? parseFloat(matchingPlan.price) : 0;
@@ -620,7 +697,7 @@ export default function SubscriptionPage() {
                                 )}
                             </div>
 
-                            {!matchingPlan ? (
+                            {(matchingPlans.length === 0) ? (
                                 <div className="bg-card rounded-[2rem] p-8 border border-border shadow-sm text-center py-16 space-y-6 relative overflow-hidden">
                                     <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 to-orange-500" />
                                     <div className="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-[1.25rem] flex items-center justify-center mx-auto border border-amber-500/20">
@@ -833,6 +910,127 @@ export default function SubscriptionPage() {
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Step 6: Choose Your Plan Tier */}
+                                    {matchingPlans.length > 0 && (
+                                        <div className="bg-card rounded-3xl p-6 border border-border shadow-sm space-y-6">
+                                            <div className="flex items-center gap-2">
+                                                <Sparkles className="text-primary animate-pulse" size={20} />
+                                                <h3 className="text-sm font-black text-text-primary uppercase tracking-wider">6. Choose Your Plan Tier</h3>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                {/* Basic Plan Card */}
+                                                {basicPlan && (
+                                                    <div onClick={() => setSelectedTier('BASIC')} className={`cursor-pointer p-6 rounded-3xl border transition-all flex flex-col justify-between h-full hover:scale-[1.01] ${selectedTier === 'BASIC' ? 'border-primary bg-primary/5 ring-2 ring-primary/10 shadow-md' : 'border-border bg-bg hover:bg-bg-secondary'}`}>
+                                                        <div className="space-y-4">
+                                                            <div className="flex justify-between items-start">
+                                                                <div>
+                                                                    <span className="text-[10px] font-black text-text-muted uppercase tracking-wider">Core Prep</span>
+                                                                    <h4 className="text-lg font-black text-text-primary mt-0.5">Study Pass</h4>
+                                                                </div>
+                                                                <span className="text-xl font-black text-text-primary">₹{parseFloat(basicPlan.price).toFixed(0)}<span className="text-xs font-semibold text-text-muted">/{selectedCycle === 'MONTHLY' ? 'mo' : 'attempt'}</span></span>
+                                                            </div>
+                                                            <p className="text-[11px] text-text-muted font-bold leading-relaxed">{basicPlan.description}</p>
+                                                            <div className="border-t border-border pt-4 space-y-2.5">
+                                                                <div className="flex items-center gap-2 text-[11px] font-semibold text-text-secondary">
+                                                                    <CheckCircle size={14} className="text-emerald-500 shrink-0" />
+                                                                    <span>Complete Study Notes</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[11px] font-semibold text-text-secondary">
+                                                                    <CheckCircle size={14} className="text-emerald-500 shrink-0" />
+                                                                    <span>Chapterwise MCQs & PYQs</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[11px] font-semibold text-text-secondary">
+                                                                    <CheckCircle size={14} className="text-emerald-500 shrink-0" />
+                                                                    <span>Full Length Mock Tests</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[11px] font-semibold text-text-secondary">
+                                                                    <CheckCircle size={14} className="text-emerald-500 shrink-0" />
+                                                                    <span>Learning Mode & Study Timer</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[11px] font-semibold text-text-secondary">
+                                                                    <CheckCircle size={14} className="text-emerald-500 shrink-0" />
+                                                                    <span>Study Groups & Streaks</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[11px] font-semibold text-text-secondary">
+                                                                    <CheckCircle size={14} className="text-emerald-500 shrink-0" />
+                                                                    <span>Basic Analytics</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[11px] font-black text-primary">
+                                                                    <Sparkles size={14} className="text-primary shrink-0" />
+                                                                    <span>100 AI Credits included/mo</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[11px] font-bold text-text-muted/65 line-through">
+                                                                    <span className="shrink-0 text-red-500/50">✕</span>
+                                                                    <span>AI Tutor & Doubt Solving</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[11px] font-bold text-text-muted/65 line-through">
+                                                                    <span className="shrink-0 text-red-500/50">✕</span>
+                                                                    <span>AI Study Planner</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <button className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-wider mt-6 transition-all ${selectedTier === 'BASIC' ? 'bg-primary text-white' : 'bg-bg text-text-primary border border-border hover:bg-border'}`}>
+                                                            {selectedTier === 'BASIC' ? 'Selected' : 'Choose Study Pass'}
+                                                        </button>
+                                                    </div>
+                                                )}
+
+                                                {/* Premium Plan Card */}
+                                                {premiumPlan && (
+                                                    <div onClick={() => setSelectedTier('PREMIUM')} className={`relative cursor-pointer p-6 rounded-3xl border transition-all flex flex-col justify-between h-full hover:scale-[1.01] ${selectedTier === 'PREMIUM' ? 'border-primary bg-primary/5 ring-2 ring-primary/10 shadow-lg' : 'border-border bg-bg hover:bg-bg-secondary'}`}>
+                                                        <div className="absolute top-0 right-6 -translate-y-1/2 bg-gradient-to-r from-primary to-accent text-white text-[8px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shadow-sm flex items-center gap-1">
+                                                            <Sparkles size={8} />
+                                                            <span>Qubook Mentor</span>
+                                                        </div>
+                                                        <div className="space-y-4">
+                                                            <div className="flex justify-between items-start">
+                                                                <div>
+                                                                    <span className="text-[10px] font-black text-primary uppercase tracking-wider">Complete AI Experience</span>
+                                                                    <h4 className="text-lg font-black text-text-primary mt-0.5">Mentor Pass</h4>
+                                                                </div>
+                                                                <span className="text-xl font-black text-primary">₹{parseFloat(premiumPlan.price).toFixed(0)}<span className="text-xs font-semibold text-text-muted">/{selectedCycle === 'MONTHLY' ? 'mo' : 'attempt'}</span></span>
+                                                            </div>
+                                                            <p className="text-[11px] text-text-muted font-bold leading-relaxed">{premiumPlan.description}</p>
+                                                            <div className="border-t border-border pt-4 space-y-2.5">
+                                                                <div className="flex items-center gap-2 text-[11px] font-semibold text-text-secondary">
+                                                                    <CheckCircle size={14} className="text-emerald-500 shrink-0" />
+                                                                    <span>Everything in Study Pass, PLUS:</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[11px] font-black text-primary">
+                                                                    <Sparkles size={14} className="text-primary shrink-0" />
+                                                                    <span>UNLIMITED AI Credits</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[11px] font-black text-primary">
+                                                                    <Sparkles size={14} className="text-primary shrink-0" />
+                                                                    <span>AI Tutor & Doubt Solving</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[11px] font-black text-primary">
+                                                                    <Sparkles size={14} className="text-primary shrink-0" />
+                                                                    <span>AI Study Planner & Insights</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[11px] font-black text-primary">
+                                                                    <Sparkles size={14} className="text-primary shrink-0" />
+                                                                    <span>AI Mock Analysis & Flashcards</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[11px] font-black text-primary">
+                                                                    <Sparkles size={14} className="text-primary shrink-0" />
+                                                                    <span>Adaptive Learning Engine</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[11px] font-black text-primary">
+                                                                    <Sparkles size={14} className="text-primary shrink-0" />
+                                                                    <span>Advanced Performance Analytics</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <button className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-wider mt-6 transition-all ${selectedTier === 'PREMIUM' ? 'bg-primary text-white shadow-lg shadow-primary/10' : 'bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20'}`}>
+                                                            {selectedTier === 'PREMIUM' ? 'Selected' : 'Choose Mentor Pass'}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </>
                             )}
                         </div>
@@ -848,7 +1046,7 @@ export default function SubscriptionPage() {
                                     <p className="text-[10px] text-text-muted font-bold mt-1">Review plan choices and tax calculation.</p>
                                 </div>
 
-                                {!matchingPlan ? (
+                                {matchingPlans.length === 0 ? (
                                     <div className="text-center py-8 text-text-muted space-y-3">
                                         <AlertCircle className="mx-auto text-amber-500 animate-pulse" size={32} />
                                         <div className="space-y-1">
@@ -858,7 +1056,17 @@ export default function SubscriptionPage() {
                                             </p>
                                         </div>
                                     </div>
-                                ) : matchingPlan ? (
+                                ) : !matchingPlan ? (
+                                    <div className="text-center py-8 text-text-muted space-y-3">
+                                        <Sparkles className="mx-auto text-primary animate-pulse" size={32} />
+                                        <div className="space-y-1">
+                                            <p className="text-xs font-black uppercase text-text-primary">Select Subscription Tier</p>
+                                            <p className="text-[10px] text-text-muted font-bold leading-relaxed">
+                                                Please choose either the Study Pass or Mentor Pass plan tier in Step 6 to proceed with your subscription purchase.
+                                            </p>
+                                        </div>
+                                    </div>
+                                ) : (
                                     <div className="space-y-4">
                                         {/* Breakdown details */}
                                         <div className="bg-bg rounded-2xl p-4 border border-border text-xs font-semibold text-text-secondary space-y-2.5">
@@ -1028,11 +1236,6 @@ export default function SubscriptionPage() {
                                             </button>
                                         )}
                                     </div>
-                                ) : (
-                                    <div className="text-center py-6 text-text-muted">
-                                        <AlertCircle className="mx-auto mb-2" size={24} />
-                                        <p className="text-xs font-semibold">No plan matching this configuration was found.</p>
-                                    </div>
                                 )}
                             </div>
 
@@ -1050,6 +1253,137 @@ export default function SubscriptionPage() {
                                         </div>
                                     ))}
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* AI Credit Packs Section */}
+                    <div className="bg-card rounded-3xl border border-border p-6 md:p-8 shadow-sm space-y-6 mt-8">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center border border-primary/20">
+                                    <Sparkles size={18} className="text-primary" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-black text-text-primary uppercase tracking-wider">AI Credit Packs</h3>
+                                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mt-0.5">Need more AI power? Top up your balance instantly.</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 bg-primary/5 px-4 py-2 rounded-2xl border border-primary/10">
+                                <span className="text-xs text-text-secondary font-bold">Your Current Balance:</span>
+                                <span className="text-sm font-black text-primary">{user?.ai_credits ?? 0} Credits</span>
+                            </div>
+                        </div>
+
+                        {creditsError && (
+                            <div className="p-3.5 bg-red-500/10 border border-red-500/20 text-red-600 rounded-xl text-xs font-bold flex items-center gap-2">
+                                <AlertCircle size={14} />
+                                <span>{creditsError}</span>
+                            </div>
+                        )}
+
+                        {creditsSuccess && (
+                            <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 rounded-xl text-xs font-bold flex items-center gap-2">
+                                <CheckCircle size={14} className="text-emerald-500" />
+                                <span>{creditsSuccess}</span>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {/* Pack 1 */}
+                            <div className="bg-bg rounded-2xl p-6 border border-border flex flex-col justify-between hover:scale-[1.01] transition-all">
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-start">
+                                        <span className="text-[10px] font-black text-text-muted uppercase tracking-wider">Starter Top-up</span>
+                                        <span className="text-lg font-black text-text-primary">₹49.00</span>
+                                    </div>
+                                    <h4 className="text-md font-black text-text-primary">100 AI Credits</h4>
+                                    <p className="text-[11px] text-text-muted font-bold leading-relaxed">
+                                        Perfect for basic question explanations and quick tips.
+                                    </p>
+                                    <div className="text-[10px] text-text-muted font-semibold">
+                                        {isGstEnabled ? '+ 18% GST applicable at checkout' : 'Tax Inclusive'}
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => handlePurchaseCredits('pack_100')}
+                                    disabled={isProcessingCredits !== null}
+                                    className="w-full mt-6 py-3 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-primary-hover transition-all flex items-center justify-center gap-2"
+                                >
+                                    {isProcessingCredits === 'pack_100' ? (
+                                        <>
+                                            <Loader2 className="animate-spin" size={12} />
+                                            <span>Processing...</span>
+                                        </>
+                                    ) : (
+                                        <span>Buy 100 Credits</span>
+                                    )}
+                                </button>
+                            </div>
+
+                            {/* Pack 2 */}
+                            <div className="bg-bg rounded-2xl p-6 border border-primary/30 relative flex flex-col justify-between hover:scale-[1.01] transition-all ring-2 ring-primary/5">
+                                <div className="absolute top-0 right-6 -translate-y-1/2 bg-primary text-white text-[8px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shadow-sm">
+                                    Most Popular
+                                </div>
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-start">
+                                        <span className="text-[10px] font-black text-primary uppercase tracking-wider">Growth Top-up</span>
+                                        <span className="text-lg font-black text-primary">₹99.00</span>
+                                    </div>
+                                    <h4 className="text-md font-black text-text-primary">250 AI Credits</h4>
+                                    <p className="text-[11px] text-text-muted font-bold leading-relaxed">
+                                        Great value pack for students analyzing their mock tests.
+                                    </p>
+                                    <div className="text-[10px] text-text-muted font-semibold">
+                                        {isGstEnabled ? '+ 18% GST applicable at checkout' : 'Tax Inclusive'}
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => handlePurchaseCredits('pack_250')}
+                                    disabled={isProcessingCredits !== null}
+                                    className="w-full mt-6 py-3 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-primary-hover transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/10"
+                                >
+                                    {isProcessingCredits === 'pack_250' ? (
+                                        <>
+                                            <Loader2 className="animate-spin" size={12} />
+                                            <span>Processing...</span>
+                                        </>
+                                    ) : (
+                                        <span>Buy 250 Credits</span>
+                                    )}
+                                </button>
+                            </div>
+
+                            {/* Pack 3 */}
+                            <div className="bg-bg rounded-2xl p-6 border border-border flex flex-col justify-between hover:scale-[1.01] transition-all">
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-start">
+                                        <span className="text-[10px] font-black text-text-muted uppercase tracking-wider">Super Saver</span>
+                                        <span className="text-lg font-black text-text-primary">₹179.00</span>
+                                    </div>
+                                    <h4 className="text-md font-black text-text-primary">500 AI Credits</h4>
+                                    <p className="text-[11px] text-text-muted font-bold leading-relaxed">
+                                        Best value for high-intensity study sessions and doubt solving.
+                                    </p>
+                                    <div className="text-[10px] text-text-muted font-semibold">
+                                        {isGstEnabled ? '+ 18% GST applicable at checkout' : 'Tax Inclusive'}
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => handlePurchaseCredits('pack_500')}
+                                    disabled={isProcessingCredits !== null}
+                                    className="w-full mt-6 py-3 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-primary-hover transition-all flex items-center justify-center gap-2"
+                                >
+                                    {isProcessingCredits === 'pack_500' ? (
+                                        <>
+                                            <Loader2 className="animate-spin" size={12} />
+                                            <span>Processing...</span>
+                                        </>
+                                    ) : (
+                                        <span>Buy 500 Credits</span>
+                                    )}
+                                </button>
                             </div>
                         </div>
                     </div>

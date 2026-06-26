@@ -2,7 +2,8 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import (
     StudentStats, StudyStreak, Achievement, UserAchievement,
-    ActivityLog, Quote, UpcomingExam, Assignment, MockTestResult, ChatMessage
+    ActivityLog, Quote, UpcomingExam, Assignment, MockTestResult, ChatMessage,
+    StudySession, TimerSettings, SessionBreak
 )
 
 User = get_user_model()
@@ -72,6 +73,10 @@ class LeaderboardEntrySerializer(serializers.Serializer):
     level = serializers.IntegerField()
     xp_points = serializers.IntegerField()
     current_streak = serializers.IntegerField()
+    total_study_hours = serializers.FloatField()
+    weekly_study_hours = serializers.FloatField()
+    today_study_time = serializers.CharField()
+    is_studying = serializers.BooleanField(default=False)
 
 
 class ChatMessageSerializer(serializers.ModelSerializer):
@@ -81,4 +86,31 @@ class ChatMessageSerializer(serializers.ModelSerializer):
         model = ChatMessage
         fields = ('id', 'user', 'user_detail', 'text', 'created_at')
         read_only_fields = ('user', 'created_at')
+
+
+class SessionBreakSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SessionBreak
+        fields = '__all__'
+
+
+class TimerSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TimerSettings
+        fields = '__all__'
+
+
+class StudySessionSerializer(serializers.ModelSerializer):
+    breaks = SessionBreakSerializer(many=True, read_only=True)
+    subject_name = serializers.CharField(read_only=True)
+    topic_name = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = StudySession
+        fields = '__all__'
+
+
+
+
+
 

@@ -24,8 +24,28 @@ interface DashboardState {
     addMockTest: (title: string, score: number, total_marks: number, date: string) => Promise<void>;
     deleteMockTest: (id: number) => Promise<void>;
     updateStudyHours: (hours: number) => Promise<void>;
-    fetchLeaderboard: () => Promise<void>;
+    fetchLeaderboard: (sortBy?: string) => Promise<void>;
     adminAction: (userId: number, action: string, amount?: number) => Promise<any>;
+
+    activeSession: any | null;
+    timerSettings: any | null;
+    timerAnalytics: any | null;
+    timerAIInsights: any | null;
+    secondsElapsed: number;
+
+    setSecondsElapsed: (secs: number) => void;
+    incrementSecondsElapsed: () => void;
+    fetchActiveSession: () => Promise<void>;
+    startStudySession: (data: { subject_id?: number; topic_id?: number; study_goal?: string; session_type?: string; target_duration?: number }) => Promise<any>;
+    pauseStudySession: (sessionId: number) => Promise<any>;
+    resumeStudySession: (sessionId: number) => Promise<any>;
+    autosaveStudySession: (sessionId: number, duration: number) => Promise<void>;
+    endStudySession: (sessionId: number, data?: { notes?: string }) => Promise<any>;
+    cancelStudySession: (sessionId: number) => Promise<any>;
+    fetchTimerSettings: () => Promise<void>;
+    updateTimerSettings: (data: any) => Promise<any>;
+    fetchTimerAnalytics: () => Promise<void>;
+    fetchTimerAIInsights: () => Promise<void>;
 }
 
 export const useDashboardStore = create<DashboardState>((set, get) => ({
@@ -40,6 +60,14 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     leaderboard: [],
     loading: false,
     error: null,
+    activeSession: null,
+    timerSettings: null,
+    timerAnalytics: null,
+    timerAIInsights: null,
+    secondsElapsed: 0,
+
+    setSecondsElapsed: (secs: number) => set({ secondsElapsed: secs }),
+    incrementSecondsElapsed: () => set((state) => ({ secondsElapsed: state.secondsElapsed + 1 })),
 
     fetchDashboardData: async () => {
         set({ loading: true, error: null });
@@ -86,7 +114,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
             const res = await api.post('/gamification/streak/');
             set({ streak: res.data });
             localStorage.setItem('qubook_streak', JSON.stringify(res.data));
-            
+
             // Refresh stats since study activity rewards XP/Coins
             const statsRes = await api.get('/gamification/stats/');
             set({ stats: statsRes.data });
@@ -157,7 +185,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
             const newTests = [...get().mockTests, res.data];
             set({ mockTests: newTests });
             localStorage.setItem('qubook_mock_tests', JSON.stringify(newTests));
-            
+
             // Refresh stats to capture new XP/level/averages
             const statsRes = await api.get('/gamification/stats/');
             set({ stats: statsRes.data });
@@ -188,9 +216,9 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         }
     },
 
-    fetchLeaderboard: async () => {
+    fetchLeaderboard: async (sortBy = 'xp') => {
         try {
-            const res = await api.get('/gamification/leaderboard/');
+            const res = await api.get(`/gamification/leaderboard/?sort_by=${sortBy}`);
             set({ leaderboard: res.data });
         } catch (err) {
             console.error("Failed to fetch leaderboard", err);
@@ -204,6 +232,128 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         } catch (err) {
             console.error("Failed to execute admin gamification action", err);
             throw err;
+        }
+    },
+
+    fetchActiveSession: async () => {
+        try {
+            const res = await api.get('/gamification/timer/sessions/active/');
+            set({ activeSession: res.data, secondsElapsed: res.data ? res.data.duration : 0 });
+        } catch (err) {
+            console.error("Failed to fetch active timer session", err);
+        }
+    },
+
+    startStudySession: async (data) => {
+        try {
+            const res = await api.post('/gamification/timer/sessions/start/', data);
+            set({ activeSession: res.data, secondsElapsed: 0 });
+            return res.data;
+        } catch (err) {
+            console.error("Failed to start study session", err);
+            throw err;
+        }
+    },
+
+    pauseStudySession: async (sessionId) => {
+        try {
+            const res = await api.post(`/gamification/timer/sessions/${sessionId}/pause/`);
+            set({ activeSession: res.data, secondsElapsed: res.data.duration });
+            return res.data;
+        } catch (err) {
+            console.error("Failed to pause study session", err);
+            throw err;
+        }
+    },
+
+    resumeStudySession: async (sessionId) => {
+        try {
+            const res = await api.post(`/gamification/timer/sessions/${sessionId}/resume/`);
+            set({ activeSession: res.data, secondsElapsed: res.data.duration });
+            return res.data;
+        } catch (err) {
+            console.error("Failed to resume study session", err);
+            throw err;
+        }
+    },
+
+    autosaveStudySession: async (sessionId, duration) => {
+        try {
+            await api.post(`/gamification/timer/sessions/${sessionId}/autosave/`, { duration });
+            set((state) => {
+                if (state.activeSession && state.activeSession.id === sessionId) {
+                    return { activeSession: { ...state.activeSession, duration } };
+                }
+                return {};
+            });
+        } catch (err) {
+            console.error("Failed to auto-save study session", err);
+        }
+    },
+
+    endStudySession: async (sessionId, data) => {
+        try {
+            const res = await api.post(`/gamification/timer/sessions/${sessionId}/end/`, data);
+            set({ activeSession: null, secondsElapsed: 0 });
+            // Refresh stats & leaderboard after completing a session
+            const statsRes = await api.get('/gamification/stats/');
+            const streakRes = await api.get('/gamification/streak/');
+            set({ stats: statsRes.data, streak: streakRes.data });
+            localStorage.setItem('qubook_stats', JSON.stringify(statsRes.data));
+            localStorage.setItem('qubook_streak', JSON.stringify(streakRes.data));
+            return res.data;
+        } catch (err) {
+            console.error("Failed to end study session", err);
+            throw err;
+        }
+    },
+
+    cancelStudySession: async (sessionId) => {
+        try {
+            const res = await api.post(`/gamification/timer/sessions/${sessionId}/cancel/`);
+            set({ activeSession: null, secondsElapsed: 0 });
+            return res.data;
+        } catch (err) {
+            console.error("Failed to cancel study session", err);
+            throw err;
+        }
+    },
+
+    fetchTimerSettings: async () => {
+        try {
+            const res = await api.get('/gamification/timer/settings/my-settings/');
+            set({ timerSettings: res.data });
+        } catch (err) {
+            console.error("Failed to fetch timer settings", err);
+        }
+    },
+
+    updateTimerSettings: async (data) => {
+        try {
+            const res = await api.post('/gamification/timer/settings/my-settings/', data);
+            set({ timerSettings: res.data });
+            return res.data;
+        } catch (err) {
+            console.error("Failed to update timer settings", err);
+            throw err;
+        }
+    },
+
+    fetchTimerAnalytics: async () => {
+        try {
+            const res = await api.get('/gamification/timer/analytics/');
+            set({ timerAnalytics: res.data });
+        } catch (err) {
+            console.error("Failed to fetch timer analytics", err);
+        }
+    },
+
+    fetchTimerAIInsights: async () => {
+        try {
+            const res = await api.get('/gamification/timer/ai-insights/');
+            set({ timerAIInsights: res.data });
+        } catch (err) {
+            console.error("Failed to fetch timer AI insights", err);
         }
     }
 }));

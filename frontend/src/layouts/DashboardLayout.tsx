@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import { Outlet, Link } from 'react-router-dom';
-import { X, Phone, Loader2, AlertTriangle, Clock, ChevronRight } from 'lucide-react';
+import { X, Phone, Loader2, AlertTriangle, Clock, ChevronRight, Play, Pause, Check, Maximize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/api/axios';
 import FloatingPeerChat from '@/components/FloatingPeerChat';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useDashboardStore } from '@/store/useDashboardStore';
 
 interface ExpiryAlert {
     id: string;
@@ -18,10 +20,68 @@ interface ExpiryAlert {
 }
 
 export default function DashboardLayout() {
+    const layoutRef = useRef<HTMLDivElement>(null);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const user = useAuthStore((state) => state.user);
     const updateProfile = useAuthStore((state) => state.updateProfile);
     const logout = useAuthStore((state) => state.logout);
+
+    const location = useLocation();
+    const navigate = useNavigate();
+
+    const {
+        activeSession,
+        secondsElapsed,
+        incrementSecondsElapsed,
+        pauseStudySession,
+        resumeStudySession,
+        endStudySession,
+        autosaveStudySession,
+        fetchActiveSession
+    } = useDashboardStore();
+
+    // Global study session notes state for mini widget end session popup
+    const [showGlobalEndModal, setShowGlobalEndModal] = useState(false);
+    const [globalNotes, setGlobalNotes] = useState('');
+    const [isEndingSession, setIsEndingSession] = useState(false);
+
+    // Initial load active session
+    useEffect(() => {
+        fetchActiveSession();
+    }, [fetchActiveSession]);
+
+    // Centralised global timer ticking engine
+    useEffect(() => {
+        let interval: any = null;
+        let autosaveCounter = 0;
+
+        if (activeSession && activeSession.status === 'ACTIVE') {
+            interval = setInterval(() => {
+                incrementSecondsElapsed();
+                autosaveCounter += 1;
+                if (autosaveCounter >= 30) {
+                    const currentSecs = useDashboardStore.getState().secondsElapsed;
+                    autosaveStudySession(activeSession.id, currentSecs);
+                    autosaveCounter = 0;
+                }
+            }, 1000);
+        }
+
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [activeSession?.status, activeSession?.id, incrementSecondsElapsed, autosaveStudySession]);
+
+    const formatTime = (secs: number) => {
+        const h = Math.floor(secs / 3600);
+        const m = Math.floor((secs % 3600) / 60);
+        const s = secs % 60;
+        return [
+            h > 0 ? String(h).padStart(2, '0') : null,
+            String(m).padStart(2, '0'),
+            String(s).padStart(2, '0')
+        ].filter(Boolean).join(':');
+    };
 
     // Mobile verification modal state
     const [mobileInput, setMobileInput] = useState('');
@@ -101,7 +161,7 @@ export default function DashboardLayout() {
     };
 
     return (
-        <div className="flex bg-bg min-h-screen text-text-primary font-sans relative overflow-hidden">
+        <div ref={layoutRef} className="flex bg-bg min-h-screen text-text-primary font-sans relative overflow-hidden">
             {/* Desktop Sidebar */}
             <div className="hidden lg:block shrink-0">
                 <Sidebar />
@@ -267,6 +327,142 @@ export default function DashboardLayout() {
                 )}
             </AnimatePresence>
             
+            {/* Persistent Minimized Timer Overlay */}
+            {activeSession && location.pathname !== '/dashboard/timer' && (
+                <motion.div
+                    drag
+                    dragConstraints={layoutRef}
+                    dragElastic={0.05}
+                    dragMomentum={false}
+                    whileDrag={{ scale: 1.05, cursor: 'grabbing' }}
+                    className={`fixed bottom-6 right-6 z-[90] select-none cursor-grab backdrop-blur-md border shadow-2xl rounded-3xl p-4 flex items-center gap-4 max-w-sm w-[340px] transition-colors duration-300 ${
+                        activeSession.status === 'ACTIVE'
+                            ? 'bg-gradient-to-br from-primary/10 via-primary/5 to-sidebar/95 border-primary/30 shadow-[0_8px_32px_rgba(99,102,241,0.15)]'
+                            : 'bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-sidebar/95 border-amber-500/30 shadow-[0_8px_32px_rgba(245,158,11,0.15)]'
+                    }`}
+                >
+                    <div className="relative flex items-center justify-center">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                            <Clock size={18} className={activeSession.status === 'ACTIVE' ? 'animate-pulse' : ''} />
+                        </div>
+                    </div>
+
+                    <div className="flex-1 min-w-0 text-left">
+                        <h4 className="font-black text-xs text-text-primary truncate">
+                            {activeSession.subject_name}
+                        </h4>
+                        <p className="text-[10px] font-bold text-text-muted mt-0.5 truncate">
+                            {activeSession.study_goal || 'Study Session'}
+                        </p>
+                        <p className="text-sm font-black text-primary font-mono mt-1">
+                            {formatTime(secondsElapsed)}
+                        </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        {activeSession.status === 'ACTIVE' ? (
+                            <button
+                                onClick={() => pauseStudySession(activeSession.id)}
+                                className="p-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl shadow transition-colors"
+                                title="Pause Session"
+                            >
+                                <Pause size={14} fill="currentColor" />
+                            </button>
+                        ) : (
+                            <button
+                                onClick={() => resumeStudySession(activeSession.id)}
+                                className="p-2 bg-primary hover:bg-primary-hover text-white rounded-xl shadow transition-colors"
+                                title="Resume Session"
+                            >
+                                <Play size={14} fill="currentColor" />
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setShowGlobalEndModal(true)}
+                            className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow transition-colors"
+                            title="Complete Session"
+                        >
+                            <Check size={14} />
+                        </button>
+                        <button
+                            onClick={() => navigate('/dashboard/timer')}
+                            className="p-2 bg-bg hover:bg-border text-text-primary border border-border rounded-xl transition-colors"
+                            title="Maximize View"
+                        >
+                            <Maximize2 size={14} />
+                        </button>
+                    </div>
+                </motion.div>
+            )}
+
+            {/* Global End Session Modal Popup */}
+            {showGlobalEndModal && activeSession && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                    <div className="bg-sidebar border border-border w-full max-w-md rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="px-6 py-5 border-b border-border flex items-center justify-between">
+                            <h3 className="font-black text-sm text-text-primary uppercase tracking-wider flex items-center gap-2">
+                                <Check className="text-emerald-500" size={16} />
+                                Complete Study Session
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => setShowGlobalEndModal(false)}
+                                className="text-text-muted hover:text-text-primary transition-colors"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-5">
+                            <p className="text-xs font-bold text-text-muted leading-relaxed">
+                                Log any specific achievements, topics read, or reflections about this study session to review later.
+                            </p>
+
+                            <div className="space-y-1.5 text-left">
+                                <label className="text-xs font-black text-text-primary uppercase tracking-wider block">Session Notes</label>
+                                <textarea
+                                    placeholder="e.g. Cleared 15 adjustments and formulas on asset retirement."
+                                    value={globalNotes}
+                                    onChange={(e) => setGlobalNotes(e.target.value)}
+                                    rows={4}
+                                    className="w-full bg-bg border border-border p-4 rounded-2xl text-sm font-bold focus:outline-none focus:border-primary transition-colors resize-none"
+                                />
+                            </div>
+
+                            <div className="flex gap-4 pt-4 border-t border-border/80">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowGlobalEndModal(false)}
+                                    className="flex-1 bg-bg hover:bg-border text-text-primary font-black py-3 rounded-2xl text-xs transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={isEndingSession}
+                                    onClick={async () => {
+                                        setIsEndingSession(true);
+                                        try {
+                                            await endStudySession(activeSession.id, { notes: globalNotes });
+                                            setShowGlobalEndModal(false);
+                                            setGlobalNotes('');
+                                            navigate('/dashboard/timer');
+                                        } catch (err) {
+                                            console.error(err);
+                                        } finally {
+                                            setIsEndingSession(false);
+                                        }
+                                    }}
+                                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 rounded-2xl text-xs shadow-md transition-colors flex items-center justify-center gap-2"
+                                >
+                                    {isEndingSession ? <Loader2 className="animate-spin" size={14} /> : 'Log Session'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Ephemeral Peer Chat Floating Widget */}
             <FloatingPeerChat />
         </div>

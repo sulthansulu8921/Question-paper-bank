@@ -46,6 +46,53 @@ class ChatAPIView(APIView):
         if not user_message:
             return Response({"error": "Message is required"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Credit System Check & Deduction
+        from subscriptions.permissions import user_has_active_subscription
+        is_unlimited = (
+            request.user.is_staff or 
+            request.user.is_superuser or 
+            request.user.role in ['SUPER_ADMIN', 'INSTITUTION_ADMIN', 'INSTRUCTOR'] or
+            user_has_active_subscription(request.user, None, check_type='ai')
+        )
+
+        CREDIT_COSTS = {
+            'explain_mcq': 1,
+            'explain_pyq': 2,
+            'generate_mcqs': 3,
+            'summarize_notes': 5,
+            'ai_study_plan': 10,
+            'mock_test_analysis': 15,
+            'weekly_report': 20,
+            'chat': 1
+        }
+
+        action_type = request.data.get('action_type')
+        if not action_type:
+            if question_id:
+                try:
+                    q = SubjectiveQuestion.objects.get(id=question_id)
+                    if q.question_type == 'MCQ':
+                        action_type = 'explain_mcq'
+                    else:
+                        action_type = 'explain_pyq'
+                except SubjectiveQuestion.DoesNotExist:
+                    action_type = 'chat'
+            else:
+                action_type = 'chat'
+
+        cost = CREDIT_COSTS.get(action_type, 1)
+
+        if not is_unlimited:
+            if getattr(request.user, 'ai_credits', 0) < cost:
+                return Response({
+                    "error": "credits_exhausted",
+                    "message": "You've used all your AI Credits. Upgrade to Mentor Pass or buy Credit Packs to continue."
+                }, status=status.HTTP_403_FORBIDDEN)
+
+            # Deduct credits
+            request.user.ai_credits = max(0, request.user.ai_credits - cost)
+            request.user.save(update_fields=['ai_credits'])
+
         # 1. Save user's message
         ChatMessage.objects.create(session=session, role='user', content=user_message)
 
@@ -65,6 +112,7 @@ class ChatAPIView(APIView):
             serializer = ChatMessageSerializer(db_msg)
             return Response({
                 "message": serializer.data,
+                "ai_credits": request.user.ai_credits,
                 "warning": "GEMINI_API_KEY is missing from environment. Operating in mock accounting mode."
             }, status=status.HTTP_201_CREATED)
 
@@ -111,7 +159,10 @@ class ChatAPIView(APIView):
             })
 
         # 6. Call Google Gemini API
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_api_key}"
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+        headers = {
+            "x-goog-api-key": gemini_api_key
+        }
         payload = {
             "contents": contents,
             "systemInstruction": {
@@ -120,7 +171,7 @@ class ChatAPIView(APIView):
         }
 
         try:
-            response = requests.post(url, json=payload, timeout=20)
+            response = requests.post(url, json=payload, headers=headers, timeout=20)
             if response.status_code == 200:
                 res_data = response.json()
                 # Parse response text
@@ -137,7 +188,10 @@ class ChatAPIView(APIView):
         # 7. Save assistant response
         db_msg = ChatMessage.objects.create(session=session, role='assistant', content=text_response)
         serializer = ChatMessageSerializer(db_msg)
-        return Response({"message": serializer.data}, status=status.HTTP_201_CREATED)
+        return Response({
+            "message": serializer.data,
+            "ai_credits": request.user.ai_credits
+        }, status=status.HTTP_201_CREATED)
 
     def get_mock_response(self, user_msg, question_id):
         """Returns a high-quality formatted mock response for local testing/deployment where key is missing."""

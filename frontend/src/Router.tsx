@@ -52,6 +52,7 @@ import PracticeSession from '@/pages/dashboard/PracticeSession';
 import MockTestHub from '@/pages/dashboard/MockTestHub';
 import MockTestSession from '@/pages/dashboard/MockTestSession';
 import AIStudyPlanner from '@/pages/dashboard/AIStudyPlanner';
+import LearningTimerPage from '@/pages/dashboard/LearningTimerPage';
 import { useAuthStore } from '@/store/useAuthStore';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -65,13 +66,13 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
     const user = useAuthStore((state) => state.user);
     if (!token) return <Navigate to="/auth?tab=login" replace />;
 
-    const isStaffOrAdmin = user?.is_staff || 
-                           user?.role === 'SUPER_ADMIN' || 
-                           user?.role === 'INSTITUTION_ADMIN' || 
-                           user?.role === 'INSTRUCTOR' ||
-                           user?.role === 'QUESTION_ADMIN' ||
-                           user?.role === 'COURSE_ADMIN';
-                           
+    const isStaffOrAdmin = user?.is_staff ||
+        user?.role === 'SUPER_ADMIN' ||
+        user?.role === 'INSTITUTION_ADMIN' ||
+        user?.role === 'INSTRUCTOR' ||
+        user?.role === 'QUESTION_ADMIN' ||
+        user?.role === 'COURSE_ADMIN';
+
     if (!isStaffOrAdmin) return <Navigate to="/dashboard" replace />;
 
     return children;
@@ -82,13 +83,13 @@ const SuperAdminRoute = ({ children }: { children: React.ReactNode }) => {
     const user = useAuthStore((state) => state.user);
     if (!token) return <Navigate to="/auth?tab=login" replace />;
 
-    const isStaffOrAdmin = user?.is_staff || 
-                           user?.role === 'SUPER_ADMIN' || 
-                           user?.role === 'INSTITUTION_ADMIN' || 
-                           user?.role === 'INSTRUCTOR' ||
-                           user?.role === 'QUESTION_ADMIN' ||
-                           user?.role === 'COURSE_ADMIN';
-                           
+    const isStaffOrAdmin = user?.is_staff ||
+        user?.role === 'SUPER_ADMIN' ||
+        user?.role === 'INSTITUTION_ADMIN' ||
+        user?.role === 'INSTRUCTOR' ||
+        user?.role === 'QUESTION_ADMIN' ||
+        user?.role === 'COURSE_ADMIN';
+
     if (!isStaffOrAdmin) return <Navigate to="/dashboard" replace />;
 
     // Only superusers or SUPER_ADMIN role can access this route
@@ -103,10 +104,10 @@ const QuestionAdminRoute = ({ children }: { children: React.ReactNode }) => {
     const user = useAuthStore((state) => state.user);
     if (!token) return <Navigate to="/auth?tab=login" replace />;
 
-    const isSuperOrQuestionAdmin = user?.is_superuser || 
-                                   user?.role === 'SUPER_ADMIN' || 
-                                   user?.role === 'QUESTION_ADMIN';
-                                   
+    const isSuperOrQuestionAdmin = user?.is_superuser ||
+        user?.role === 'SUPER_ADMIN' ||
+        user?.role === 'QUESTION_ADMIN';
+
     if (!isSuperOrQuestionAdmin) return <Navigate to="/admin" replace />;
 
     return children;
@@ -117,10 +118,10 @@ const CourseAdminRoute = ({ children }: { children: React.ReactNode }) => {
     const user = useAuthStore((state) => state.user);
     if (!token) return <Navigate to="/auth?tab=login" replace />;
 
-    const isSuperOrCourseAdmin = user?.is_superuser || 
-                                 user?.role === 'SUPER_ADMIN' || 
-                                 user?.role === 'COURSE_ADMIN';
-                                 
+    const isSuperOrCourseAdmin = user?.is_superuser ||
+        user?.role === 'SUPER_ADMIN' ||
+        user?.role === 'COURSE_ADMIN';
+
     if (!isSuperOrCourseAdmin) return <Navigate to="/admin" replace />;
 
     return children;
@@ -154,6 +155,8 @@ export default function AppRouter() {
                 {/* Legacy redirects */}
                 <Route path="/login" element={<Navigate to="/auth?tab=login" replace />} />
                 <Route path="/register" element={<Navigate to="/auth?tab=register" replace />} />
+                <Route path="/dashboard/learning" element={<Navigate to="/dashboard" replace />} />
+
 
                 <Route
                     path="/dashboard"
@@ -185,6 +188,7 @@ export default function AppRouter() {
                     <Route path="mock" element={<MockTestHub />} />
                     <Route path="mock/session/:sessionId" element={<MockTestSession />} />
                     <Route path="planner" element={<AIStudyPlanner />} />
+                    <Route path="timer" element={<LearningTimerPage />} />
                 </Route>
 
                 <Route
