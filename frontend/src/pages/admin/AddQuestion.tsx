@@ -22,6 +22,7 @@ const DIFFICULTIES = [
     { value: 'EASY', label: 'Easy' },
     { value: 'MEDIUM', label: 'Medium' },
     { value: 'HARD', label: 'Hard' },
+    { value: 'NONE', label: 'No Mention' },
 ];
 
 // ─── Table Builder Component ──────────────────────────────────────

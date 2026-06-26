@@ -72,7 +72,7 @@ class SubjectiveQuestion(models.Model):
         ('CASE_SCENARIO', 'Case Scenario'),
     ]
     DIFFICULTY_CHOICES = [
-        ('EASY', 'Easy'), ('MEDIUM', 'Medium'), ('HARD', 'Hard'),
+        ('EASY', 'Easy'), ('MEDIUM', 'Medium'), ('HARD', 'Hard'), ('NONE', 'No Mention'),
     ]
     STATUS_CHOICES = [
         ('ACTIVE', 'Active'), ('DRAFT', 'Draft'),

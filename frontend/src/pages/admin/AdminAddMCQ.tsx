@@ -108,7 +108,7 @@ export default function AdminAddMCQ() {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 12 }}>
                         <div><label style={lbl}>Difficulty</label>
                             <select value={form.difficulty} onChange={e => setForm(f => ({ ...f, difficulty: e.target.value }))} style={{ ...inp, appearance: 'none' as any }}>
-                                <option value="EASY">Easy</option><option value="MEDIUM">Medium</option><option value="HARD">Hard</option>
+                                <option value="EASY">Easy</option><option value="MEDIUM">Medium</option><option value="HARD">Hard</option><option value="NONE">No Mention</option>
                             </select>
                         </div>
                         <div><label style={lbl}>Marks</label>

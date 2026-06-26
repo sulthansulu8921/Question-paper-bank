@@ -12,6 +12,7 @@ const DIFFICULTIES = [
     { value: 'EASY', label: 'Easy', color: '#10b981', bg: '#dcfce7' },
     { value: 'MEDIUM', label: 'Medium', color: '#f59e0b', bg: '#fef9c3' },
     { value: 'HARD', label: 'Hard', color: '#ef4444', bg: '#fee2e2' },
+    { value: 'NONE', label: 'No Mention', color: '#64748b', bg: '#f1f5f9' },
 ];
 const STATUSES = [
     { value: 'ACTIVE', label: 'Active', color: '#10b981', bg: '#dcfce7' },

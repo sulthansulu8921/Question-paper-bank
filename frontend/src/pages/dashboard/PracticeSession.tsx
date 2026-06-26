@@ -224,7 +224,8 @@ export default function PracticeSession() {
                             <div className="flex items-center gap-2">
                                 <span className={`text-[9px] font-black px-2.5 py-1 rounded uppercase tracking-wider ${
                                     currentQuestion?.difficulty === 'EASY' ? 'bg-green-50 text-green-700' :
-                                    currentQuestion?.difficulty === 'MEDIUM' ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'
+                                    currentQuestion?.difficulty === 'MEDIUM' ? 'bg-amber-50 text-amber-700' :
+                                    currentQuestion?.difficulty === 'HARD' ? 'bg-red-50 text-red-700' : 'bg-slate-50 text-slate-700'
                                 }`}>
                                     {currentQuestion?.difficulty}
                                 </span>
