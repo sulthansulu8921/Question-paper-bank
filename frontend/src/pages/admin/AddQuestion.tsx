@@ -1729,7 +1729,7 @@ export default function AddQuestion() {
                 <div className="form-sidebar">
                     <div className="form-card">
                         <h2 className="form-card-title flex items-center gap-2 text-sm font-bold text-slate-800 uppercase tracking-wider">
-                            <Star size={16} /> ICAI Master
+                            <Star size={16} /> Exam Master
                         </h2>
                         <ICAICascadeSelector value={icai} onChange={setIcai} compact />
                         {topicDetail?.full_path && (

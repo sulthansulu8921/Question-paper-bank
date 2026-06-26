@@ -14,8 +14,8 @@ class CALevel(models.Model):
 
     class Meta:
         ordering = ['order', 'name']
-        verbose_name = 'CA Level'
-        verbose_name_plural = 'CA Levels'
+        verbose_name = 'Course Level'
+        verbose_name_plural = 'Course Levels'
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -69,8 +69,8 @@ class ICAIPaper(models.Model):
     class Meta:
         ordering = ['order', 'name']
         unique_together = [['level', 'name']]
-        verbose_name = 'ICAI Paper'
-        verbose_name_plural = 'ICAI Papers'
+        verbose_name = 'Exam Paper'
+        verbose_name_plural = 'Exam Papers'
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -92,8 +92,8 @@ class ICAIChapter(models.Model):
     class Meta:
         ordering = ['order', 'name']
         unique_together = [['paper', 'name']]
-        verbose_name = 'ICAI Chapter'
-        verbose_name_plural = 'ICAI Chapters'
+        verbose_name = 'Exam Chapter'
+        verbose_name_plural = 'Exam Chapters'
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -114,8 +114,8 @@ class ICAITopic(models.Model):
     class Meta:
         ordering = ['order', 'name']
         unique_together = [['chapter', 'name']]
-        verbose_name = 'ICAI Topic'
-        verbose_name_plural = 'ICAI Topics'
+        verbose_name = 'Exam Topic'
+        verbose_name_plural = 'Exam Topics'
 
     def save(self, *args, **kwargs):
         if not self.slug:
