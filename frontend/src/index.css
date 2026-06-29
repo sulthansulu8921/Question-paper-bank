@@ -6,6 +6,7 @@
 
 @layer base {
   :root {
+    color-scheme: light;
     --bg: #F4F7FB;
     --bg-secondary: #FFFFFF;
     --card: #FFFFFF;
@@ -21,6 +22,7 @@
   }
 
   [data-theme="dark"] {
+    color-scheme: dark;
     --bg: #0F172A;
     --bg-secondary: #131C31;
     --card: #182338;
@@ -37,6 +39,16 @@
 
   body {
     @apply bg-[var(--bg)] text-[var(--text-primary)] font-sans antialiased selection:bg-[var(--primary)] selection:text-white overflow-x-hidden;
+  }
+
+  select {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
+  option {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
   }
 }
 
