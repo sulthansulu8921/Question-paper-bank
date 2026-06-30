@@ -45,8 +45,7 @@ api.interceptors.response.use(
                                    url.includes('/auth/register/') ||
                                    url.includes('/auth/forgot-password/');
             if (!isAuthEndpoint) {
-                useAuthStore.getState().logout();
-                window.location.href = '/auth?tab=login';
+                console.warn("Unauthorized request detected (401). Auto-logout is disabled per configuration to prevent losing unsaved work.");
             }
         }
         return Promise.reject(error);
