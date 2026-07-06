@@ -136,8 +136,15 @@ export default function AdminQuestionBank() {
         if (importantOnly) list = list.filter((q: any) => q.is_important);
 
         list.sort((a: any, b: any) => {
-            const av = a[sortKey] ?? '';
-            const bv = b[sortKey] ?? '';
+            let av = a[sortKey] ?? '';
+            let bv = b[sortKey] ?? '';
+            if (sortKey === 'course_name') {
+                av = a.icai_level_name || a.course_name || '';
+                bv = b.icai_level_name || b.course_name || '';
+            } else if (sortKey === 'subject_name') {
+                av = a.icai_paper_name || a.subject_name || '';
+                bv = b.icai_paper_name || b.subject_name || '';
+            }
             if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av;
             return sortDir === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
         });
@@ -329,6 +336,8 @@ export default function AdminQuestionBank() {
                         <thead>
                             <tr>
                                 <th onClick={() => toggleSort('id')}>ID <SortIcon col="id" /></th>
+                                <th onClick={() => toggleSort('course_name')}>Course <SortIcon col="course_name" /></th>
+                                <th onClick={() => toggleSort('subject_name')}>Subject <SortIcon col="subject_name" /></th>
                                 <th>Source</th>
                                 <th>Attempt</th>
                                 <th>Year</th>
@@ -343,12 +352,22 @@ export default function AdminQuestionBank() {
                         </thead>
                         <tbody>
                             {isLoading ? (
-                                <tr><td colSpan={11} style={{ textAlign: 'center' }}>Loading...</td></tr>
+                                <tr><td colSpan={13} style={{ textAlign: 'center' }}>Loading...</td></tr>
                             ) : paginated.length === 0 ? (
-                                <tr><td colSpan={11} style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>No questions found matching your filter criteria.</td></tr>
+                                <tr><td colSpan={13} style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>No questions found matching your filter criteria.</td></tr>
                             ) : paginated.map((q: any) => (
                                 <tr key={q.id}>
                                     <td>#{q.id}</td>
+                                    <td>
+                                        <span className="text-xs font-bold text-slate-700">
+                                            {q.icai_level_name || q.course_name || '—'}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span className="text-xs font-semibold text-slate-600">
+                                            {q.icai_paper_name || q.subject_name || '—'}
+                                        </span>
+                                    </td>
                                     <td><Badge text={q.source} color="#2563eb" bg="#eff6ff" /></td>
                                     <td>{q.attempt}</td>
                                     <td>{q.year}</td>

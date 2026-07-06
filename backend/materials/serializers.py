@@ -139,6 +139,7 @@ def parse_mcq_options_helper(question_text, correct_answer_text):
 
 class SubjectiveQuestionSerializer(serializers.ModelSerializer):
     subject_name = serializers.CharField(source='subject.name', read_only=True, allow_null=True)
+    course_name = serializers.CharField(source='subject.course.name', read_only=True, allow_null=True)
     topic_name = serializers.CharField(source='topic.name', read_only=True, allow_null=True)
     sub_topic_name = serializers.CharField(source='sub_topic.name', read_only=True, allow_null=True)
     icai_path = serializers.CharField(read_only=True, allow_null=True)

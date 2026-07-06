@@ -510,7 +510,7 @@ export default function QuestionModal({
                     </AnimatePresence>
 
                     {/* Main Workspace */}
-                    <div className={`flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar ${isSplitView ? 'grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 md:divide-x divide-border' : 'max-w-4xl mx-auto w-full'}`}>
+                    <div className={`flex-1 min-h-0 ${isSplitView ? 'overflow-hidden grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 md:divide-x divide-border h-full' : 'overflow-y-auto p-4 md:p-8 custom-scrollbar max-w-4xl mx-auto w-full'}`}>
 
                         {/* Question Column */}
                         {(isSplitView || tab === 'both' || tab === 'question') && (
@@ -518,7 +518,7 @@ export default function QuestionModal({
                                 key={`q-${question.id}`}
                                 initial={{ opacity: 0, x: -20 }}
                                 animate={{ opacity: 1, x: 0 }}
-                                className="space-y-6"
+                                className={isSplitView ? "h-full overflow-y-auto p-4 md:p-8 custom-scrollbar space-y-6" : "space-y-6"}
                             >
                                 <div className="space-y-2">
                                     <div className={`inline-flex items-center gap-3 px-3 py-1 text-[9px] font-black rounded-full uppercase tracking-wider ${question.question_type === 'CASE_SCENARIO' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-primary/20 text-primary border border-primary/30'}`}>
@@ -735,7 +735,7 @@ export default function QuestionModal({
                                 key={`a-${question.id}`}
                                 initial={{ opacity: 0, x: 20 }}
                                 animate={{ opacity: 1, x: 0 }}
-                                className={`space-y-6 ${isSplitView ? 'pl-10' : 'mt-12 pt-12 border-t-2 border-dashed border-border'}`}
+                                className={isSplitView ? "h-full overflow-y-auto p-4 md:p-8 md:pl-10 custom-scrollbar space-y-6" : "space-y-6 mt-12 pt-12 border-t-2 border-dashed border-border"}
                             >
                                 <div className="space-y-2">
                                     <div className="inline-flex items-center gap-3 px-3 py-1 bg-[#00BFA5] text-white text-[9px] font-black rounded-full uppercase tracking-wider shadow-sm">
