@@ -44,11 +44,21 @@
   select {
     background-color: var(--bg-secondary);
     color: var(--text-primary);
+    color-scheme: light;
   }
 
   option {
     background-color: var(--bg-secondary);
     color: var(--text-primary);
+  }
+
+  [data-theme="dark"] select {
+    color-scheme: dark !important;
+  }
+
+  [data-theme="dark"] option {
+    background-color: #1e293b !important;
+    color: #f8fafc !important;
   }
 }
 

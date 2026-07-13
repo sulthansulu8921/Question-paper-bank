@@ -165,11 +165,11 @@ export default function NotesPage() {
                                         setSelectedSubjectId(e.target.value);
                                         setSelectedTopicId('all');
                                     }}
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-100 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold"
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-950/30 bg-slate-50/50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-white"
                                 >
-                                    <option value="all">All Subjects</option>
+                                    <option value="all" className="dark:bg-slate-950 dark:text-white">All Subjects</option>
                                     {subjects.map((sub) => (
-                                        <option key={sub.id} value={sub.id}>{sub.name}</option>
+                                        <option key={sub.id} value={sub.id} className="dark:bg-slate-950 dark:text-white">{sub.name}</option>
                                     ))}
                                 </select>
                             </div>
@@ -180,11 +180,11 @@ export default function NotesPage() {
                                     value={selectedTopicId}
                                     onChange={(e) => setSelectedTopicId(e.target.value)}
                                     disabled={selectedSubjectId === 'all'}
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-100 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold disabled:opacity-50"
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-950/30 bg-slate-50/50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-white disabled:opacity-50"
                                 >
-                                    <option value="all">All Chapters</option>
+                                    <option value="all" className="dark:bg-slate-950 dark:text-white">All Chapters</option>
                                     {filteredTopics.map((topic) => (
-                                        <option key={topic.id} value={topic.id}>{topic.name}</option>
+                                        <option key={topic.id} value={topic.id} className="dark:bg-slate-950 dark:text-white">{topic.name}</option>
                                     ))}
                                 </select>
                             </div>

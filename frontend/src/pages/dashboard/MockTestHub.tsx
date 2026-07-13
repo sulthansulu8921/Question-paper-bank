@@ -285,11 +285,11 @@ export default function MockTestHub() {
         <div className="p-6 md:p-10 max-w-5xl mx-auto space-y-8 min-h-[85vh]">
             {/* Header */}
             <div>
-                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100">
+                <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest bg-indigo-50 dark:bg-indigo-950/40 px-3 py-1.5 rounded-full border border-indigo-100 dark:border-indigo-900/30">
                     Exam Simulator
                 </span>
-                <h1 className="text-3xl font-black text-slate-900 mt-3">Mock Test Hub</h1>
-                <p className="text-slate-500 font-semibold text-sm mt-1">
+                <h1 className="text-3xl font-black text-slate-900 dark:text-white mt-3">Mock Test Hub</h1>
+                <p className="text-slate-500 dark:text-slate-400 font-semibold text-sm mt-1">
                     Take official exam papers or build custom mock sessions to simulate test conditions.
                 </p>
             </div>
@@ -303,7 +303,7 @@ export default function MockTestHub() {
                     }}
                     className={`pb-4 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
                         mockType === 'official' 
-                            ? 'border-indigo-600 text-indigo-600' 
+                            ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400' 
                             : 'border-transparent text-text-secondary hover:text-text-primary'
                     }`}
                 >
@@ -316,7 +316,7 @@ export default function MockTestHub() {
                     }}
                     className={`pb-4 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
                         mockType === 'standard' 
-                            ? 'border-indigo-600 text-indigo-600' 
+                            ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400' 
                             : 'border-transparent text-text-secondary hover:text-text-primary'
                     }`}
                 >
@@ -329,7 +329,7 @@ export default function MockTestHub() {
                     }}
                     className={`pb-4 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
                         mockType === 'custom' 
-                            ? 'border-indigo-600 text-indigo-600' 
+                            ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400' 
                             : 'border-transparent text-text-secondary hover:text-text-primary'
                     }`}
                 >
@@ -339,8 +339,8 @@ export default function MockTestHub() {
 
             {treeLoading || templatesLoading ? (
                 <div className="flex flex-col items-center justify-center py-20 bg-card rounded-3xl border border-border shadow-sm">
-                    <Loader2 className="animate-spin text-indigo-600 mb-4" size={40} />
-                    <p className="text-sm font-semibold text-slate-500">Loading syllabus configurations...</p>
+                    <Loader2 className="animate-spin text-indigo-600 dark:text-indigo-400 mb-4" size={40} />
+                    <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Loading syllabus configurations...</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -351,8 +351,8 @@ export default function MockTestHub() {
                                 {filteredTemplates.length === 0 ? (
                                     <div className="bg-card rounded-3xl p-8 border border-border text-center space-y-3">
                                         <Award className="mx-auto text-slate-400" size={48} />
-                                        <h3 className="text-sm font-bold text-slate-700">No official mock templates published yet.</h3>
-                                        <p className="text-xs text-slate-500">Use "Syllabus-Wise Mocks" or "Custom Mock Creator" to generate exams dynamically.</p>
+                                        <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">No official mock templates published yet.</h3>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">Use "Syllabus-Wise Mocks" or "Custom Mock Creator" to generate exams dynamically.</p>
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -360,27 +360,27 @@ export default function MockTestHub() {
                                             <div key={template.id} className="bg-card rounded-3xl p-6 border border-border shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between space-y-4">
                                                 <div>
                                                     <div className="flex justify-between items-start">
-                                                        <span className="text-[9px] font-black bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full uppercase tracking-wider border border-indigo-100">
+                                                        <span className="text-[9px] font-black bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 px-2.5 py-1 rounded-full uppercase tracking-wider border border-indigo-100 dark:border-indigo-900/30">
                                                             {template.qualification}
                                                         </span>
                                                         {template.course_level && (
-                                                            <span className="text-[9px] font-black bg-slate-50 text-slate-600 px-2.5 py-1 rounded-full uppercase tracking-wider border border-slate-100">
+                                                            <span className="text-[9px] font-black bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 px-2.5 py-1 rounded-full uppercase tracking-wider border border-slate-100 dark:border-slate-800">
                                                                 {template.course_level}
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <h3 className="text-sm font-black text-slate-900 mt-3">{template.title}</h3>
+                                                    <h3 className="text-sm font-black text-slate-900 dark:text-white mt-3">{template.title}</h3>
                                                     {template.description && (
-                                                        <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed line-clamp-2">
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1 leading-relaxed line-clamp-2">
                                                             {template.description}
                                                         </p>
                                                     )}
                                                 </div>
 
                                                 <div className="space-y-3">
-                                                    <div className="flex items-center gap-4 text-xs font-bold text-slate-600 border-t border-border pt-3">
-                                                        <span className="flex items-center gap-1.5"><Clock size={14} className="text-indigo-500" />{template.duration_minutes} Mins</span>
-                                                        <span className="flex items-center gap-1.5"><BookOpen size={14} className="text-indigo-500" />{template.total_questions} Questions</span>
+                                                    <div className="flex items-center gap-4 text-xs font-bold text-slate-600 dark:text-slate-400 border-t border-border pt-3">
+                                                        <span className="flex items-center gap-1.5"><Clock size={14} className="text-indigo-500 dark:text-indigo-400" />{template.duration_minutes} Mins</span>
+                                                        <span className="flex items-center gap-1.5"><BookOpen size={14} className="text-indigo-500 dark:text-indigo-400" />{template.total_questions} Questions</span>
                                                     </div>
                                                     <button
                                                         onClick={() => handleStartOfficialMock(template)}
@@ -400,18 +400,18 @@ export default function MockTestHub() {
 
                         {mockType === 'standard' && (
                             <div className="bg-card rounded-3xl p-6 md:p-8 border border-border shadow-sm space-y-6">
-                                <h2 className="text-md font-black text-slate-900 flex items-center gap-2.5 pb-4 border-b border-border">
-                                    <Shield className="text-indigo-600" size={20} />
+                                <h2 className="text-md font-black text-slate-900 dark:text-white flex items-center gap-2.5 pb-4 border-b border-border">
+                                    <Shield className="text-indigo-600 dark:text-indigo-400" size={20} />
                                     <span>Select Mock Syllabus</span>
                                 </h2>
 
                                 {user?.selected_course ? (
-                                    <div className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex items-center justify-between">
+                                    <div className="p-4 bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/30 rounded-2xl flex items-center justify-between">
                                         <div>
-                                            <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Your Active Program</span>
-                                            <h3 className="text-sm font-black text-slate-900 mt-0.5">{activeCourse?.name || user?.selected_course_name}</h3>
+                                            <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Your Active Program</span>
+                                            <h3 className="text-sm font-black text-slate-900 dark:text-white mt-0.5">{activeCourse?.name || user?.selected_course_name}</h3>
                                         </div>
-                                        <span className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-full uppercase tracking-wider">
+                                        <span className="text-[10px] font-black bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded-full uppercase tracking-wider">
                                             {activeCourse?.category_name || user?.selected_course_category || 'CA'}
                                         </span>
                                     </div>
@@ -419,43 +419,43 @@ export default function MockTestHub() {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {/* Stream */}
                                         <div className="space-y-2">
-                                            <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Exam Category</label>
+                                            <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">Exam Category</label>
                                             <select
                                                 value={selectedStream}
                                                 onChange={(e) => {
                                                     setSelectedStream(e.target.value);
                                                     setSelectedLevelId('');
                                                 }}
-                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold"
+                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-950/30 bg-slate-50/50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-white"
                                             >
-                                                <option value="">Choose Exam Category</option>
+                                                <option value="" className="dark:bg-slate-950 dark:text-white">Choose Exam Category</option>
                                                 {streams.map((stream) => (
-                                                    <option key={stream} value={stream}>{stream}</option>
+                                                    <option key={stream} value={stream} className="dark:bg-slate-950 dark:text-white">{stream}</option>
                                                 ))}
                                             </select>
                                         </div>
 
                                         {/* Level */}
                                         <div className="space-y-2">
-                                            <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Level / Course</label>
+                                            <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">Level / Course</label>
                                             <select
                                                 value={selectedLevelId}
                                                 onChange={(e) => setSelectedLevelId(e.target.value)}
                                                 disabled={!selectedStream}
-                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold disabled:opacity-50"
+                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-950/30 bg-slate-50/50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-white disabled:opacity-50"
                                             >
-                                                <option value="">Select Level</option>
+                                                <option value="" className="dark:bg-slate-950 dark:text-white">Select Level</option>
                                                 {standardLevels.map((l: any) => (
-                                                    <option key={l.id} value={l.id}>{l.name}</option>
+                                                    <option key={l.id} value={l.id} className="dark:bg-slate-950 dark:text-white">{l.name}</option>
                                                 ))}
                                             </select>
                                         </div>
                                     </div>
                                 )}
 
-                                <div className="bg-indigo-50/30 border border-indigo-100 rounded-2xl p-5 space-y-3">
-                                    <h4 className="text-xs font-black text-indigo-900 uppercase tracking-wider">Standard Mock Rules:</h4>
-                                    <ul className="text-xs font-semibold text-indigo-950/80 space-y-2 list-disc pl-5">
+                                <div className="bg-indigo-50/30 dark:bg-indigo-950/10 border border-indigo-100 dark:border-indigo-900/20 rounded-2xl p-5 space-y-3">
+                                    <h4 className="text-xs font-black text-indigo-900 dark:text-indigo-400 uppercase tracking-wider">Standard Mock Rules:</h4>
+                                    <ul className="text-xs font-semibold text-indigo-950/80 dark:text-slate-300 space-y-2 list-disc pl-5">
                                         <li>Full syllabus coverage of the selected course level.</li>
                                         <li>50 Multiple Choice Questions (MCQ) dynamically chosen.</li>
                                         <li>Strict 60-minute duration. The test automatically submits when the timer runs out.</li>
@@ -467,18 +467,18 @@ export default function MockTestHub() {
 
                         {mockType === 'custom' && (
                             <div className="bg-card rounded-3xl p-6 md:p-8 border border-border shadow-sm space-y-6">
-                                <h2 className="text-md font-black text-slate-900 flex items-center gap-2.5 pb-4 border-b border-border">
-                                    <Sliders className="text-indigo-600" size={20} />
+                                <h2 className="text-md font-black text-slate-900 dark:text-white flex items-center gap-2.5 pb-4 border-b border-border">
+                                    <Sliders className="text-indigo-600 dark:text-indigo-400" size={20} />
                                     <span>Custom Mock Configuration</span>
                                 </h2>
 
                                 {user?.selected_course ? (
-                                    <div className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex items-center justify-between">
+                                    <div className="p-4 bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/30 rounded-2xl flex items-center justify-between">
                                         <div>
-                                            <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Your Active Program</span>
-                                            <h3 className="text-sm font-black text-slate-900 mt-0.5">{activeCourse?.name || user?.selected_course_name}</h3>
+                                            <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Your Active Program</span>
+                                            <h3 className="text-sm font-black text-slate-900 dark:text-white mt-0.5">{activeCourse?.name || user?.selected_course_name}</h3>
                                         </div>
-                                        <span className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-full uppercase tracking-wider">
+                                        <span className="text-[10px] font-black bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded-full uppercase tracking-wider">
                                             {activeCourse?.category_name || user?.selected_course_category || 'CA'}
                                         </span>
                                     </div>
@@ -486,7 +486,7 @@ export default function MockTestHub() {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {/* Stream */}
                                         <div className="space-y-2">
-                                            <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Exam Category</label>
+                                            <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">Exam Category</label>
                                             <select
                                                 value={customStream}
                                                 onChange={(e) => {
@@ -494,18 +494,18 @@ export default function MockTestHub() {
                                                     setCustomLevelId('');
                                                     setSelectedPaperId('all');
                                                 }}
-                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold"
+                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-950/30 bg-slate-50/50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-white"
                                             >
-                                                <option value="">Choose Exam Category</option>
+                                                <option value="" className="dark:bg-slate-950 dark:text-white">Choose Exam Category</option>
                                                 {streams.map((stream) => (
-                                                    <option key={stream} value={stream}>{stream}</option>
+                                                    <option key={stream} value={stream} className="dark:bg-slate-950 dark:text-white">{stream}</option>
                                                 ))}
                                             </select>
                                         </div>
 
                                         {/* Level */}
                                         <div className="space-y-2">
-                                            <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Level / Course</label>
+                                            <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">Level / Course</label>
                                             <select
                                                 value={customLevelId}
                                                 onChange={(e) => {
@@ -513,11 +513,11 @@ export default function MockTestHub() {
                                                     setSelectedPaperId('all');
                                                 }}
                                                 disabled={!customStream}
-                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold disabled:opacity-50"
+                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-950/30 bg-slate-50/50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-white disabled:opacity-50"
                                             >
-                                                <option value="">Select Level</option>
+                                                <option value="" className="dark:bg-slate-950 dark:text-white">Select Level</option>
                                                 {customLevels.map((l: any) => (
-                                                    <option key={l.id} value={l.id}>{l.name}</option>
+                                                    <option key={l.id} value={l.id} className="dark:bg-slate-950 dark:text-white">{l.name}</option>
                                                 ))}
                                             </select>
                                         </div>
@@ -527,16 +527,16 @@ export default function MockTestHub() {
                                 <div className="grid grid-cols-1 gap-6">
                                     {/* Subject Paper */}
                                     <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Subject / Paper</label>
+                                        <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">Subject / Paper</label>
                                         <select
                                             value={selectedPaperId}
                                             onChange={(e) => setSelectedPaperId(e.target.value)}
                                             disabled={!customLevelId}
-                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold disabled:opacity-50"
+                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-950/30 bg-slate-50/50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-white disabled:opacity-50"
                                         >
-                                            <option value="all">All Subjects (Random Mixed)</option>
+                                            <option value="all" className="dark:bg-slate-950 dark:text-white">All Subjects (Random Mixed)</option>
                                             {customPapers.map((p: any) => (
-                                                <option key={p.id} value={p.id}>{p.name}</option>
+                                                <option key={p.id} value={p.id} className="dark:bg-slate-950 dark:text-white">{p.name}</option>
                                             ))}
                                         </select>
                                     </div>
@@ -545,38 +545,38 @@ export default function MockTestHub() {
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                     {/* Question Count */}
                                     <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Question Count</label>
+                                        <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">Question Count</label>
                                         <input
                                             type="number"
                                             value={customQuestionCount}
                                             onChange={(e) => setCustomQuestionCount(parseInt(e.target.value, 10) || 10)}
-                                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-bg text-text-primary text-xs font-bold focus:outline-none"
+                                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-bg text-text-primary text-xs font-bold focus:outline-none"
                                         />
                                     </div>
 
                                     {/* Duration */}
                                     <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Duration (Mins)</label>
+                                        <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">Duration (Mins)</label>
                                         <input
                                             type="number"
                                             value={customDuration}
                                             onChange={(e) => setCustomDuration(parseInt(e.target.value, 10) || 15)}
-                                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-bg text-text-primary text-xs font-bold focus:outline-none"
+                                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-bg text-text-primary text-xs font-bold focus:outline-none"
                                         />
                                     </div>
 
                                     {/* Difficulty */}
                                     <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Difficulty</label>
+                                        <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">Difficulty</label>
                                         <select
                                             value={difficulty}
                                             onChange={(e) => setDifficulty(e.target.value)}
-                                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none bg-slate-50/50 text-xs font-bold"
+                                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-950/30 bg-slate-50/50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-white"
                                         >
-                                            <option value="MIXED">Mixed</option>
-                                            <option value="EASY">Easy</option>
-                                            <option value="MEDIUM">Medium</option>
-                                            <option value="HARD">Hard</option>
+                                            <option value="MIXED" className="dark:bg-slate-950 dark:text-white">Mixed</option>
+                                            <option value="EASY" className="dark:bg-slate-950 dark:text-white">Easy</option>
+                                            <option value="MEDIUM" className="dark:bg-slate-950 dark:text-white">Medium</option>
+                                            <option value="HARD" className="dark:bg-slate-950 dark:text-white">Hard</option>
                                         </select>
                                     </div>
                                 </div>
@@ -587,37 +587,37 @@ export default function MockTestHub() {
                     {/* Start Action Card Panel */}
                     <div className="space-y-6">
                         <div className="bg-card rounded-3xl p-6 md:p-8 border border-border shadow-sm space-y-6">
-                            <h2 className="text-md font-black text-slate-900 flex items-center gap-2.5 pb-4 border-b border-border">
-                                <Clock className="text-indigo-600" size={20} />
+                            <h2 className="text-md font-black text-slate-900 dark:text-white flex items-center gap-2.5 pb-4 border-b border-border">
+                                <Clock className="text-indigo-600 dark:text-indigo-400" size={20} />
                                 <span>Session Preview</span>
                             </h2>
 
                             <div className="space-y-4 text-xs font-semibold text-text-secondary">
                                 <div className="flex justify-between border-b border-border pb-2">
                                     <span>Mode</span>
-                                    <span className="font-black text-indigo-600">CHALLENGE</span>
+                                    <span className="font-black text-indigo-600 dark:text-indigo-400">CHALLENGE</span>
                                 </div>
                                 <div className="flex justify-between border-b border-border pb-2">
                                     <span>Questions</span>
-                                    <span className="font-black text-slate-900">
+                                    <span className="font-black text-slate-900 dark:text-white">
                                         {mockType === 'official' ? 'As Configured' : (mockType === 'standard' ? 50 : customQuestionCount)}
                                     </span>
                                 </div>
                                 <div className="flex justify-between border-b border-border pb-2">
                                     <span>Time Allowed</span>
-                                    <span className="font-black text-slate-900">
+                                    <span className="font-black text-slate-900 dark:text-white">
                                         {mockType === 'official' ? 'As Configured' : (mockType === 'standard' ? '60 mins' : `${customDuration} mins`)}
                                     </span>
                                 </div>
                                 <div className="flex justify-between pb-2">
                                     <span>Immediate Review</span>
-                                    <span className="font-black text-red-500">Disabled (Graded at End)</span>
+                                    <span className="font-black text-red-500 dark:text-red-400">Disabled (Graded at End)</span>
                                 </div>
                             </div>
 
                             {/* Error notification */}
                             {errorMsg && (
-                                <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-2xl flex items-start gap-3">
+                                <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30 text-red-700 dark:text-red-400 p-4 rounded-2xl flex items-start gap-3">
                                     <AlertCircle size={16} className="mt-0.5 shrink-0" />
                                     <p className="text-xs font-semibold leading-normal">{errorMsg}</p>
                                 </div>
@@ -643,7 +643,7 @@ export default function MockTestHub() {
                                 </button>
                             )}
                             {mockType === 'official' && (
-                                <div className="text-center text-[10px] text-slate-400 font-bold">
+                                <div className="text-center text-[10px] text-slate-400 dark:text-slate-500 font-bold">
                                     Select an Official Mock Test from the list on the left to start.
                                 </div>
                             )}

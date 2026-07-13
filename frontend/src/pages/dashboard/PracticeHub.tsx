@@ -149,37 +149,37 @@ export default function PracticeHub() {
         <div className="p-6 md:p-10 max-w-5xl mx-auto space-y-8 min-h-[85vh]">
             {/* Header section */}
             <div>
-                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100">
+                <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest bg-indigo-50 dark:bg-indigo-950/40 px-3 py-1.5 rounded-full border border-indigo-100 dark:border-indigo-900/30">
                     Step-by-Step Trainer
                 </span>
-                <h1 className="text-3xl font-black text-slate-900 mt-3">Universal MCQ Practice</h1>
-                <p className="text-slate-500 font-semibold text-sm mt-1">
+                <h1 className="text-3xl font-black text-slate-900 dark:text-white mt-3">Universal MCQ Practice</h1>
+                <p className="text-slate-500 dark:text-slate-400 font-semibold text-sm mt-1">
                     Select your syllabus, choose your difficulty, and sharpen your skills.
                 </p>
             </div>
 
             {treeLoading ? (
                 <div className="flex flex-col items-center justify-center py-20 bg-card rounded-3xl border border-border shadow-sm">
-                    <Loader2 className="animate-spin text-indigo-600 mb-4" size={40} />
-                    <p className="text-sm font-semibold text-slate-500">Loading syllabus configurations...</p>
+                    <Loader2 className="animate-spin text-indigo-600 dark:text-indigo-400 mb-4" size={40} />
+                    <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Loading syllabus configurations...</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Selectors Column */}
                     <div className="lg:col-span-2 space-y-6">
                         <div className="bg-card rounded-3xl p-6 md:p-8 border border-border shadow-sm space-y-6">
-                            <h2 className="text-md font-black text-slate-900 flex items-center gap-2.5 pb-4 border-b border-border">
-                                <Layers className="text-indigo-600" size={20} />
+                            <h2 className="text-md font-black text-slate-900 dark:text-white flex items-center gap-2.5 pb-4 border-b border-border">
+                                <Layers className="text-indigo-600 dark:text-indigo-400" size={20} />
                                 <span>1. Select Course & Syllabus</span>
                             </h2>
 
                             {user?.selected_course ? (
-                                <div className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex items-center justify-between">
+                                <div className="p-4 bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/30 rounded-2xl flex items-center justify-between">
                                     <div>
-                                        <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Your Active Program</span>
-                                        <h3 className="text-sm font-black text-slate-900 mt-0.5">{activeCourse?.name || user?.selected_course_name}</h3>
+                                        <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Your Active Program</span>
+                                        <h3 className="text-sm font-black text-slate-900 dark:text-white mt-0.5">{activeCourse?.name || user?.selected_course_name}</h3>
                                     </div>
-                                    <span className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-full uppercase tracking-wider">
+                                    <span className="text-[10px] font-black bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded-full uppercase tracking-wider">
                                         {activeCourse?.category_name || user?.selected_course_category || 'CA'}
                                     </span>
                                 </div>
@@ -187,7 +187,7 @@ export default function PracticeHub() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     {/* Qualification Stream */}
                                     <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Exam Category</label>
+                                        <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">Exam Category</label>
                                         <select
                                             value={selectedStream}
                                             onChange={(e) => {
@@ -197,18 +197,18 @@ export default function PracticeHub() {
                                                 setSelectedChapterId('all');
                                                 setSelectedTopicId('all');
                                             }}
-                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold"
+                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-950/30 bg-slate-50/50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-white"
                                         >
-                                            <option value="">Choose Exam (e.g. NEET, CA, JEE)</option>
+                                            <option value="" className="dark:bg-slate-950 dark:text-white">Choose Exam (e.g. NEET, CA, JEE)</option>
                                             {streams.map((stream) => (
-                                                <option key={stream} value={stream}>{stream}</option>
+                                                <option key={stream} value={stream} className="dark:bg-slate-950 dark:text-white">{stream}</option>
                                             ))}
                                         </select>
                                     </div>
 
                                     {/* Course Level */}
                                     <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Course Level</label>
+                                        <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">Course Level</label>
                                         <select
                                             value={selectedLevelId}
                                             onChange={(e) => {
@@ -218,11 +218,11 @@ export default function PracticeHub() {
                                                 setSelectedTopicId('all');
                                             }}
                                             disabled={!selectedStream}
-                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold disabled:opacity-50"
+                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-950/30 bg-slate-50/50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-white disabled:opacity-50"
                                         >
-                                            <option value="">Select Level</option>
+                                            <option value="" className="dark:bg-slate-950 dark:text-white">Select Level</option>
                                             {levels.map((l: any) => (
-                                                <option key={l.id} value={l.id}>{l.name}</option>
+                                                <option key={l.id} value={l.id} className="dark:bg-slate-950 dark:text-white">{l.name}</option>
                                             ))}
                                         </select>
                                     </div>
@@ -232,7 +232,7 @@ export default function PracticeHub() {
                             <div className="space-y-6">
                                 {/* Subject Paper */}
                                 <div className="space-y-2">
-                                    <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Subject / Paper</label>
+                                    <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">Subject / Paper</label>
                                     <select
                                         value={selectedPaperId}
                                         onChange={(e) => {
@@ -241,18 +241,18 @@ export default function PracticeHub() {
                                             setSelectedTopicId('all');
                                         }}
                                         disabled={!selectedLevelId}
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold disabled:opacity-50"
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-950/30 bg-slate-50/50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-white disabled:opacity-50"
                                     >
-                                        <option value="all">All Subjects (Random Mixed Questions)</option>
+                                        <option value="all" className="dark:bg-slate-950 dark:text-white">All Subjects (Random Mixed Questions)</option>
                                         {papers.map((p: any) => (
-                                            <option key={p.id} value={p.id}>{p.name}</option>
+                                            <option key={p.id} value={p.id} className="dark:bg-slate-950 dark:text-white">{p.name}</option>
                                         ))}
                                     </select>
                                 </div>
 
                                 {/* Chapter */}
                                 <div className="space-y-2">
-                                    <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Chapter</label>
+                                    <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">Chapter</label>
                                     <select
                                         value={selectedChapterId}
                                         onChange={(e) => {
@@ -260,29 +260,29 @@ export default function PracticeHub() {
                                             setSelectedTopicId('all');
                                         }}
                                         disabled={selectedPaperId === 'all'}
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold disabled:opacity-50"
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-950/30 bg-slate-50/50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-white disabled:opacity-50"
                                     >
-                                        <option value="all">All Chapters</option>
+                                        <option value="all" className="dark:bg-slate-950 dark:text-white">All Chapters</option>
                                         {chapters.map((c: any) => (
-                                            <option key={c.id} value={c.id}>{c.name}</option>
+                                            <option key={c.id} value={c.id} className="dark:bg-slate-950 dark:text-white">{c.name}</option>
                                         ))}
                                     </select>
                                 </div>
 
                                 {/* Topic */}
                                 <div className="space-y-2">
-                                    <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Topic</label>
+                                    <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">Topic</label>
                                     <select
                                         value={selectedTopicId}
                                         onChange={(e) => {
                                             setSelectedTopicId(e.target.value);
                                         }}
                                         disabled={selectedChapterId === 'all'}
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold disabled:opacity-50"
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-950/30 bg-slate-50/50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-white disabled:opacity-50"
                                     >
-                                        <option value="all">All Topics</option>
+                                        <option value="all" className="dark:bg-slate-950 dark:text-white">All Topics</option>
                                         {topics.map((t: any) => (
-                                            <option key={t.id} value={t.id}>{t.name}</option>
+                                            <option key={t.id} value={t.id} className="dark:bg-slate-950 dark:text-white">{t.name}</option>
                                         ))}
                                     </select>
                                 </div>
@@ -293,14 +293,14 @@ export default function PracticeHub() {
                     {/* Settings & Trigger Column */}
                     <div className="space-y-6">
                         <div className="bg-card rounded-3xl p-6 md:p-8 border border-border shadow-sm space-y-6">
-                            <h2 className="text-md font-black text-slate-900 flex items-center gap-2.5 pb-4 border-b border-border">
-                                <Settings className="text-indigo-600" size={20} />
+                            <h2 className="text-md font-black text-slate-900 dark:text-white flex items-center gap-2.5 pb-4 border-b border-border">
+                                <Settings className="text-indigo-600 dark:text-indigo-400" size={20} />
                                 <span>2. Practice Settings</span>
                             </h2>
 
                             {/* Question Count selector */}
                             <div className="space-y-3">
-                                <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider block">Question Count</label>
+                                <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider block">Question Count</label>
                                 <div className="flex gap-2">
                                     {[10, 25, 50].map((num) => (
                                         <button
@@ -313,7 +313,7 @@ export default function PracticeHub() {
                                             className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${
                                                 questionCount === num && !customCount
                                                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/10'
-                                                    : 'bg-bg hover:bg-slate-100 text-text-secondary border border-border'
+                                                    : 'bg-bg hover:bg-slate-100 dark:hover:bg-slate-800 text-text-secondary border border-border'
                                             }`}
                                         >
                                             {num}
@@ -325,47 +325,47 @@ export default function PracticeHub() {
                                     placeholder="Or custom count (e.g. 15)"
                                     value={customCount}
                                     onChange={(e) => setCustomCount(e.target.value)}
-                                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-bg text-text-primary text-xs font-semibold focus:outline-none focus:ring-4 focus:ring-indigo-50"
+                                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-bg text-text-primary text-xs font-semibold focus:outline-none focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-950/30"
                                 />
                             </div>
 
                             {/* Difficulty */}
                             <div className="space-y-2">
-                                <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Difficulty Level</label>
+                                <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">Difficulty Level</label>
                                 <select
                                     value={difficulty}
                                     onChange={(e) => setDifficulty(e.target.value)}
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-50 bg-slate-50/50 text-xs font-bold"
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-950/30 bg-slate-50/50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-white"
                                 >
-                                    <option value="MIXED">Mixed Difficulty</option>
-                                    <option value="EASY">Easy</option>
-                                    <option value="MEDIUM">Medium</option>
-                                    <option value="HARD">Hard</option>
+                                    <option value="MIXED" className="dark:bg-slate-950 dark:text-white">Mixed Difficulty</option>
+                                    <option value="EASY" className="dark:bg-slate-950 dark:text-white">Easy</option>
+                                    <option value="MEDIUM" className="dark:bg-slate-950 dark:text-white">Medium</option>
+                                    <option value="HARD" className="dark:bg-slate-950 dark:text-white">Hard</option>
                                 </select>
                             </div>
 
                             {/* Training Mode */}
                             <div className="space-y-3">
-                                <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider block">Training Mode</label>
+                                <label className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider block">Training Mode</label>
                                 <div className="grid grid-cols-1 gap-3">
                                     {/* Learning Mode */}
                                     <div
                                         onClick={() => setPracticeMode('LEARNING')}
                                         className={`p-4 rounded-2xl border transition-all cursor-pointer ${
                                             practiceMode === 'LEARNING'
-                                                ? 'bg-indigo-50/50 border-indigo-200 ring-2 ring-indigo-500/10'
-                                                : 'bg-bg hover:bg-slate-50 border-border'
+                                                ? 'bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-900/30 ring-2 ring-indigo-500/10'
+                                                : 'bg-bg hover:bg-slate-50 dark:hover:bg-slate-800/30 border-border'
                                         }`}
                                     >
                                         <div className="flex items-start gap-3">
                                             <div className={`mt-0.5 rounded-full p-1 ${
-                                                practiceMode === 'LEARNING' ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-400'
+                                                practiceMode === 'LEARNING' ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-400'
                                             }`}>
                                                 <Sparkles size={12} />
                                             </div>
                                             <div>
-                                                <h4 className="text-xs font-black text-slate-900">Learning Mode</h4>
-                                                <p className="text-[10px] text-slate-500 mt-0.5 font-semibold leading-normal">
+                                                <h4 className="text-xs font-black text-slate-900 dark:text-white">Learning Mode</h4>
+                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-semibold leading-normal">
                                                     Instant answers, complete answers keys, detailed explanations, and concept notes page-by-page.
                                                 </p>
                                             </div>
@@ -377,19 +377,19 @@ export default function PracticeHub() {
                                         onClick={() => setPracticeMode('CHALLENGE')}
                                         className={`p-4 rounded-2xl border transition-all cursor-pointer ${
                                             practiceMode === 'CHALLENGE'
-                                                ? 'bg-indigo-50/50 border-indigo-200 ring-2 ring-indigo-500/10'
-                                                : 'bg-bg hover:bg-slate-50 border-border'
+                                                ? 'bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-900/30 ring-2 ring-indigo-500/10'
+                                                : 'bg-bg hover:bg-slate-50 dark:hover:bg-slate-800/30 border-border'
                                         }`}
                                     >
                                         <div className="flex items-start gap-3">
                                             <div className={`mt-0.5 rounded-full p-1 ${
-                                                practiceMode === 'CHALLENGE' ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-400'
+                                                practiceMode === 'CHALLENGE' ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-400'
                                             }`}>
                                                 <Award size={12} />
                                             </div>
                                             <div>
-                                                <h4 className="text-xs font-black text-slate-900">Challenge Mode</h4>
-                                                <p className="text-[10px] text-slate-500 mt-0.5 font-semibold leading-normal">
+                                                <h4 className="text-xs font-black text-slate-900 dark:text-white">Challenge Mode</h4>
+                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-semibold leading-normal">
                                                     Real exam simulation. Answers are locked and graded at the end under a custom timer.
                                                 </p>
                                             </div>
@@ -400,7 +400,7 @@ export default function PracticeHub() {
 
                             {/* Error notification */}
                             {errorMsg && (
-                                <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-2xl flex items-start gap-3">
+                                <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30 text-red-700 dark:text-red-400 p-4 rounded-2xl flex items-start gap-3">
                                     <AlertCircle size={16} className="mt-0.5 shrink-0" />
                                     <p className="text-xs font-semibold leading-normal">{errorMsg}</p>
                                 </div>
