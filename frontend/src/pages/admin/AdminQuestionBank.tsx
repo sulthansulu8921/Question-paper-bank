@@ -44,6 +44,8 @@ const Badge = ({ text, color, bg }: { text: string, color: string, bg: string })
     </span>
 );
 
+import PDFUploadModal from '@/components/admin/PDFUploadModal';
+
 export default function AdminQuestionBank() {
     const queryClient = useQueryClient();
 
@@ -57,6 +59,7 @@ export default function AdminQuestionBank() {
     const [showFilters, setShowFilters] = useState(false);
     const [sortKey, setSortKey] = useState('id');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+    const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
 
     const [icaiFilter, setIcaiFilter] = useState<ICAISelection>({
         levelId: '',
@@ -264,11 +267,25 @@ export default function AdminQuestionBank() {
                         <span>{importing ? 'Importing...' : 'Import Excel'}</span>
                     </button>
 
-
+                    {/* Upload PDF Question Paper */}
+                    <Link
+                        to="/admin/questions/new"
+                        className="primary-btn flex-center gap-sm"
+                        style={{ background: '#0284c7', borderColor: '#0284c7', color: '#ffffff' }}
+                    >
+                        <Upload size={18} />
+                        <span>Upload PDF Question Paper</span>
+                    </Link>
 
                     <Link to="/admin/questions/new" className="primary-btn flex-center gap-sm"><Plus size={18} /><span>Add New</span></Link>
                 </div>
             </div>
+
+            <PDFUploadModal
+                open={isPdfModalOpen}
+                onClose={() => setIsPdfModalOpen(false)}
+                onUploaded={() => queryClient.invalidateQueries({ queryKey: ['admin-questions'] })}
+            />
 
             <div className="qm-table-card">
                 <div className="table-toolbar">

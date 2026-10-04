@@ -499,12 +499,14 @@ const AdminMasterDatabase = () => {
                                             <span className="text-[10px] text-slate-400 font-bold">
                                                 {chapter.question_count ?? 0} questions
                                             </span>
-                                            <Link
-                                                to={`/admin/questions/new?chapter=${chapter.id}&topic=${chapter.topics?.[0]?.id ?? ''}`}
-                                                className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-0.5"
-                                            >
-                                                Add Question <ChevronRight size={12} />
-                                            </Link>
+                                            <div className="flex items-center gap-2">
+                                                <Link
+                                                    to={`/admin/questions/new?chapter=${chapter.id}&topic=${chapter.topics?.[0]?.id ?? ''}`}
+                                                    className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-0.5"
+                                                >
+                                                    Add Question <ChevronRight size={12} />
+                                                </Link>
+                                            </div>
                                         </div>
                                     </div>
                                 ))}

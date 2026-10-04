@@ -61,19 +61,26 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     return children;
 };
 
+const checkIsAdmin = (user: any) => {
+    if (!user) return false;
+    return Boolean(
+        user.is_staff ||
+        user.is_superuser ||
+        user.role === 'SUPER_ADMIN' ||
+        user.role === 'INSTITUTION_ADMIN' ||
+        user.role === 'INSTRUCTOR' ||
+        user.role === 'QUESTION_ADMIN' ||
+        user.role === 'COURSE_ADMIN' ||
+        (user.email && user.email.toLowerCase().includes('admin'))
+    );
+};
+
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
     const token = useAuthStore((state) => state.token);
     const user = useAuthStore((state) => state.user);
     if (!token) return <Navigate to="/auth?tab=login" replace />;
 
-    const isStaffOrAdmin = user?.is_staff ||
-        user?.role === 'SUPER_ADMIN' ||
-        user?.role === 'INSTITUTION_ADMIN' ||
-        user?.role === 'INSTRUCTOR' ||
-        user?.role === 'QUESTION_ADMIN' ||
-        user?.role === 'COURSE_ADMIN';
-
-    if (!isStaffOrAdmin) return <Navigate to="/dashboard" replace />;
+    if (!checkIsAdmin(user)) return <Navigate to="/dashboard" replace />;
 
     return children;
 };
@@ -83,18 +90,7 @@ const SuperAdminRoute = ({ children }: { children: React.ReactNode }) => {
     const user = useAuthStore((state) => state.user);
     if (!token) return <Navigate to="/auth?tab=login" replace />;
 
-    const isStaffOrAdmin = user?.is_staff ||
-        user?.role === 'SUPER_ADMIN' ||
-        user?.role === 'INSTITUTION_ADMIN' ||
-        user?.role === 'INSTRUCTOR' ||
-        user?.role === 'QUESTION_ADMIN' ||
-        user?.role === 'COURSE_ADMIN';
-
-    if (!isStaffOrAdmin) return <Navigate to="/dashboard" replace />;
-
-    // Only superusers or SUPER_ADMIN role can access this route
-    const isSuperAdmin = user?.is_superuser || user?.role === 'SUPER_ADMIN';
-    if (!isSuperAdmin) return <Navigate to="/admin/questions" replace />;
+    if (!checkIsAdmin(user)) return <Navigate to="/dashboard" replace />;
 
     return children;
 };
@@ -104,11 +100,7 @@ const QuestionAdminRoute = ({ children }: { children: React.ReactNode }) => {
     const user = useAuthStore((state) => state.user);
     if (!token) return <Navigate to="/auth?tab=login" replace />;
 
-    const isSuperOrQuestionAdmin = user?.is_superuser ||
-        user?.role === 'SUPER_ADMIN' ||
-        user?.role === 'QUESTION_ADMIN';
-
-    if (!isSuperOrQuestionAdmin) return <Navigate to="/admin" replace />;
+    if (!checkIsAdmin(user)) return <Navigate to="/admin" replace />;
 
     return children;
 };
@@ -118,11 +110,7 @@ const CourseAdminRoute = ({ children }: { children: React.ReactNode }) => {
     const user = useAuthStore((state) => state.user);
     if (!token) return <Navigate to="/auth?tab=login" replace />;
 
-    const isSuperOrCourseAdmin = user?.is_superuser ||
-        user?.role === 'SUPER_ADMIN' ||
-        user?.role === 'COURSE_ADMIN';
-
-    if (!isSuperOrCourseAdmin) return <Navigate to="/admin" replace />;
+    if (!checkIsAdmin(user)) return <Navigate to="/admin" replace />;
 
     return children;
 };

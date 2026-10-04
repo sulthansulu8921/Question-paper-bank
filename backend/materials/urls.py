@@ -4,7 +4,7 @@ from materials.views import (
     QuestionPaperViewSet, AnswerPaperViewSet, NotesViewSet, 
     VideoViewSet, MCQViewSet, BookmarkViewSet, SubjectiveQuestionViewSet, FeedbackViewSet,
     AdminDashboardStatsView, ExportQuestionsExcelView, ImportQuestionsExcelView,
-    PDFQuestionExtractView, UploadPDFView, GenericFileUploadView, ParseTextOnlyView,
+    PDFQuestionExtractView, BulkSaveQuestionsView, UploadPDFView, GenericFileUploadView, ParseTextOnlyView,
     VideoProgressViewSet, MaterialDownloadViewSet, LiveClassViewSet, NotificationViewSet,
     AssessmentSessionViewSet, MockTestTemplateViewSet,
 )
@@ -32,6 +32,7 @@ urlpatterns = [
     path('questions/export-excel/', ExportQuestionsExcelView.as_view(), name='export-excel'),
     path('questions/import-excel/', ImportQuestionsExcelView.as_view(), name='import-excel'),
     path('questions/extract-from-pdf/', PDFQuestionExtractView.as_view(), name='extract-from-pdf'),
+    path('questions/bulk-save/', BulkSaveQuestionsView.as_view(), name='bulk-save'),
     path('questions/parse-text/', ParseTextOnlyView.as_view(), name='parse-text'),
     path('upload-pdf/', UploadPDFView.as_view(), name='upload-pdf'),
     path('upload-file/', GenericFileUploadView.as_view(), name='upload-file'),

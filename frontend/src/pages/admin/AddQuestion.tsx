@@ -3,10 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/api/axios';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import ICAICascadeSelector, { type ICAISelection } from '@/components/admin/ICAICascadeSelector';
+import PDFUploadModal from '@/components/admin/PDFUploadModal';
+import PdfLiveWorkspace from '@/components/admin/PdfLiveWorkspace';
 import {
     Loader2, Upload, Star, FileText, Zap, Plus, Trash2,
     HelpCircle, CheckSquare, MessageSquare, Clipboard, X,
-    Bold, Underline, AlignCenter
+    Bold, Underline, AlignCenter, Sparkles
 } from 'lucide-react';
 import '@/styles/admin/AddQuestion.css';
 
@@ -190,7 +192,7 @@ const parseTablesHelper = (val: string): any[] => {
         if (parsed.headers && parsed.rows) {
             return [{ ...parsed, type: parsed.type || 'normal' }];
         }
-    } catch (e) {}
+    } catch (e) { }
     return [];
 };
 
@@ -241,15 +243,15 @@ const MultiTableManager = ({
     const updateTableData = (index: number, tableDataStr: string) => {
         try {
             const parsed = JSON.parse(tableDataStr);
-            const newTables = tables.map((t, i) => 
+            const newTables = tables.map((t, i) =>
                 i === index ? { ...t, headers: parsed.headers, rows: parsed.rows } : t
             );
             updateTables(newTables);
-        } catch (e) {}
+        } catch (e) { }
     };
 
     const toggleTableType = (index: number, type: 'normal' | 'cursor') => {
-        const newTables = tables.map((t, i) => 
+        const newTables = tables.map((t, i) =>
             i === index ? { ...t, type } : t
         );
         updateTables(newTables);
@@ -370,11 +372,11 @@ export default function AddQuestion() {
         const end = textarea.selectionEnd ?? 0;
         const currentVal = textarea.value;
         const selectedText = currentVal.substring(start, end);
-        
+
         const openTag = `[${tag}]`;
         const closeTag = `[/${tag}]`;
         const textToInsert = openTag + (selectedText || 'text') + closeTag;
-        
+
         const newVal = currentVal.substring(0, start) + textToInsert + currentVal.substring(end);
         onUpdate(newVal);
 
@@ -446,7 +448,191 @@ export default function AddQuestion() {
     }>>([]);
 
     const [uploading, setUploading] = useState(false);
+    const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
+
+    // Embedded PDF Two-Panel Question + Answer Workspace panel states
+    const [showPdfPanel, setShowPdfPanel] = useState(true);
+    const [pdfQuestionFile, setPdfQuestionFile] = useState<File | null>(null);
+    const [pdfAnswerFile, setPdfAnswerFile] = useState<File | null>(null);
+    const [isExtractingPdf, setIsExtractingPdf] = useState(false);
+    const [extractedPdfData, setExtractedPdfData] = useState<any>(null);
+    const [rawTextTab, setRawTextTab] = useState<'FORMATTED' | 'QP' | 'AP'>('FORMATTED');
+
+    const [qpViewMode, setQpViewMode] = useState<'TEXT' | 'PDF'>('TEXT');
+    const [apViewMode, setApViewMode] = useState<'TEXT' | 'PDF'>('TEXT');
+
+    const [leftPanelWidthPercent, setLeftPanelWidthPercent] = useState<number>(50);
+    const [isDraggingDivider, setIsDraggingDivider] = useState(false);
+    const [selectedQIdx, setSelectedQIdx] = useState<number>(0);
+    const [workspaceZoom, setWorkspaceZoom] = useState<number>(100);
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
+    const [mobileActiveTab, setMobileActiveTab] = useState<'QP' | 'AP'>('QP');
+
+    const splitContainerRef = useRef<HTMLDivElement>(null);
+
+    const showToast = (msg: string) => {
+        setToastMessage(msg);
+        setTimeout(() => setToastMessage(null), 2500);
+    };
+
+    const copyToClipboard = (text: string, msg: string) => {
+        if (!text) return;
+        navigator.clipboard.writeText(text);
+        showToast(msg);
+    };
+
+    const handleMouseDownDivider = (e: React.MouseEvent) => {
+        e.preventDefault();
+        setIsDraggingDivider(true);
+    };
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isDraggingDivider || !splitContainerRef.current) return;
+            const rect = splitContainerRef.current.getBoundingClientRect();
+            const offsetX = e.clientX - rect.left;
+            let percent = (offsetX / rect.width) * 100;
+            if (percent < 20) percent = 20;
+            if (percent > 80) percent = 80;
+            setLeftPanelWidthPercent(percent);
+        };
+
+        const handleMouseUp = () => {
+            setIsDraggingDivider(false);
+        };
+
+        if (isDraggingDivider) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+        }
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isDraggingDivider]);
+
+    const scrollToQuestion = (idx: number) => {
+        setSelectedQIdx(idx);
+        setTimeout(() => {
+            const qEl = document.getElementById(`qp-card-${idx}`);
+            const aEl = document.getElementById(`ap-card-${idx}`);
+            if (qEl) qEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            if (aEl) aEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 50);
+    };
+
+    const handleAddManually = () => {
+        const formEl = document.getElementById('manual-question-form-card');
+        if (formEl) {
+            formEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        const qNoInput = document.getElementById('form-input-qno') as HTMLInputElement;
+        if (qNoInput) {
+            setTimeout(() => qNoInput.focus(), 300);
+        }
+    };
+
+    const handleStartPdfExtraction = async () => {
+        if (!pdfQuestionFile && !pdfAnswerFile) {
+            alert('Please select a Question Paper PDF or Answer Paper PDF.');
+            return;
+        }
+
+        setIsExtractingPdf(true);
+        const fd = new FormData();
+        if (pdfQuestionFile) {
+            fd.append('question_pdf', pdfQuestionFile);
+            fd.append('pdf', pdfQuestionFile);
+        }
+        if (pdfAnswerFile) {
+            fd.append('answer_pdf', pdfAnswerFile);
+        }
+
+        fd.append('title', pdfQuestionFile?.name || pdfAnswerFile?.name || 'Scanned PDF');
+        if (form.source) fd.append('source', form.source);
+        if (form.year) fd.append('year', form.year);
+        if (form.attempt) fd.append('attempt', form.attempt);
+        if (icai.topicId) fd.append('icai_topic_id', icai.topicId);
+
+        try {
+            const res = await api.post('/materials/questions/extract-from-pdf/', fd, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            setExtractedPdfData(res.data);
+            setSelectedQIdx(0);
+            showToast('✓ PDFs scanned successfully! Questions & Answers loaded.');
+        } catch (err: any) {
+            alert(err.response?.data?.error || 'Failed to extract text model from PDF.');
+        } finally {
+            setIsExtractingPdf(false);
+        }
+    };
+
+    const handleSelectQuestionFromPdf = (q: any, idx?: number) => {
+        if (idx !== undefined) setSelectedQIdx(idx);
+
+        let qText = q.question_text || '';
+        let extractedOpts: any[] = [];
+        const optionRegex = /(?:^|\n)\s*([A-D])[\.\)]\s*(.*?)(?=\n\s*[A-D][\.\)]|$)/gs;
+        const matches = Array.from(qText.matchAll(optionRegex));
+
+        let detectedType = q.question_type || 'NORMAL';
+
+        if (matches.length >= 2) {
+            detectedType = 'MCQ';
+            extractedOpts = matches.map((m: any, oIdx: number) => ({
+                text: m[2].trim(),
+                is_correct: false,
+                order: oIdx
+            }));
+            qText = qText.split(/(?:^|\n)\s*A[\.\)]/)[0].trim();
+        } else if (q.options && q.options.length > 0) {
+            detectedType = 'MCQ';
+            extractedOpts = q.options.map((opt: any, oIdx: number) => ({
+                text: typeof opt === 'string' ? opt : (opt.text || ''),
+                is_correct: opt.is_correct || false,
+                order: oIdx
+            }));
+        }
+
+        setForm(prev => ({
+            ...prev,
+            q_no: q.q_no || prev.q_no,
+            question_text: qText || prev.question_text,
+            correct_answer: q.correct_answer || prev.correct_answer,
+            marks: String(q.marks || prev.marks),
+            section: q.section || prev.section,
+            question_type: detectedType,
+        }));
+
+        if (detectedType === 'MCQ') {
+            while (extractedOpts.length < 4) {
+                extractedOpts.push({ text: '', is_correct: false, order: extractedOpts.length });
+            }
+            setOptions(extractedOpts);
+        }
+
+        const subQs = q.sub_questions || q.parts || [];
+        if (subQs.length > 0) {
+            setSubQuestions(subQs.map((sq: any, sIdx: number) => ({
+                identifier: sq.identifier || `(${String.fromCharCode(97 + sIdx)})`,
+                question_text: sq.question_text || '',
+                question_type: sq.question_type || 'NORMAL',
+                marks: sq.marks || 1,
+                table_data: sq.table_data || '',
+                options: sq.options || []
+            })));
+
+            setSubAnswers(subQs.map((sq: any, sIdx: number) => ({
+                identifier: sq.identifier || `(${String.fromCharCode(97 + sIdx)})`,
+                correct_answer: sq.correct_answer || '',
+                answer_table_data: sq.answer_table_data || ''
+            })));
+        }
+
+        showToast(`✓ Question Q.${q.q_no || (idx !== undefined ? idx + 1 : 1)} loaded into form`);
+    };
 
     // Fetch existing question
     const { data: existingQuestion, isLoading: isQuestionLoading } = useQuery({
@@ -741,6 +927,155 @@ export default function AddQuestion() {
         setSubAnswers(prev => prev.map((a, i) => i === idx ? { ...a, [field]: val } : a));
     };
 
+    const renderTableData = (tableDataStr: string) => {
+        if (!tableDataStr) return null;
+        try {
+            const tables = parseTablesHelper(tableDataStr);
+            if (!tables || tables.length === 0) return null;
+            return (
+                <div className="space-y-3 my-3">
+                    {tables.map((tbl: any, idx: number) => (
+                        <div key={idx} className="overflow-x-auto border border-slate-300 rounded-xl shadow-sm bg-white">
+                            <table className="w-full text-xs border-collapse">
+                                {tbl.headers && tbl.headers.length > 0 && (
+                                    <thead className="bg-slate-100 border-b border-slate-300">
+                                        <tr>
+                                            {tbl.headers.map((h: string, hIdx: number) => (
+                                                <th key={hIdx} className="px-3 py-2 border-r border-slate-300 text-left font-bold text-slate-800">
+                                                    {h}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                )}
+                                <tbody>
+                                    {(tbl.rows || []).map((row: string[], rIdx: number) => (
+                                        <tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                                            {row.map((cell: string, cIdx: number) => (
+                                                <td key={cIdx} className="px-3 py-2 border-t border-r border-slate-200 text-slate-700">
+                                                    {cell}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ))}
+                </div>
+            );
+        } catch (e) {
+            return null;
+        }
+    };
+
+    const decodeHtml = (str: string) => {
+        if (!str) return '';
+        return str
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&amp;/g, '&');
+    };
+
+    const convertMarkdownTablesToHtml = (rawText: string): string => {
+        if (!rawText || !rawText.includes('|')) return rawText;
+        const lines = rawText.split('\n');
+        let inTable = false;
+        let tableLines: string[] = [];
+        let resultLines: string[] = [];
+
+        const flushTable = () => {
+            if (tableLines.length >= 2) {
+                let headers: string[] = [];
+                let rows: string[][] = [];
+
+                tableLines.forEach((tLine, idx) => {
+                    let cells = tLine.split('|').map(c => c.trim());
+                    if (cells.length > 0 && cells[0] === '') cells.shift();
+                    if (cells.length > 0 && cells[cells.length - 1] === '') cells.pop();
+
+                    if (idx === 1 && cells.every(c => new RegExp('^[\\-\\:\\s]+$').test(c))) {
+                        return;
+                    }
+                    if (headers.length === 0) {
+                        headers = cells;
+                    } else {
+                        rows.push(cells);
+                    }
+                });
+
+                if (headers.length > 0) {
+                    let html = '<div class="overflow-x-auto my-3"><table class="w-full border-collapse border border-slate-300 text-xs font-mono"><thead class="bg-slate-100"><tr>';
+                    headers.forEach(h => {
+                        html += `<th class="border border-slate-300 px-3 py-1.5 font-bold text-left bg-slate-100">${h}</th>`;
+                    });
+                    html += '</tr></thead><tbody>';
+                    rows.forEach(r => {
+                        html += '<tr>';
+                        r.forEach(cell => {
+                            html += `<td class="border border-slate-300 px-3 py-1.5">${cell}</td>`;
+                        });
+                        html += '</tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    resultLines.push(html);
+                } else {
+                    resultLines.push(...tableLines);
+                }
+            } else {
+                resultLines.push(...tableLines);
+            }
+            tableLines = [];
+        };
+
+        for (const line of lines) {
+            if (line.trim().startsWith('|') || (line.trim().split('|').length > 2)) {
+                inTable = true;
+                tableLines.push(line);
+            } else {
+                if (inTable) {
+                    flushTable();
+                    inTable = false;
+                }
+                resultLines.push(line);
+            }
+        }
+        if (inTable) {
+            flushTable();
+        }
+
+        return resultLines.join('\n');
+    };
+
+    const renderFormattedContent = (textContent: string, tableDataStr?: string) => {
+        if (!textContent && !tableDataStr) return null;
+        let text = decodeHtml(textContent || '');
+        text = convertMarkdownTablesToHtml(text);
+        const hasHtml = /<[a-z][\s\S]*>/i.test(text);
+
+        return (
+            <div className="space-y-2">
+                {hasHtml ? (
+                    <div
+                        className="pdf-paper-document select-text text-slate-900 overflow-x-auto my-1"
+                        style={{ wordBreak: 'break-word', fontFamily: 'Inter, system-ui, sans-serif', lineHeight: '1.7' }}
+                        dangerouslySetInnerHTML={{ __html: text }}
+                    />
+                ) : (
+                    <div
+                        className="pdf-paper-document select-text text-slate-900 leading-relaxed whitespace-pre-wrap my-1"
+                        style={{ fontFamily: 'Inter, system-ui, sans-serif', lineHeight: '1.7' }}
+                    >
+                        {text}
+                    </div>
+                )}
+                {tableDataStr && renderTableData(tableDataStr)}
+            </div>
+        );
+    };
+
     if (isEdit && isQuestionLoading) {
         return (
             <div className="flex h-96 items-center justify-center">
@@ -766,6 +1101,14 @@ export default function AddQuestion() {
                     </div>
                 </div>
                 <div className="flex gap-3">
+                    <button
+                        type="button"
+                        onClick={() => setShowPdfPanel(!showPdfPanel)}
+                        className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-semibold text-sm flex items-center gap-2 shadow-sm transition-all"
+                    >
+                        <Sparkles size={18} />
+                        <span>{showPdfPanel ? 'Hide PDF Text Model' : 'Upload & Scan PDF (QP + AP)'}</span>
+                    </button>
                     <button className="px-4 py-2 border border-slate-200 rounded-lg text-slate-600 bg-white font-semibold text-sm hover:bg-slate-50" onClick={() => navigate('/admin/questions')}>
                         Cancel
                     </button>
@@ -776,6 +1119,403 @@ export default function AddQuestion() {
                 </div>
             </div>
 
+            {/* Toast Notification */}
+            {toastMessage && (
+                <div className="copy-toast">
+                    <Sparkles size={16} className="text-yellow-400" />
+                    <span>{toastMessage}</span>
+                </div>
+            )}
+
+            {/* INTERACTIVE LIVE PDF WORKSPACE & TEXT EXTRACTOR */}
+            {showPdfPanel && (
+                <PdfLiveWorkspace
+                    questionFile={pdfQuestionFile}
+                    answerFile={pdfAnswerFile}
+                    onQuestionFileChange={setPdfQuestionFile}
+                    onAnswerFileChange={setPdfAnswerFile}
+                    onInsertToQuestion={(text) => {
+                        setForm(prev => ({
+                            ...prev,
+                            question_text: prev.question_text ? `${prev.question_text}\n\n${text}` : text
+                        }));
+                    }}
+                    onInsertToAnswer={(text) => {
+                        setForm(prev => ({
+                            ...prev,
+                            correct_answer: prev.correct_answer ? `${prev.correct_answer}\n\n${text}` : text
+                        }));
+                    }}
+                    onInsertToPassage={(text) => {
+                        setForm(prev => ({
+                            ...prev,
+                            case_scenario_passage: prev.case_scenario_passage ? `${prev.case_scenario_passage}\n\n${text}` : text
+                        }));
+                    }}
+                    onStartScan={handleStartPdfExtraction}
+                    isScanning={isExtractingPdf}
+                    extractedData={extractedPdfData}
+                    showToast={showToast}
+                    onClose={() => setShowPdfPanel(false)}
+                />
+            )}
+
+            {/* MAIN SCREEN — 50/50 WORKSPACE */}
+            {showPdfPanel && extractedPdfData && (
+                        <div className="space-y-4">
+                            {/* Navigation Bar & Mode Controls */}
+                            <div className="bg-slate-900 text-white p-3 rounded-xl flex flex-wrap justify-between items-center gap-3 shadow-md">
+                                {/* Mode Tabs */}
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setRawTextTab('FORMATTED')}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${rawTextTab === 'FORMATTED' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                    >
+                                        [ Formatted Question Paper ]
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setRawTextTab('QP')}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${rawTextTab === 'QP' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                    >
+                                        [ Raw Question Text ]
+                                    </button>
+                                    {extractedPdfData.raw_answer_text && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setRawTextTab('AP')}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${rawTextTab === 'AP' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                        >
+                                            [ Raw Answer Text ]
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Synchronized Question Navigation */}
+                                {rawTextTab === 'FORMATTED' && extractedPdfData.questions?.length > 0 && (
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            type="button"
+                                            disabled={selectedQIdx <= 0}
+                                            onClick={() => scrollToQuestion(Math.max(0, selectedQIdx - 1))}
+                                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-lg text-xs font-bold transition-all"
+                                        >
+                                            [ ← Previous ]
+                                        </button>
+                                        <span className="px-3 py-1 bg-blue-600 text-white font-black text-xs rounded-lg shadow-sm">
+                                            Q.{extractedPdfData.questions[selectedQIdx]?.q_no || selectedQIdx + 1}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            disabled={selectedQIdx >= extractedPdfData.questions.length - 1}
+                                            onClick={() => scrollToQuestion(Math.min(extractedPdfData.questions.length - 1, selectedQIdx + 1))}
+                                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-lg text-xs font-bold transition-all"
+                                        >
+                                            [ Next → ]
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Page & Zoom */}
+                                <div className="flex items-center gap-3">
+                                    <span className="text-xs text-slate-300 font-medium">
+                                        Page 1 / {extractedPdfData.total_pages || 1}
+                                    </span>
+                                    <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-lg">
+                                        <button
+                                            type="button"
+                                            onClick={() => setWorkspaceZoom(prev => Math.max(80, prev - 10))}
+                                            className="px-2 py-0.5 text-xs font-bold text-slate-300 hover:text-white"
+                                        >
+                                            [ − ]
+                                        </button>
+                                        <span className="text-xs font-bold text-blue-400 px-1">{workspaceZoom}%</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setWorkspaceZoom(prev => Math.min(150, prev + 10))}
+                                            className="px-2 py-0.5 text-xs font-bold text-slate-300 hover:text-white"
+                                        >
+                                            [ + ]
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* FORMATTED MODE: 50/50 SPLIT PANELS */}
+                            {rawTextTab === 'FORMATTED' && (
+                                <div
+                                    ref={splitContainerRef}
+                                    className="split-workspace-container flex-col md:flex-row"
+                                    style={{ fontSize: `${workspaceZoom}%` }}
+                                >
+                                    {/* Mobile View Switcher Tabs */}
+                                    <div className="flex md:hidden bg-slate-100 p-2 border-b border-slate-200 w-full">
+                                        <button
+                                            type="button"
+                                            onClick={() => setMobileActiveTab('QP')}
+                                            className={`flex-1 py-2 text-xs font-bold rounded-lg ${mobileActiveTab === 'QP' ? 'bg-blue-600 text-white' : 'text-slate-700'}`}
+                                        >
+                                            📄 QUESTION PAPER
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setMobileActiveTab('AP')}
+                                            className={`flex-1 py-2 text-xs font-bold rounded-lg ${mobileActiveTab === 'AP' ? 'bg-emerald-600 text-white' : 'text-slate-700'}`}
+                                        >
+                                            📘 ANSWER PAPER
+                                        </button>
+                                    </div>
+
+                                    {/* 3. QUESTION PAPER PANEL (50% LEFT) */}
+                                    <div
+                                        className={`workspace-panel ${mobileActiveTab === 'QP' ? 'flex' : 'hidden md:flex'}`}
+                                        style={{ width: window.innerWidth > 768 ? `${leftPanelWidthPercent}%` : '100%' }}
+                                    >
+                                        <div className="workspace-panel-header">
+                                            <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                                📄 QUESTION PAPER
+                                            </span>
+                                            <div className="flex items-center gap-1 bg-slate-200 p-1 rounded-lg text-[11px] font-bold">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setQpViewMode('TEXT')}
+                                                    className={`px-2 py-0.5 rounded ${qpViewMode === 'TEXT' ? 'bg-blue-600 text-white' : 'text-slate-700'}`}
+                                                >
+                                                    [ Text View ]
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setQpViewMode('PDF')}
+                                                    className={`px-2 py-0.5 rounded ${qpViewMode === 'PDF' ? 'bg-blue-600 text-white' : 'text-slate-700'}`}
+                                                >
+                                                    [ PDF View ]
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-4 overflow-y-auto space-y-4 max-h-[600px] flex-1 bg-slate-50/50">
+                                            {qpViewMode === 'PDF' && pdfQuestionFile ? (
+                                                <iframe
+                                                    src={URL.createObjectURL(pdfQuestionFile)}
+                                                    className="w-full h-[550px] border-none rounded-xl"
+                                                    title="Question Paper PDF View"
+                                                />
+                                            ) : (
+                                                (extractedPdfData.questions || []).map((q: any, idx: number) => {
+                                                    const isSelected = selectedQIdx === idx;
+                                                    return (
+                                                        <div
+                                                            key={idx}
+                                                            id={`qp-card-${idx}`}
+                                                            draggable={true}
+                                                            onDragStart={e => {
+                                                                e.dataTransfer.setData('application/json', JSON.stringify({ type: 'QUESTION', question: q, index: idx }));
+                                                            }}
+                                                            onClick={() => setSelectedQIdx(idx)}
+                                                            className={`workspace-card space-y-3 ${isSelected ? 'active-question' : ''}`}
+                                                        >
+                                                            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                                                                <span className="px-2.5 py-1 bg-blue-600 text-white font-black text-xs rounded-lg shadow-sm">
+                                                                    Q.{q.q_no || idx + 1}
+                                                                </span>
+                                                                {q.marks && (
+                                                                    <span className="px-2 py-0.5 bg-amber-50 text-amber-700 font-bold text-xs rounded border border-amber-200">
+                                                                        {q.marks} Marks
+                                                                    </span>
+                                                                )}
+                                                            </div>
+
+                                                            <div className="text-slate-900 text-xs leading-relaxed select-text">
+                                                                {renderFormattedContent(q.question_text, q.table_data)}
+                                                            </div>
+
+                                                            {/* Display MCQ Options if available */}
+                                                            {q.options && q.options.length > 0 && (
+                                                                <div className="grid grid-cols-2 gap-2 pt-1">
+                                                                    {q.options.map((opt: any, oIdx: number) => (
+                                                                        <div key={oIdx} className="bg-slate-50 border border-slate-200 rounded p-2 text-xs">
+                                                                            <span className="font-bold text-blue-600 mr-1">{String.fromCharCode(65 + oIdx)}.</span>
+                                                                            <span>{typeof opt === 'string' ? opt : opt.text}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+
+                                                            {/* Action Buttons */}
+                                                            <div className="flex items-center gap-2 pt-2 border-t border-slate-100 flex-wrap">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={e => {
+                                                                        e.stopPropagation();
+                                                                        let txt = q.question_text || '';
+                                                                        if (q.options?.length > 0) {
+                                                                            txt += '\n\n' + q.options.map((o: any, oIdx: number) => `${String.fromCharCode(65 + oIdx)}. ${typeof o === 'string' ? o : o.text}`).join('\n');
+                                                                        }
+                                                                        copyToClipboard(txt, '✓ Question copied');
+                                                                    }}
+                                                                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold flex items-center gap-1 transition-all"
+                                                                >
+                                                                    <Clipboard size={12} /> Copy Question
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={e => {
+                                                                        e.stopPropagation();
+                                                                        handleAddManually();
+                                                                    }}
+                                                                    className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded text-xs font-bold flex items-center gap-1 transition-all"
+                                                                >
+                                                                    ✏️ Add Manually
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={e => {
+                                                                        e.stopPropagation();
+                                                                        handleSelectQuestionFromPdf(q, idx);
+                                                                    }}
+                                                                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
+                                                                >
+                                                                    <Sparkles size={12} /> Use Question
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* DRAGGABLE DIVIDER (50/50 split resizer) */}
+                                    <div
+                                        onMouseDown={handleMouseDownDivider}
+                                        className={`split-divider-handle hidden md:flex ${isDraggingDivider ? 'dragging' : ''}`}
+                                        title="Drag to resize Question and Answer panels"
+                                    >
+                                        <div className="split-divider-line" />
+                                    </div>
+
+                                    {/* 4. ANSWER PAPER PANEL (50% RIGHT) */}
+                                    <div
+                                        className={`workspace-panel ${mobileActiveTab === 'AP' ? 'flex' : 'hidden md:flex'}`}
+                                        style={{ width: window.innerWidth > 768 ? `${100 - leftPanelWidthPercent}%` : '100%' }}
+                                    >
+                                        <div className="workspace-panel-header">
+                                            <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                                📘 ANSWER PAPER
+                                            </span>
+                                            <div className="flex items-center gap-1 bg-slate-200 p-1 rounded-lg text-[11px] font-bold">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setApViewMode('TEXT')}
+                                                    className={`px-2 py-0.5 rounded ${apViewMode === 'TEXT' ? 'bg-emerald-600 text-white' : 'text-slate-700'}`}
+                                                >
+                                                    [ Text View ]
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setApViewMode('PDF')}
+                                                    className={`px-2 py-0.5 rounded ${apViewMode === 'PDF' ? 'bg-emerald-600 text-white' : 'text-slate-700'}`}
+                                                >
+                                                    [ PDF View ]
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-4 overflow-y-auto space-y-4 max-h-[600px] flex-1 bg-slate-50/50">
+                                            {apViewMode === 'PDF' && pdfAnswerFile ? (
+                                                <iframe
+                                                    src={URL.createObjectURL(pdfAnswerFile)}
+                                                    className="w-full h-[550px] border-none rounded-xl"
+                                                    title="Answer Paper PDF View"
+                                                />
+                                            ) : (
+                                                (extractedPdfData.questions || []).map((q: any, idx: number) => {
+                                                    const isSelected = selectedQIdx === idx;
+                                                    return (
+                                                        <div
+                                                            key={idx}
+                                                            id={`ap-card-${idx}`}
+                                                            draggable={true}
+                                                            onDragStart={e => {
+                                                                e.dataTransfer.setData('application/json', JSON.stringify({ type: 'ANSWER', answer: q.correct_answer, index: idx }));
+                                                            }}
+                                                            onClick={() => setSelectedQIdx(idx)}
+                                                            className={`workspace-card space-y-3 ${isSelected ? 'active-answer' : ''}`}
+                                                        >
+                                                            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                                                                <span className="px-2.5 py-1 bg-emerald-600 text-white font-black text-xs rounded-lg shadow-sm">
+                                                                    Answer {q.q_no || idx + 1}
+                                                                </span>
+                                                                <span className="text-[11px] font-bold text-slate-400">
+                                                                    Suggested Solution
+                                                                </span>
+                                                            </div>
+
+                                                            <div className="text-slate-900 text-xs leading-relaxed select-text font-mono">
+                                                                {renderFormattedContent(q.correct_answer || 'No solution text extracted for this question.', q.answer_table_data)}
+                                                            </div>
+
+                                                            {/* Action Buttons */}
+                                                            <div className="flex items-center gap-2 pt-2 border-t border-slate-100 flex-wrap">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={e => {
+                                                                        e.stopPropagation();
+                                                                        copyToClipboard(q.correct_answer || '', '✓ Answer copied');
+                                                                    }}
+                                                                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold flex items-center gap-1 transition-all"
+                                                                >
+                                                                    <Clipboard size={12} /> Copy Answer
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={e => {
+                                                                        e.stopPropagation();
+                                                                        if (q.correct_answer) {
+                                                                            setForm(prev => ({ ...prev, correct_answer: q.correct_answer }));
+                                                                            showToast('✓ Answer loaded into form');
+                                                                        }
+                                                                    }}
+                                                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
+                                                                >
+                                                                    <CheckSquare size={12} /> Use as Answer
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* RAW TEXT TAB MODE */}
+                            {['QP', 'AP'].includes(rawTextTab) && (
+                                <div className="border-2 border-slate-200 rounded-2xl overflow-hidden bg-white shadow-md">
+                                    <div className="bg-slate-50 px-4 py-2.5 flex justify-between items-center border-b border-slate-200 text-xs text-slate-700 font-bold flex-wrap gap-2">
+                                        <span className="flex items-center gap-1.5 text-slate-800">
+                                            <FileText size={15} className="text-blue-600" />
+                                            {rawTextTab === 'QP' ? '📜 Raw Question Paper Text' : '💡 Raw Answer Paper Text'}
+                                        </span>
+                                        <span className="text-blue-600 font-bold bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100 text-[11px]">
+                                            💡 Select text with cursor & copy freely
+                                        </span>
+                                    </div>
+
+                                    <div className="p-6 overflow-y-auto bg-white text-slate-900 font-sans text-sm leading-relaxed select-text max-h-[480px]">
+                                        {renderFormattedContent(
+                                            rawTextTab === 'QP'
+                                                ? (extractedPdfData.raw_question_text || (extractedPdfData.questions || []).map((q: any) => `Q${q.q_no}: ${q.question_text}`).join('\n\n'))
+                                                : (extractedPdfData.raw_answer_text || (extractedPdfData.questions || []).map((q: any) => `Ans Q${q.q_no}: ${q.correct_answer}`).join('\n\n'))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
             {/* Single-Page Layout */}
             <div className="form-grid">
 
@@ -783,7 +1523,7 @@ export default function AddQuestion() {
                 <div className="form-main space-y-6">
 
                     {/* Section 0: Question Layout & Formats */}
-                    <div className="form-card space-y-4">
+                    <div id="manual-question-form-card" className="form-card space-y-4">
                         <h2 className="form-card-title flex items-center gap-2 text-sm font-bold text-slate-800 uppercase tracking-wider mb-2">
                             <HelpCircle size={16} /> Question Layout & Formats
                         </h2>
@@ -792,13 +1532,13 @@ export default function AddQuestion() {
                             <div className="form-group span-5">
                                 <label className="text-xs font-bold text-slate-500">Question Format</label>
                                 <div className="tabs-group mt-1">
-                                    <div 
+                                    <div
                                         className={`tab-item ${form.question_type === 'NORMAL' ? 'active' : ''}`}
                                         onClick={() => set('question_type', 'NORMAL')}
                                     >
                                         Normal
                                     </div>
-                                    <div 
+                                    <div
                                         className={`tab-item ${form.question_type === 'MCQ' ? 'active' : ''}`}
                                         onClick={() => {
                                             set('question_type', 'MCQ');
@@ -814,7 +1554,7 @@ export default function AddQuestion() {
                                     >
                                         MCQ
                                     </div>
-                                    <div 
+                                    <div
                                         className={`tab-item ${form.question_type === 'CASE_SCENARIO' ? 'active' : ''}`}
                                         onClick={() => {
                                             set('question_type', 'CASE_SCENARIO');
@@ -878,7 +1618,7 @@ export default function AddQuestion() {
                             </div>
                             <div className="form-group span-7">
                                 <label className="text-xs font-bold text-slate-500">Question No.</label>
-                                <input className="form-input mt-1 w-full" placeholder="e.g. 1a" value={form.q_no} onChange={e => set('q_no', e.target.value)} />
+                                <input id="form-input-qno" className="form-input mt-1 w-full" placeholder="e.g. 1a" value={form.q_no} onChange={e => set('q_no', e.target.value)} />
                             </div>
                         </div>
 
@@ -1381,7 +2121,7 @@ export default function AddQuestion() {
                                                     </button>
                                                     {part.question_type === 'MCQ' && !isCaseScenario && (
                                                         <button type="button" onClick={() => addSubQuestionOption(pIdx)} className="px-2.5 py-1 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded text-[10px] font-bold hover:bg-indigo-100 transition-all">+ Add Choice</button>
-                                                     )}
+                                                    )}
                                                 </div>
 
                                                 {hasPartQTable && (
@@ -1609,7 +2349,7 @@ export default function AddQuestion() {
                                 onClick={() => insertFormattedTextAtCursor('main-correct-answer', 'CENTER', val => set('correct_answer', val))}
                                 className="p-1.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-lg transition-all hover:bg-slate-200"
                                 title="Center"
-                              >
+                            >
                                 <AlignCenter size={14} />
                             </button>
                         </div>
@@ -1768,12 +2508,42 @@ export default function AddQuestion() {
                             }} />
                         </div>
 
+                        <button
+                            type="button"
+                            onClick={() => setShowPdfPanel(!showPdfPanel)}
+                            className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-xs"
+                        >
+                            <Sparkles size={16} />
+                            <span>{showPdfPanel ? 'Hide PDF Text Model' : 'Upload & Scan (QP + AP PDF)'}</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-xs"
+                            onClick={() => handleSave('PUBLISHED')}
+                            disabled={saveMutation.isPending}
+                        >
+                            {saveMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
+                            <span>{isEdit ? 'Save Changes' : 'Publish Question'}</span>
+                        </button>
+
                         <button className="secondary-btn w-full" onClick={() => handleSave('DRAFT')}>
                             Save as Draft
                         </button>
                     </div>
                 </div>
             </div>
+
+            {/* PDF Multi-Extractor Modal (Question Paper + Answer Paper) */}
+            <PDFUploadModal
+                open={isPdfModalOpen}
+                onClose={() => setIsPdfModalOpen(false)}
+                icaiTopicId={icai.topicId}
+                chapterId={icai.chapterId}
+                subjectId={form.subject}
+                onSelectQuestion={handleSelectQuestionFromPdf}
+                onUploaded={() => queryClient.invalidateQueries({ queryKey: ['admin-questions'] })}
+            />
         </div>
     );
 }

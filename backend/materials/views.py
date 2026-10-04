@@ -1,7 +1,9 @@
+import os
+from django.conf import settings
 from rest_framework import viewsets, permissions
 from rest_framework.pagination import PageNumberPagination
 from materials.models import (
-    QuestionPaper, AnswerPaper, Notes, Video, MCQ, Bookmark, SubjectiveQuestion, Feedback,
+    QuestionPaper, AnswerPaper, Notes, Video, MCQ, Bookmark, SubjectiveQuestion, SubQuestion, QuestionOption, Feedback,
     AssessmentSession, AssessmentAnswer, MockTestTemplate
 )
 from materials.serializers import (
@@ -1568,96 +1570,310 @@ class PDFQuestionExtractView(APIView):
     parser_classes = [MultiPartParser]
 
     def post(self, request):
-        pdf_file = request.FILES.get('pdf')
-        if not pdf_file:
-            return Response({'error': 'No PDF file provided. Upload as form-data field "pdf".'}, status=400)
+        trigger_background_pdf_cleanup()
+        pdf_file = request.FILES.get('pdf') or request.FILES.get('question_pdf')
+        answer_pdf_file = request.FILES.get('answer_pdf')
 
-        # ── Step 1: Open PDF with PyMuPDF ──
-        try:
-            pdf_bytes = pdf_file.read()
-            doc = fitz.open(stream=pdf_bytes, filetype='pdf')
-        except Exception as e:
-            return Response({'error': f'Could not open PDF file: {str(e)}'}, status=400)
+        if not pdf_file and not answer_pdf_file:
+            return Response({'error': 'No PDF file provided. Upload as form-data field "pdf", "question_pdf", or "answer_pdf".'}, status=400)
 
-        pages_text = []
-        pages_images_b64 = []
-        merged_elements = []
-
-        # Iterate pages and extract sorted elements (text & tables)
-        for page_num, page in enumerate(doc):
-            # Render page to base64 PNG
-            mat = fitz.Matrix(1.8, 1.8)
-            pix = page.get_pixmap(matrix=mat)
-            img_bytes = pix.tobytes("png")
-            pages_images_b64.append(base64.b64encode(img_bytes).decode('utf-8'))
-
-            # Extract regular page text density
-            pages_text.append(page.get_text().strip())
-
-            # Get tables first
-            table_bboxes = []
+        def extract_text_and_tables_from_pdf(file_obj):
+            if not file_obj:
+                return "", [], False, 0
             try:
-                tables = page.find_tables()
-                for tab in tables:
-                    table_bboxes.append(tab.bbox)
-                    y0 = tab.bbox[1]  # vertical start position
-                    tab_data = tab.extract()
-                    html_table = convert_table_to_html(tab_data)
-                    if html_table:
-                        merged_elements.append((page_num, y0, html_table, 'table'))
-            except Exception:
-                pass  # find_tables support check
+                pdf_bytes = file_obj.read()
+                doc = fitz.open(stream=pdf_bytes, filetype='pdf')
+            except Exception as e:
+                return "", [], False, 0
 
-            # Get layout blocks: (x0, y0, x1, y1, text, block_no, block_type)
-            blocks = page.get_text("blocks")
-            for b in blocks:
-                x0, y0, x1, y1, block_text, block_no, block_type = b
-                block_text = block_text.strip()
-                if not block_text:
-                    continue
-                
-                # Check overlap: if center of block is inside any table bbox
-                in_table = False
-                bx_center = (x0 + x1) / 2.0
-                by_center = (y0 + y1) / 2.0
-                for tbox in table_bboxes:
-                    tx0, ty0, tx1, ty1 = tbox
-                    # Give a tiny 2pt margin for safety
-                    if (tx0 - 2) <= bx_center <= (tx1 + 2) and (ty0 - 2) <= by_center <= (ty1 + 2):
-                        in_table = True
-                        break
-                
-                if not in_table:
-                    merged_elements.append((page_num, y0, block_text, 'text'))
+            pages_text = []
+            pages_images_b64 = []
+            merged_elements = []
 
-        doc.close()
+            for page_num, page in enumerate(doc):
+                mat = fitz.Matrix(1.8, 1.8)
+                pix = page.get_pixmap(matrix=mat)
+                img_bytes = pix.tobytes("png")
+                pages_images_b64.append(base64.b64encode(img_bytes).decode('utf-8'))
+                pages_text.append(page.get_text().strip())
 
-        total_text = '\n\n--- PAGE BREAK ---\n\n'.join(pages_text)
-        avg_chars = len(total_text.strip()) / max(len(pages_text), 1)
-        is_scanned = avg_chars < 150
+                table_bboxes = []
+                try:
+                    tables = page.find_tables()
+                    for tab in tables:
+                        table_bboxes.append(tab.bbox)
+                        y0 = tab.bbox[1]
+                        tab_data = tab.extract()
+                        html_table = convert_table_to_html(tab_data)
+                        if html_table:
+                            merged_elements.append((page_num, y0, html_table, 'table'))
+                except Exception:
+                    pass
 
-        # Sort all elements across document by page number, then vertical y0 coordinate
-        merged_elements.sort(key=lambda x: (x[0], x[1]))
+                blocks = page.get_text("blocks")
+                for b in blocks:
+                    x0, y0, x1, y1, block_text, block_no, block_type = b
+                    block_text = block_text.strip()
+                    if not block_text:
+                        continue
+                    in_table = False
+                    bx_center = (x0 + x1) / 2.0
+                    by_center = (y0 + y1) / 2.0
+                    for tbox in table_bboxes:
+                        tx0, ty0, tx1, ty1 = tbox
+                        if (tx0 - 2) <= bx_center <= (tx1 + 2) and (ty0 - 2) <= by_center <= (ty1 + 2):
+                            in_table = True
+                            break
+                    if not in_table:
+                        merged_elements.append((page_num, y0, block_text, 'text'))
 
-        # Re-assemble text incorporating table blocks in-order
-        ordered_lines = []
-        for item in merged_elements:
-            pg, y, val, item_type = item
-            if item_type == 'table':
-                ordered_lines.append(f"\n\n{val}\n\n")
-            else:
-                ordered_lines.append(val)
+            doc.close()
+            total_text = '\n\n--- PAGE BREAK ---\n\n'.join(pages_text)
+            avg_chars = len(total_text.strip()) / max(len(pages_text), 1)
+            is_scanned = avg_chars < 150
 
-        full_document_text = "\n".join(ordered_lines)
-        questions, attempt, year = parse_questions_from_raw_text(full_document_text)
+            merged_elements.sort(key=lambda x: (x[0], x[1]))
+            ordered_lines = []
+            for item in merged_elements:
+                pg, y, val, item_type = item
+                if item_type == 'table':
+                    ordered_lines.append(f"\n\n{val}\n\n")
+                else:
+                    ordered_lines.append(val)
+
+            full_text = "\n".join(ordered_lines)
+            return full_text, pages_images_b64, is_scanned, len(pages_text)
+
+        # Process main/question PDF
+        q_text, pages_images_b64, is_scanned, total_pages = extract_text_and_tables_from_pdf(pdf_file)
+        questions, extracted_attempt, extracted_year = parse_questions_from_raw_text(q_text) if q_text else ([], 'MAY', '2025')
+
+        # Process separate answer PDF if provided
+        if answer_pdf_file:
+            ans_text, _, _, _ = extract_text_and_tables_from_pdf(answer_pdf_file)
+            ans_questions, _, _ = parse_questions_from_raw_text(ans_text)
+            # Map extracted answers onto questions
+            ans_map = {}
+            for aq in ans_questions:
+                if aq.get('q_no'):
+                    ans_map[str(aq['q_no'])] = aq.get('correct_answer') or aq.get('answer') or aq.get('question_text')
+                for asq in aq.get('sub_questions', []):
+                    if asq.get('identifier'):
+                        ans_map[f"{aq.get('q_no', '1')}_{asq['identifier'].lower()}"] = asq.get('correct_answer') or asq.get('answer') or asq.get('question_text')
+
+            for q in questions:
+                q_num = str(q.get('q_no', ''))
+                if q_num in ans_map and not q.get('correct_answer'):
+                    q['correct_answer'] = ans_map[q_num]
+                for sq in q.get('sub_questions', []):
+                    sq_key = f"{q_num}_{sq.get('identifier', '').lower()}"
+                    if sq_key in ans_map and not sq.get('correct_answer'):
+                        sq['correct_answer'] = ans_map[sq_key]
+
+        # Metadata params
+        auto_save = str(request.data.get('auto_save', '')).lower() in ('true', '1', 'yes')
+        source = request.data.get('source')
+        attempt = request.data.get('attempt') or extracted_attempt
+        year = request.data.get('year') or extracted_year
+        subject_id = request.data.get('subject_id')
+        icai_topic_id = request.data.get('icai_topic_id') or request.data.get('topic_id')
+
+        saved_ids = []
+        file_url = None
+
+        if auto_save and pdf_file:
+            from django.core.files.storage import default_storage
+            file_path = default_storage.save(f'question_papers/{pdf_file.name}', pdf_file)
+            file_url = request.build_absolute_uri(default_storage.url(file_path))
+            saved_ids = save_extracted_questions_to_db(
+                questions=questions,
+                source=source,
+                attempt=attempt,
+                year=year,
+                subject_id=subject_id,
+                icai_topic_id=icai_topic_id,
+                user=request.user,
+                pdf_url=file_url
+            )
 
         return Response({
             'questions': questions,
+            'raw_question_text': q_text or '',
+            'raw_answer_text': ans_text if answer_pdf_file else '',
             'total_extracted': len(questions),
             'is_scanned': is_scanned,
-            'pages': len(pages_images_b64),
+            'pages': total_pages,
+            'auto_saved': auto_save,
+            'saved_count': len(saved_ids),
+            'saved_ids': saved_ids,
+            'file_url': file_url,
             'page_images': pages_images_b64 if is_scanned else []
         }, status=200)
+
+
+def save_extracted_questions_to_db(questions, source=None, attempt=None, year=None, subject_id=None, icai_topic_id=None, status='ACTIVE', user=None, pdf_url=None):
+    import datetime
+    created_ids = []
+    subject = None
+    if subject_id:
+        try:
+            subject = Subject.objects.filter(id=int(subject_id)).first()
+        except Exception:
+            pass
+
+    icai_topic = None
+    if icai_topic_id:
+        try:
+            from master_data.models import ICAITopic
+            icai_topic = ICAITopic.objects.filter(id=int(icai_topic_id)).first()
+        except Exception:
+            pass
+
+    for q in questions:
+        q_source = source or q.get('source') or 'MTP-01'
+        q_attempt = attempt or q.get('attempt') or 'MAY'
+        q_year = str(year or q.get('year') or datetime.datetime.now().year)
+        q_sec = q.get('section') or ''
+        q_no = str(q.get('q_no') or '1')
+        q_type = q.get('question_type') or 'NORMAL'
+        
+        try:
+            q_marks = int(q.get('marks') or 1)
+        except (ValueError, TypeError):
+            q_marks = 1
+
+        q_diff = q.get('difficulty') or 'MEDIUM'
+        q_text = q.get('question_text') or ''
+        q_ans = q.get('correct_answer') or q.get('answer') or ''
+
+        t_data = q.get('table_data')
+        if isinstance(t_data, (dict, list)):
+            t_data = json.dumps(t_data)
+        elif t_data and not isinstance(t_data, str):
+            t_data = str(t_data)
+
+        ans_t_data = q.get('answer_table_data')
+        if isinstance(ans_t_data, (dict, list)):
+            ans_t_data = json.dumps(ans_t_data)
+        elif ans_t_data and not isinstance(ans_t_data, str):
+            ans_t_data = str(ans_t_data)
+
+        parent_q = SubjectiveQuestion.objects.create(
+            source=q_source,
+            attempt=q_attempt,
+            year=q_year,
+            section=q_sec,
+            q_no=q_no,
+            question_type=q_type,
+            marks=q_marks,
+            difficulty=q_diff,
+            question_text=q_text,
+            correct_answer=q_ans,
+            table_data=t_data,
+            answer_table_data=ans_t_data,
+            pdf_url=pdf_url,
+            status=status or 'ACTIVE',
+            subject=subject,
+            icai_topic=icai_topic,
+            created_by=user if (user and hasattr(user, 'is_authenticated') and user.is_authenticated) else None
+        )
+
+        for idx, opt in enumerate(q.get('options', [])):
+            if isinstance(opt, str):
+                opt_text, is_corr = opt, False
+            else:
+                opt_text = opt.get('text', '')
+                is_corr = bool(opt.get('is_correct', False))
+            if opt_text:
+                QuestionOption.objects.create(
+                    question=parent_q,
+                    text=opt_text,
+                    is_correct=is_corr,
+                    order=idx
+                )
+
+        sub_qs = q.get('sub_questions') or q.get('parts') or []
+        for sq in sub_qs:
+            sq_ident = sq.get('identifier') or ''
+            sq_text = sq.get('question_text') or ''
+            sq_type = sq.get('question_type') or 'NORMAL'
+            sq_ans = sq.get('correct_answer') or sq.get('answer') or ''
+            try:
+                sq_marks = int(sq.get('marks') or 1)
+            except (ValueError, TypeError):
+                sq_marks = 1
+
+            sq_t_data = sq.get('table_data')
+            if isinstance(sq_t_data, (dict, list)):
+                sq_t_data = json.dumps(sq_t_data)
+            elif sq_t_data and not isinstance(sq_t_data, str):
+                sq_t_data = str(sq_t_data)
+
+            sq_ans_t_data = sq.get('answer_table_data')
+            if isinstance(sq_ans_t_data, (dict, list)):
+                sq_ans_t_data = json.dumps(sq_ans_t_data)
+            elif sq_ans_t_data and not isinstance(sq_ans_t_data, str):
+                sq_ans_t_data = str(sq_ans_t_data)
+
+            sub_obj = SubQuestion.objects.create(
+                parent_question=parent_q,
+                identifier=sq_ident,
+                question_text=sq_text,
+                question_type=sq_type,
+                correct_answer=sq_ans,
+                table_data=sq_t_data,
+                answer_table_data=sq_ans_t_data,
+                marks=sq_marks
+            )
+
+            for idx, opt in enumerate(sq.get('options', [])):
+                if isinstance(opt, str):
+                    opt_text, is_corr = opt, False
+                else:
+                    opt_text = opt.get('text', '')
+                    is_corr = bool(opt.get('is_correct', False))
+                if opt_text:
+                    QuestionOption.objects.create(
+                        sub_question=sub_obj,
+                        text=opt_text,
+                        is_correct=is_corr,
+                        order=idx
+                    )
+
+        created_ids.append(parent_q.id)
+
+    return created_ids
+
+
+class BulkSaveQuestionsView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsStaffOrReadOnly]
+
+    def post(self, request):
+        questions = request.data.get('questions', [])
+        if not questions:
+            return Response({'error': 'No questions array provided.'}, status=400)
+
+        source = request.data.get('source')
+        attempt = request.data.get('attempt')
+        year = request.data.get('year')
+        subject_id = request.data.get('subject_id')
+        pdf_url = request.data.get('pdf_url')
+
+        saved_ids = save_extracted_questions_to_db(
+            questions=questions,
+            source=source,
+            attempt=attempt,
+            year=year,
+            subject_id=subject_id,
+            user=request.user,
+            pdf_url=pdf_url
+        )
+
+        return Response({
+            'message': f'Successfully saved {len(saved_ids)} questions to Question Bank.',
+            'saved_count': len(saved_ids),
+            'saved_ids': saved_ids
+        }, status=201)
 
 
 class ParseTextOnlyView(APIView):
@@ -1683,17 +1899,46 @@ class ParseTextOnlyView(APIView):
 
 
 # ─────────────────────────────────────────────────────────────
-# Simple PDF Upload (No AI): POST /api/materials/upload-pdf/
-# Stores the PDF in media/question_papers/ and optionally
-# creates a QuestionPaper record. Returns the file URL.
-# ─────────────────────────────────────────────────────────────
-import os as _os
+import threading
+import time as _time
+
+def _sweep_old_pdfs(days=1):
+    try:
+        cutoff_time = _time.time() - (days * 86400)
+        media_root = getattr(settings, 'MEDIA_ROOT', None)
+        if not media_root or not os.path.exists(media_root):
+            return
+        target_dirs = [
+            os.path.join(media_root, 'question_papers'),
+            os.path.join(media_root, 'materials', 'pdfs'),
+            os.path.join(media_root, 'temp_uploads'),
+            os.path.join(media_root, 'temp'),
+        ]
+        for target_dir in target_dirs:
+            if not os.path.exists(target_dir):
+                continue
+            for root, _, files in os.walk(target_dir):
+                for filename in files:
+                    if filename.lower().endswith('.pdf'):
+                        file_path = os.path.join(root, filename)
+                        try:
+                            if os.stat(file_path).st_mtime < cutoff_time:
+                                os.remove(file_path)
+                        except Exception:
+                            pass
+    except Exception:
+        pass
+
+def trigger_background_pdf_cleanup():
+    t = threading.Thread(target=_sweep_old_pdfs, args=(1,), daemon=True)
+    t.start()
 
 class UploadPDFView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsStaffOrReadOnly]
     parser_classes = [MultiPartParser]
 
     def post(self, request):
+        trigger_background_pdf_cleanup()
         pdf_file = request.FILES.get('pdf')
         if not pdf_file:
             return Response({'error': 'No PDF file provided. Send as form-data field "pdf".'}, status=400)
@@ -1702,7 +1947,7 @@ class UploadPDFView(APIView):
             return Response({'error': 'Only PDF files are accepted.'}, status=400)
 
         # Optional metadata from request
-        title       = request.data.get('title', _os.path.splitext(pdf_file.name)[0])
+        title       = request.data.get('title', os.path.splitext(pdf_file.name)[0])
         subject_id  = request.data.get('subject_id')
         year        = request.data.get('year', '')
         source      = request.data.get('source', '')
