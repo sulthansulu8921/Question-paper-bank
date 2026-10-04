@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
     FileText, Upload, Copy, Check, ChevronLeft, ChevronRight,
-    ZoomIn, ZoomOut, Search, Sparkles, X, ArrowDownRight,
+    Search, Sparkles, X, ArrowDownRight,
     Maximize2, Minimize2, Eye, RefreshCw, Layers, CheckSquare
 } from 'lucide-react';
 import { extractAllTextFromPdf, renderPdfPageToCanvas, type ExtractedPageText } from '@/utils/pdfExtractor';
@@ -42,7 +42,7 @@ export default function PdfLiveWorkspace({
     onInsertToPassage,
     onStartScan,
     isScanning = false,
-    extractedData = null,
+    extractedData: _extractedData = null,
     showToast,
     onClose
 }: Props) {
@@ -76,7 +76,7 @@ export default function PdfLiveWorkspace({
 
     const [copiedKey, setCopiedKey] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
-    const [scale, setScale] = useState(1.2);
+    const [scale] = useState(1.2);
     const [isFullScreen, setIsFullScreen] = useState(false);
     const [selectedHighlightedText, setSelectedHighlightedText] = useState('');
 

@@ -1,9 +1,9 @@
 import { useState, useRef } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/api/axios';
 import {
     Upload, FileText, CheckCircle2, AlertCircle, Loader2,
-    X, BookOpen, Save, Eye, Sparkles, Plus, Minimize2, Maximize2
+    X, Save, Eye, Sparkles, Plus, Minimize2, Maximize2
 } from 'lucide-react';
 
 interface Props {
@@ -20,7 +20,7 @@ const SOURCES = ['MTP-01', 'MTP-02', 'RTP', 'Suggested Answers', 'Model Test Pap
 const YEARS = ['2025', '2024', '2023', '2022'];
 const ATTEMPTS = ['MAY', 'NOV', 'JAN', 'SEP'];
 
-export default function PDFUploadModal({ open, onClose, icaiTopicId, chapterId, subjectId: propSubjectId, onUploaded, onSelectQuestion }: Props) {
+export default function PDFUploadModal({ open, onClose, icaiTopicId, chapterId: _chapterId, subjectId: propSubjectId, onUploaded, onSelectQuestion }: Props) {
     const queryClient = useQueryClient();
     
     // Mode: 'DUAL' (Question PDF + Answer PDF) | 'SINGLE' (Combined PDF)
