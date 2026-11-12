@@ -7,6 +7,7 @@ frontend/.env.local
 # Backend
 backend/venv/
 backend/media/
+backend/staticfiles/
 **/__pycache__/
 backend/.env
 *.sqlite3
