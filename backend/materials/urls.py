@@ -5,6 +5,7 @@ from materials.views import (
     VideoViewSet, MCQViewSet, BookmarkViewSet, SubjectiveQuestionViewSet, FeedbackViewSet,
     AdminDashboardStatsView, ExportQuestionsExcelView, ImportQuestionsExcelView,
     PDFQuestionExtractView, BulkSaveQuestionsView, UploadPDFView, GenericFileUploadView, ParseTextOnlyView,
+    AIGenerateAnswerView, TestGeminiKeyView, TestOpenAIKeyView, AIStatusView, QuestionImportJobViewSet, ImportBatchViewSet,
     VideoProgressViewSet, MaterialDownloadViewSet, LiveClassViewSet, NotificationViewSet,
     AssessmentSessionViewSet, MockTestTemplateViewSet,
 )
@@ -16,6 +17,8 @@ router.register(r'notes', NotesViewSet)
 router.register(r'videos', VideoViewSet)
 router.register(r'mcqs', MCQViewSet)
 router.register(r'subjective-questions', SubjectiveQuestionViewSet, basename='subjective-question')
+router.register(r'import-jobs', QuestionImportJobViewSet, basename='import-job')
+router.register(r'import-batches', ImportBatchViewSet, basename='import-batch')
 router.register(r'bookmarks', BookmarkViewSet, basename='bookmark')
 router.register(r'feedback', FeedbackViewSet, basename='feedback')
 router.register(r'video-progress', VideoProgressViewSet, basename='video-progress')
@@ -32,6 +35,12 @@ urlpatterns = [
     path('questions/export-excel/', ExportQuestionsExcelView.as_view(), name='export-excel'),
     path('questions/import-excel/', ImportQuestionsExcelView.as_view(), name='import-excel'),
     path('questions/extract-from-pdf/', PDFQuestionExtractView.as_view(), name='extract-from-pdf'),
+    path('questions/ai-generate-answer/', AIGenerateAnswerView.as_view(), name='ai-generate-answer'),
+    path('questions/test-gemini-key/', TestGeminiKeyView.as_view(), name='test-gemini-key'),
+    path('questions/gemini-status/', TestGeminiKeyView.as_view(), name='gemini-status'),
+    path('questions/test-openai-key/', TestOpenAIKeyView.as_view(), name='test-openai-key'),
+    path('questions/openai-status/', TestOpenAIKeyView.as_view(), name='openai-status'),
+    path('questions/ai-status/', AIStatusView.as_view(), name='ai-status'),
     path('questions/bulk-save/', BulkSaveQuestionsView.as_view(), name='bulk-save'),
     path('questions/parse-text/', ParseTextOnlyView.as_view(), name='parse-text'),
     path('upload-pdf/', UploadPDFView.as_view(), name='upload-pdf'),

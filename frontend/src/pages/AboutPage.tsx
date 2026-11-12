@@ -219,7 +219,7 @@ export default function AboutPage() {
                     </div>
                 </div>
             </section>
-
+            
             {/* TEAM SECTION */}
             {team && team.length > 0 && (
                 <section className="py-32 px-6 max-w-7xl mx-auto">

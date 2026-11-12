@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/store/useAuthStore';
-import { Save, User, Bell, Shield, Database, Loader2, Receipt } from 'lucide-react';
+import { Save, User, Bell, Shield, Database, Loader2, Receipt, Sparkles, Bot, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import '@/styles/admin/AddQuestion.css';
 import api from '@/api/axios';
 
@@ -20,6 +20,12 @@ const AdminSettings = () => {
     // GST billing states
     const [isGstEnabled, setIsGstEnabled] = useState(true);
     const [isUpdatingGst, setIsUpdatingGst] = useState(false);
+
+    // Google Gemini AI states
+    const [geminiKeyInput, setGeminiKeyInput] = useState(() => localStorage.getItem('GEMINI_API_KEY') || '');
+    const [geminiServerStatus, setGeminiServerStatus] = useState<{ has_key: boolean; masked_key?: string } | null>(null);
+    const [isTestingGemini, setIsTestingGemini] = useState(false);
+    const [geminiStatusMsg, setGeminiStatusMsg] = useState<{ success: boolean; message: string } | null>(null);
 
     const fetchGstStatus = async () => {
         try {
@@ -42,8 +48,44 @@ const AdminSettings = () => {
         }
     };
 
+    const fetchGeminiStatus = async () => {
+        try {
+            const res = await api.get('/materials/questions/gemini-status/');
+            setGeminiServerStatus(res.data);
+        } catch (err) {
+            console.error('Failed to fetch Gemini status:', err);
+        }
+    };
+
+    const handleSaveGeminiKey = async () => {
+        if (!geminiKeyInput.trim()) {
+            alert('Please enter a Gemini API Key');
+            return;
+        }
+        setIsTestingGemini(true);
+        setGeminiStatusMsg(null);
+        try {
+            const res = await api.post('/materials/questions/test-gemini-key/', {
+                gemini_api_key: geminiKeyInput.trim(),
+                save: true
+            });
+            if (res.data?.valid) {
+                localStorage.setItem('GEMINI_API_KEY', geminiKeyInput.trim());
+                setGeminiStatusMsg({ success: true, message: res.data.message || 'Key connected and saved!' });
+                fetchGeminiStatus();
+            } else {
+                setGeminiStatusMsg({ success: false, message: res.data?.error || 'Validation failed' });
+            }
+        } catch (err: any) {
+            setGeminiStatusMsg({ success: false, message: err.response?.data?.error || 'Connection failed' });
+        } finally {
+            setIsTestingGemini(false);
+        }
+    };
+
     useEffect(() => {
         fetchGstStatus();
+        fetchGeminiStatus();
     }, []);
 
     const handleSaveProfile = async () => {
@@ -170,6 +212,90 @@ const AdminSettings = () => {
                                         style={{ width: 22, height: 22, cursor: 'pointer', accentColor: '#4F46E5' }}
                                     />
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Google Gemini AI Configuration Card */}
+                    <div className="form-section card">
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6366F1' }}>
+                                    <Bot size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="section-title" style={{ margin: 0 }}>Google Gemini AI Model</h3>
+                                    <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.75rem', color: '#64748B' }}>
+                                        Powers auto question paper uploading, question number detection, and automatic solution filling.
+                                    </p>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                {geminiServerStatus?.has_key ? (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.25rem 0.65rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: 700, background: '#ECFDF5', color: '#065F46', border: '1px solid #A7F3D0' }}>
+                                        <CheckCircle2 size={13} /> Active ({geminiServerStatus.masked_key})
+                                    </span>
+                                ) : (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.25rem 0.65rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: 700, background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+                                        <AlertCircle size={13} /> Not Configured
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            <div className="form-group">
+                                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span>Gemini API Key</span>
+                                    <a
+                                        href="https://aistudio.google.com/app/apikey"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        style={{ fontSize: '0.75rem', color: '#4F46E5', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.25rem', fontWeight: 600 }}
+                                    >
+                                        Get free API key from Google AI Studio <ExternalLink size={11} />
+                                    </a>
+                                </label>
+                                <input
+                                    type="password"
+                                    className="form-input"
+                                    placeholder="Enter your Google Gemini API Key (e.g. AIzaSy...)"
+                                    value={geminiKeyInput}
+                                    onChange={e => {
+                                        setGeminiKeyInput(e.target.value);
+                                        setGeminiStatusMsg(null);
+                                    }}
+                                    style={{ fontFamily: 'monospace', letterSpacing: '0.05em' }}
+                                />
+                            </div>
+
+                            {geminiStatusMsg && (
+                                <div style={{
+                                    padding: '0.75rem 1rem',
+                                    borderRadius: '0.5rem',
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 600,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    background: geminiStatusMsg.success ? '#ECFDF5' : '#FEF2F2',
+                                    color: geminiStatusMsg.success ? '#065F46' : '#991B1B',
+                                    border: `1px solid ${geminiStatusMsg.success ? '#A7F3D0' : '#FECACA'}`
+                                }}>
+                                    {geminiStatusMsg.success ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                                    <span>{geminiStatusMsg.message}</span>
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                                <button
+                                    className="primary-btn flex-center gap-sm"
+                                    onClick={handleSaveGeminiKey}
+                                    disabled={isTestingGemini || !geminiKeyInput.trim()}
+                                >
+                                    {isTestingGemini ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                                    <span>{isTestingGemini ? 'Testing & Saving...' : 'Test & Save Gemini Connection'}</span>
+                                </button>
                             </div>
                         </div>
                     </div>

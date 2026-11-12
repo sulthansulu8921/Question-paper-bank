@@ -94,6 +94,12 @@ export default defineConfig({
     open: false,
     headers: {
       "Access-Control-Allow-Origin": "*",
-    }
+    },
+    proxy: {
+      '/media': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+    },
   }
 })

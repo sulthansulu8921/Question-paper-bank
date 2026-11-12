@@ -33,6 +33,7 @@ export default function FloatingPeerChat() {
         const interval = setInterval(fetchMessages, 5000);
         return () => clearInterval(interval);
     }, [isOpen]);
+    
 
     // Auto scroll to latest message when open or when messages change
     useEffect(() => {

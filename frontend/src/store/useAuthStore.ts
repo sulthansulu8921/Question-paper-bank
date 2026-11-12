@@ -28,7 +28,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ user: null, token: null, isHydrating: false });
     },
     login: async (email, password) => {
-        const response = await api.post('/auth/login/', { email, password });
+        const cleanEmail = email.trim().toLowerCase();
+        const response = await api.post('/auth/login/', { email: cleanEmail, username: cleanEmail, password });
         const { access } = response.data;
 
         // Fetch full profile info including settings

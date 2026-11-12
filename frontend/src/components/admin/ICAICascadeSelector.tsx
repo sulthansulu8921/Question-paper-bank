@@ -15,9 +15,10 @@ interface Props {
     onChange: (next: ICAISelection) => void;
     required?: boolean;
     compact?: boolean;
+    hideTopic?: boolean;
 }
 
-export default function ICAICascadeSelector({ value, onChange, required = true, compact = false }: Props) {
+export default function ICAICascadeSelector({ value, onChange, required = true, compact = false, hideTopic = false }: Props) {
     const queryClient = useQueryClient();
 
     // Inline Chapter addition states
@@ -50,7 +51,7 @@ export default function ICAICascadeSelector({ value, onChange, required = true, 
     const { data: topics = [], isLoading: topicsLoading } = useQuery({
         queryKey: ['icai-topics', value.chapterId],
         queryFn: async () => (await api.get(`/master/topics/?chapter_id=${value.chapterId}`)).data,
-        enabled: !!value.chapterId,
+        enabled: !hideTopic && !!value.chapterId,
     });
 
     const set = (patch: Partial<ICAISelection>) => {
@@ -93,10 +94,10 @@ export default function ICAICascadeSelector({ value, onChange, required = true, 
 
     // Auto-select Topic if only 1 topic exists
     useEffect(() => {
-        if (value.chapterId && !topicsLoading && topics?.length === 1 && !value.topicId) {
+        if (!hideTopic && value.chapterId && !topicsLoading && topics?.length === 1 && !value.topicId) {
             set({ topicId: String(topics[0].id) });
         }
-    }, [topics, topicsLoading, value.chapterId, value.topicId]);
+    }, [hideTopic, topics, topicsLoading, value.chapterId, value.topicId]);
 
     const handleCreateChapter = async () => {
         if (!newChapterName.trim() || !value.paperId) return;
@@ -234,60 +235,62 @@ export default function ICAICascadeSelector({ value, onChange, required = true, 
                     </select>
                 )}
             </div>
-            <div className="admin-form-group">
-                <div className="flex justify-between items-center mb-1">
-                    <label className="mb-0">Topic {required && '*'}</label>
-                    {value.chapterId && !isAddingTopic && (
-                        <button
-                            type="button"
-                            onClick={() => setIsAddingTopic(true)}
-                            className="text-[11px] text-blue-600 font-bold hover:underline"
+            {!hideTopic && (
+                <div className="admin-form-group">
+                    <div className="flex justify-between items-center mb-1">
+                        <label className="mb-0">Topic {required && '*'}</label>
+                        {value.chapterId && !isAddingTopic && (
+                            <button
+                                type="button"
+                                onClick={() => setIsAddingTopic(true)}
+                                className="text-[11px] text-blue-600 font-bold hover:underline"
+                            >
+                                + Quick Add
+                            </button>
+                        )}
+                    </div>
+                    {isAddingTopic ? (
+                        <div className="flex gap-1 mt-0.5">
+                            <input
+                                type="text"
+                                placeholder="Topic name..."
+                                value={newTopicName}
+                                onChange={(e) => setNewTopicName(e.target.value)}
+                                className="admin-form-input flex-1 py-1 px-2 text-xs"
+                                style={{ height: '32px' }}
+                                autoFocus
+                            />
+                            <button
+                                type="button"
+                                onClick={handleCreateTopic}
+                                disabled={creatingTopic || !newTopicName.trim()}
+                                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition-colors"
+                            >
+                                {creatingTopic ? '...' : 'Add'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => { setIsAddingTopic(false); setNewTopicName(''); }}
+                                className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-bold transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    ) : (
+                        <select
+                            className="admin-form-input"
+                            value={value.topicId}
+                            onChange={(e) => set({ topicId: e.target.value })}
+                            disabled={!value.chapterId || topicsLoading}
                         >
-                            + Quick Add
-                        </button>
+                            <option value="">Select Topic...</option>
+                            {topics.map((t: any) => (
+                                <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                        </select>
                     )}
                 </div>
-                {isAddingTopic ? (
-                    <div className="flex gap-1 mt-0.5">
-                        <input
-                            type="text"
-                            placeholder="Topic name..."
-                            value={newTopicName}
-                            onChange={(e) => setNewTopicName(e.target.value)}
-                            className="admin-form-input flex-1 py-1 px-2 text-xs"
-                            style={{ height: '32px' }}
-                            autoFocus
-                        />
-                        <button
-                            type="button"
-                            onClick={handleCreateTopic}
-                            disabled={creatingTopic || !newTopicName.trim()}
-                            className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition-colors"
-                        >
-                            {creatingTopic ? '...' : 'Add'}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => { setIsAddingTopic(false); setNewTopicName(''); }}
-                            className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-bold transition-colors"
-                        >
-                            Cancel
-                        </button>
-                    </div>
-                ) : (
-                    <select
-                        className="admin-form-input"
-                        value={value.topicId}
-                        onChange={(e) => set({ topicId: e.target.value })}
-                        disabled={!value.chapterId || topicsLoading}
-                    >
-                        <option value="">Select Topic...</option>
-                        {topics.map((t: any) => (
-                            <option key={t.id} value={t.id}>{t.name}</option>
-                        ))}
-                    </select>
-                )}
-            </div>
+            )}
         </div>
     );
 }

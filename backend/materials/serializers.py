@@ -3,7 +3,8 @@ from materials.models import (
     QuestionPaper, AnswerPaper, Notes, Video, MCQ, 
     Bookmark, SubjectiveQuestion, Feedback, SubQuestion, QuestionOption,
     VideoProgress, MaterialDownload, LiveClass, Notification,
-    AssessmentSession, AssessmentAnswer, MockTestTemplate
+    AssessmentSession, AssessmentAnswer, MockTestTemplate, QuestionImportJob,
+    ImportBatch, SourceDocument, ImportAuditLog, Scenario, Answer
 )
 
 def check_is_locked(instance, context):
@@ -77,6 +78,29 @@ class SubQuestionSerializer(serializers.ModelSerializer):
             ret['correct_answer'] = "[LOCKED]"
             ret['mcq_correct_option'] = "[LOCKED]"
         return ret
+
+
+class ScenarioSerializer(serializers.ModelSerializer):
+    scenario_id = serializers.UUIDField(source='id', read_only=True)
+    import_batch_id = serializers.UUIDField(source='import_batch.id', read_only=True)
+    parent_question_id = serializers.IntegerField(source='parent_question.id', read_only=True)
+    source_document_id = serializers.UUIDField(source='source_document.id', read_only=True)
+
+    class Meta:
+        model = Scenario
+        fields = '__all__'
+
+
+class AnswerSerializer(serializers.ModelSerializer):
+    answer_id = serializers.UUIDField(source='id', read_only=True)
+    question_id = serializers.IntegerField(source='question.id', read_only=True)
+    sub_question_id = serializers.IntegerField(source='sub_question.id', read_only=True)
+    answer_source_document_id = serializers.UUIDField(source='answer_source_document.id', read_only=True)
+
+    class Meta:
+        model = Answer
+        fields = '__all__'
+
 
 import re
 
@@ -479,5 +503,118 @@ class MockTestTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = MockTestTemplate
         fields = '__all__'
+
+
+class QuestionImportJobListSerializer(serializers.ModelSerializer):
+    created_by_email = serializers.ReadOnlyField(source='created_by.email')
+    level_name = serializers.ReadOnlyField(source='level.name')
+    paper_name = serializers.ReadOnlyField(source='paper.name')
+    chapter_name = serializers.ReadOnlyField(source='chapter.name')
+    topic_name = serializers.ReadOnlyField(source='topic.name')
+
+    class Meta:
+        model = QuestionImportJob
+        fields = [
+            'id', 'status', 'stage_label', 'progress_percent', 'error_message',
+            'ca_level', 'level', 'level_name', 'paper', 'paper_name',
+            'chapter', 'chapter_name', 'topic', 'topic_name',
+            'exam_session', 'exam_year', 'exam_date', 'source',
+            'maximum_marks', 'duration_minutes', 'question_pdf_filename',
+            'answer_pdf_filename', 'ai_provider', 'model_used',
+            'published_question_count', 'created_by_email', 'institution', 'is_platform_wide',
+            'created_at', 'updated_at', 'published_at'
+        ]
+
+
+class QuestionImportJobDetailSerializer(serializers.ModelSerializer):
+    created_by_email = serializers.ReadOnlyField(source='created_by.email')
+    level_name = serializers.ReadOnlyField(source='level.name')
+    paper_name = serializers.ReadOnlyField(source='paper.name')
+    chapter_name = serializers.ReadOnlyField(source='chapter.name')
+    topic_name = serializers.ReadOnlyField(source='topic.name')
+    question_pdf_url = serializers.SerializerMethodField()
+    answer_pdf_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = QuestionImportJob
+        fields = '__all__'
+
+    def get_question_pdf_url(self, obj):
+        if obj.question_pdf:
+            return obj.question_pdf.url
+        return None
+
+    def get_answer_pdf_url(self, obj):
+        if obj.answer_pdf:
+            return obj.answer_pdf.url
+        return None
+
+
+class SourceDocumentSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SourceDocument
+        fields = [
+            'id', 'batch', 'job', 'file', 'filename', 'file_hash',
+            'file_type', 'inferred_type', 'page_count', 'file_size_bytes',
+            'status', 'extracted_metadata', 'created_at', 'file_url'
+        ]
+
+    def get_file_url(self, obj):
+        if obj.file:
+            return obj.file.url
+        return None
+
+
+class ImportAuditLogSerializer(serializers.ModelSerializer):
+    user_email = serializers.ReadOnlyField(source='user.email')
+
+    class Meta:
+        model = ImportAuditLog
+        fields = [
+            'id', 'batch', 'job', 'user', 'user_email',
+            'action', 'question_reference', 'details', 'created_at'
+        ]
+
+
+class ImportBatchListSerializer(serializers.ModelSerializer):
+    created_by_email = serializers.ReadOnlyField(source='created_by.email')
+    level_name = serializers.ReadOnlyField(source='level.name')
+    paper_name = serializers.ReadOnlyField(source='paper.name')
+    chapter_name = serializers.ReadOnlyField(source='chapter.name')
+    topic_name = serializers.ReadOnlyField(source='topic.name')
+
+    class Meta:
+        model = ImportBatch
+        fields = [
+            'id', 'name', 'ca_level', 'level', 'level_name',
+            'paper', 'paper_name', 'chapter', 'chapter_name',
+            'topic', 'topic_name', 'exam_session', 'exam_year',
+            'source', 'status', 'stage_label', 'progress_percent',
+            'error_message', 'total_documents', 'total_questions_detected',
+            'matched_answers_count', 'missing_answers_count', 'tables_count',
+            'mcqs_count', 'duplicate_candidates_count', 'low_confidence_count',
+            'published_questions_count', 'ai_provider', 'model_used',
+            'total_input_tokens', 'total_output_tokens', 'estimated_cost_usd',
+            'processing_time_seconds', 'created_by_email', 'institution', 'is_platform_wide',
+            'created_at', 'updated_at', 'published_at'
+        ]
+
+
+class ImportBatchDetailSerializer(serializers.ModelSerializer):
+    created_by_email = serializers.ReadOnlyField(source='created_by.email')
+    level_name = serializers.ReadOnlyField(source='level.name')
+    paper_name = serializers.ReadOnlyField(source='paper.name')
+    chapter_name = serializers.ReadOnlyField(source='chapter.name')
+    topic_name = serializers.ReadOnlyField(source='topic.name')
+    documents = SourceDocumentSerializer(many=True, read_only=True)
+    jobs = QuestionImportJobListSerializer(many=True, read_only=True)
+    audit_logs = ImportAuditLogSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ImportBatch
+        fields = '__all__'
+
 
 

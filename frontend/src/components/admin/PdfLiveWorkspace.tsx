@@ -2,9 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import {
     FileText, Upload, Copy, Check, ChevronLeft, ChevronRight,
     Search, Sparkles, X, ArrowDownRight,
-    Maximize2, Minimize2, Eye, RefreshCw, Layers, CheckSquare
+    Maximize2, Minimize2, Eye, RefreshCw, Layers, CheckSquare,
+    Key, CheckCircle2, AlertCircle, Bot, ExternalLink, Trash2, Zap, BookOpen
 } from 'lucide-react';
 import { extractAllTextFromPdf, renderPdfPageToCanvas, type ExtractedPageText } from '@/utils/pdfExtractor';
+import api from '@/api/axios';
 
 interface PdfDocState {
     file: File | null;
@@ -25,11 +27,15 @@ interface Props {
     onInsertToQuestion: (text: string) => void;
     onInsertToAnswer: (text: string) => void;
     onInsertToPassage?: (text: string) => void;
+    onSelectQuestion?: (question: any, idx?: number) => void;
+    onRemoveQuestion?: (idx: number) => void;
     onStartScan: () => void;
     isScanning?: boolean;
     extractedData?: any;
     showToast: (msg: string) => void;
     onClose?: () => void;
+    aiProvider?: 'gemini' | 'openai';
+    onAiProviderChange?: (provider: 'gemini' | 'openai') => void;
 }
 
 export default function PdfLiveWorkspace({
@@ -40,16 +46,219 @@ export default function PdfLiveWorkspace({
     onInsertToQuestion,
     onInsertToAnswer,
     onInsertToPassage,
+    
+    onSelectQuestion,
+    onRemoveQuestion,
     onStartScan,
     isScanning = false,
-    extractedData: _extractedData = null,
+    extractedData = null,
     showToast,
-    onClose
+    onClose,
+    aiProvider = 'gemini',
+    onAiProviderChange
 }: Props) {
-    // Mode: 'SPLIT' (dual if both present) | 'QP_ONLY' | 'AP_ONLY' | 'EXTRACTED_TREE'
+    // Mode: 'BOTH' | 'QP' | 'AP' | 'TREE'
     const [activeTab, setActiveTab] = useState<'QP' | 'AP' | 'BOTH' | 'TREE'>('BOTH');
     const [viewType, setViewType] = useState<'PAGE_TEXT' | 'NATIVE_PDF'>('PAGE_TEXT');
-    
+
+    // AI Provider & Key config state
+    const [localProvider, setLocalProvider] = useState<'gemini' | 'openai'>(aiProvider);
+    const activeProvider = onAiProviderChange ? aiProvider : localProvider;
+
+    const handleSelectProvider = (prov: 'gemini' | 'openai') => {
+        setLocalProvider(prov);
+        if (onAiProviderChange) onAiProviderChange(prov);
+    };
+
+    const [showKeyModal, setShowKeyModal] = useState(false);
+    const [activeKeyTab, setActiveKeyTab] = useState<'gemini' | 'openai'>('gemini');
+
+    // Gemini API Key state
+    const [apiKeyInput, setApiKeyInput] = useState(() => localStorage.getItem('GEMINI_API_KEY') || '');
+    const [isTestingKey, setIsTestingKey] = useState(false);
+    const [keyTestStatus, setKeyTestStatus] = useState<{ success?: boolean; message?: string } | null>(null);
+
+    // OpenAI API Key state
+    const [openaiKeyInput, setOpenaiKeyInput] = useState(() => localStorage.getItem('OPENAI_API_KEY') || '');
+    const [isTestingOpenaiKey, setIsTestingOpenaiKey] = useState(false);
+    const [openaiKeyTestStatus, setOpenaiKeyTestStatus] = useState<{ success?: boolean; message?: string } | null>(null);
+
+    useEffect(() => {
+        api.get('/materials/questions/ai-status/').then(res => {
+            if (res.data?.active_provider) {
+                if (!localStorage.getItem('AI_PROVIDER_CHOICE')) {
+                    handleSelectProvider(res.data.active_provider);
+                }
+            }
+        }).catch(() => {});
+    }, []);
+
+    const handleTestAndSaveKey = async (saveToDb = true) => {
+        if (!apiKeyInput.trim()) {
+            alert('Please enter a Gemini API Key');
+            return;
+        }
+        setIsTestingKey(true);
+        setKeyTestStatus(null);
+        try {
+            const res = await api.post('/materials/questions/test-gemini-key/', {
+                gemini_api_key: apiKeyInput.trim(),
+                save: saveToDb
+            });
+            if (res.data?.valid) {
+                localStorage.setItem('GEMINI_API_KEY', apiKeyInput.trim());
+                setKeyTestStatus({ success: true, message: res.data.message || 'Gemini AI connected and saved successfully!' });
+                showToast('✓ Gemini API Key verified & saved!');
+            } else {
+                setKeyTestStatus({ success: false, message: res.data?.error || 'Invalid API Key' });
+            }
+        } catch (err: any) {
+            setKeyTestStatus({ success: false, message: err.response?.data?.error || 'Failed to connect with Gemini API' });
+        } finally {
+            setIsTestingKey(false);
+        }
+    };
+
+    const handleTestAndSaveOpenaiKey = async (saveToDb = true) => {
+        if (!openaiKeyInput.trim()) {
+            alert('Please enter an OpenAI API Key');
+            return;
+        }
+        setIsTestingOpenaiKey(true);
+        setOpenaiKeyTestStatus(null);
+        try {
+            const res = await api.post('/materials/questions/test-openai-key/', {
+                openai_api_key: openaiKeyInput.trim(),
+                save: saveToDb
+            });
+            if (res.data?.valid) {
+                localStorage.setItem('OPENAI_API_KEY', openaiKeyInput.trim());
+                setOpenaiKeyTestStatus({ success: true, message: res.data.message || 'OpenAI API connected and saved successfully!' });
+                showToast('✓ OpenAI API Key verified & saved!');
+            } else {
+                setOpenaiKeyTestStatus({ success: false, message: res.data?.error || 'Invalid API Key' });
+            }
+        } catch (err: any) {
+            setOpenaiKeyTestStatus({ success: false, message: err.response?.data?.error || 'Failed to connect with OpenAI API' });
+        } finally {
+            setIsTestingOpenaiKey(false);
+        }
+    };
+
+    const [localQuestions, setLocalQuestions] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (extractedData?.questions && Array.isArray(extractedData.questions)) {
+            setLocalQuestions(extractedData.questions);
+            if (extractedData.questions.length > 0) {
+                setActiveTab('TREE');
+            }
+        } else {
+            setLocalQuestions([]);
+        }
+    }, [extractedData]);
+
+    const handleRemoveQuestion = (idxToRemove: number) => {
+        const qToRemove = localQuestions[idxToRemove];
+        const nextList = localQuestions.filter((_, i) => i !== idxToRemove);
+        setLocalQuestions(nextList);
+        if (onRemoveQuestion) {
+            onRemoveQuestion(idxToRemove);
+        }
+        showToast(`✓ Removed Q.${qToRemove?.q_no || idxToRemove + 1} from workspace`);
+    };
+
+    const handleRemoveAllInstructions = () => {
+        const instructionTriggers = [
+            "question paper comprises",
+            "part i comprises",
+            "part ii comprises",
+            "part iii comprises",
+            "case scenario based multiple choice",
+            "questions which require descriptive",
+            "all questions are compulsory",
+            "working notes should form part",
+            "candidates are permitted",
+            "candidates are allowed",
+            "reading time",
+            "omr answer sheet",
+            "instructions to candidates",
+            "general instructions"
+        ];
+        const filtered = localQuestions.filter(q => {
+            const txt = (q.question_text || '').toLowerCase();
+            return !instructionTriggers.some(trig => txt.includes(trig));
+        });
+        const removedCount = localQuestions.length - filtered.length;
+        setLocalQuestions(filtered);
+        if (removedCount > 0) {
+            showToast(`🧹 Removed ${removedCount} general instruction card(s)!`);
+        } else {
+            showToast(`No general instruction cards found.`);
+        }
+    };
+
+    const handleClearAllQuestions = () => {
+        if (window.confirm('Are you sure you want to remove all extracted questions from this list?')) {
+            setLocalQuestions([]);
+            showToast(`All questions removed from workspace.`);
+        }
+    };
+
+    const renderTablePreview = (tableRaw: any) => {
+        if (!tableRaw) return null;
+        let table = tableRaw;
+        if (typeof table === 'string') {
+            try {
+                table = JSON.parse(table);
+            } catch {
+                return null;
+            }
+        }
+        if (!table || !Array.isArray(table.headers) || table.headers.length === 0) return null;
+        return (
+            <div className="overflow-x-auto border border-slate-300 rounded-lg shadow-sm bg-white my-2.5">
+                <div className="bg-slate-100 px-3 py-1.5 border-b border-slate-200 flex items-center justify-between text-[11px] font-bold text-slate-700">
+                    <span className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                        {table.title || '📊 Accounting / Financial Table'}
+                    </span>
+                    <span className="text-slate-500 font-mono text-[10px]">
+                        {(table.rows || []).length} rows × {table.headers.length} cols
+                    </span>
+                </div>
+                <table className="min-w-full text-xs text-left border-collapse">
+                    <thead className="bg-slate-50 border-b border-slate-300 text-slate-800 font-bold">
+                        <tr>
+                            {table.headers.map((h: string, hi: number) => {
+                                const isAmount = /amount|₹|rs|debit|credit|dr|cr|balance|total|cost|nominal|value/i.test(h || '');
+                                return (
+                                    <th key={hi} className={`px-3 py-2 border-r last:border-r-0 border-slate-200 text-slate-800 font-bold whitespace-nowrap ${isAmount ? 'text-right' : ''}`}>
+                                        {h}
+                                    </th>
+                                );
+                            })}
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 font-sans">
+                        {(table.rows || []).map((row: string[], ri: number) => (
+                            <tr key={ri} className="hover:bg-indigo-50/30 transition-colors">
+                                {row.map((cell: string, ci: number) => {
+                                    const isAmountCol = /amount|₹|rs|debit|credit|dr|cr|balance|total|cost|nominal|value/i.test(table.headers[ci] || '');
+                                    return (
+                                        <td key={ci} className={`px-3 py-1.5 border-r last:border-r-0 border-slate-200 text-slate-700 ${isAmountCol ? 'text-right font-mono font-medium' : ''}`}>
+                                            {cell}
+                                        </td>
+                                    );
+                                })}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        );
+    };
+
     // Question PDF State
     const [qpState, setQpState] = useState<PdfDocState>({
         file: null,
@@ -418,10 +627,10 @@ export default function PdfLiveWorkspace({
 
                 {/* Scan & Fast Actions Bar */}
                 <div className="flex flex-wrap items-center justify-between gap-3 mt-3 pt-3 border-t border-slate-200">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                         {/* Tab Switchers */}
-                        {qpState.file && apState.file && (
-                            <div className="flex bg-slate-200 p-0.5 rounded-lg text-xs font-bold">
+                        <div className="flex bg-slate-200 p-0.5 rounded-lg text-xs font-bold">
+                            {qpState.file && apState.file && (
                                 <button
                                     type="button"
                                     onClick={() => setActiveTab('BOTH')}
@@ -431,6 +640,8 @@ export default function PdfLiveWorkspace({
                                 >
                                     Side-by-Side (QP + AP)
                                 </button>
+                            )}
+                            {qpState.file && (
                                 <button
                                     type="button"
                                     onClick={() => setActiveTab('QP')}
@@ -438,8 +649,10 @@ export default function PdfLiveWorkspace({
                                         activeTab === 'QP' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600'
                                     }`}
                                 >
-                                    Question Paper Only
+                                    Question Paper
                                 </button>
+                            )}
+                            {apState.file && (
                                 <button
                                     type="button"
                                     onClick={() => setActiveTab('AP')}
@@ -447,34 +660,97 @@ export default function PdfLiveWorkspace({
                                         activeTab === 'AP' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600'
                                     }`}
                                 >
-                                    Answer Paper Only
+                                    Answer Paper
                                 </button>
-                            </div>
-                        )}
+                            )}
+                            {localQuestions.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab('TREE')}
+                                    className={`px-3 py-1 rounded-md transition-all flex items-center gap-1.5 ${
+                                        activeTab === 'TREE' ? 'bg-indigo-600 text-white shadow-sm' : 'text-indigo-700 hover:bg-indigo-100 font-extrabold'
+                                    }`}
+                                >
+                                    <Sparkles size={12} className="text-yellow-300" />
+                                    <span>AI Questions ({localQuestions.length})</span>
+                                </button>
+                            )}
+                        </div>
 
                         {/* Search in PDF */}
                         <div className="relative flex items-center">
                             <Search size={13} className="absolute left-2.5 text-slate-400" />
                             <input
                                 type="text"
-                                placeholder="Search text in PDF pages..."
+                                placeholder="Search in pages..."
                                 value={searchQuery}
                                 onChange={e => setSearchQuery(e.target.value)}
-                                className="pl-7 pr-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-blue-500 w-48"
+                                className="pl-7 pr-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-blue-500 w-36"
                             />
                         </div>
                     </div>
 
-                    {/* Global Scan Button */}
-                    <div className="flex items-center gap-2">
+                    {/* Multi-AI Provider Selector & Global Scan Button */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {/* Interactive Provider Toggle */}
+                        <div className="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-300 text-[11px] font-bold">
+                            <button
+                                type="button"
+                                onClick={() => handleSelectProvider('gemini')}
+                                className={`px-2 py-1 rounded-md transition-all flex items-center gap-1 ${
+                                    activeProvider === 'gemini'
+                                        ? 'bg-white text-indigo-700 shadow-xs font-black'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                                title="Use Google Gemini AI"
+                            >
+                                <Bot size={12} className="text-indigo-600" />
+                                <span>Gemini</span>
+                                {activeProvider === 'gemini' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleSelectProvider('openai')}
+                                className={`px-2 py-1 rounded-md transition-all flex items-center gap-1 ${
+                                    activeProvider === 'openai'
+                                        ? 'bg-white text-emerald-700 shadow-xs font-black'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                                title="Use OpenAI (GPT-4o / GPT-4o-mini)"
+                            >
+                                <Zap size={12} className="text-emerald-600" />
+                                <span>OpenAI</span>
+                                {activeProvider === 'openai' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                            </button>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => setShowKeyModal(true)}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-all"
+                            title="Configure or test Gemini and OpenAI API Keys"
+                        >
+                            <Key size={12} className="text-amber-500" />
+                            <span>API Keys</span>
+                        </button>
+
                         <button
                             type="button"
                             onClick={onStartScan}
                             disabled={(!qpState.file && !apState.file) || isScanning}
-                            className="px-4 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-md transition-all active:scale-95"
+                            className={`px-4 py-1.5 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-md transition-all active:scale-95 disabled:opacity-40 ${
+                                activeProvider === 'openai'
+                                    ? 'bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800'
+                                    : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700'
+                            }`}
                         >
-                            {isScanning ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                            <span>{isScanning ? 'Auto Scanning...' : '[ ⚡ Auto Scan & Parse Questions ]'}</span>
+                            {isScanning ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} className="text-yellow-300" />}
+                            <span>
+                                {isScanning
+                                    ? `${activeProvider === 'openai' ? 'OpenAI' : 'Gemini'} Extracting & Solving...`
+                                    : `⚡ Auto Scan & Fill with ${activeProvider === 'openai' ? 'OpenAI' : 'Gemini AI'}`
+                                }
+                            </span>
                         </button>
                     </div>
                 </div>
@@ -542,8 +818,270 @@ export default function PdfLiveWorkspace({
                 </div>
             )}
 
-            {/* MAIN PDF VIEW AREA */}
-            {!hasAnyFile ? (
+            {/* EXTRACTED QUESTIONS TREE VIEW */}
+            {activeTab === 'TREE' && localQuestions.length > 0 ? (
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[700px] bg-slate-50">
+                    <div className="bg-gradient-to-r from-indigo-900 to-slate-900 text-white p-4 rounded-xl shadow-sm flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-indigo-500/30 flex items-center justify-center text-yellow-300">
+                                <Sparkles size={20} />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-sm flex items-center gap-2">
+                                    <span>{localQuestions.length} Questions Auto-Extracted & Solved</span>
+                                    {extractedData?.ai_powered && (
+                                        <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full text-[10px] font-mono">
+                                            Gemini AI Powered
+                                        </span>
+                                    )}
+                                </h3>
+                                <p className="text-xs text-indigo-200">
+                                    Question numbers, types, MCQ options, and suggested answers are automatically populated. Click any question below to load into the editor form.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                                type="button"
+                                onClick={handleRemoveAllInstructions}
+                                className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                                title="Remove general exam instructions (e.g. 'The question paper comprises two parts...')"
+                            >
+                                <Trash2 size={12} />
+                                <span>Remove Instructions</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleClearAllQuestions}
+                                className="px-2.5 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                                title="Clear all questions from workspace"
+                            >
+                                <X size={12} />
+                                <span>Clear All</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4">
+                        {localQuestions.map((q: any, idx: number) => {
+                            const isMcq = q.question_type === 'MCQ';
+                            return (
+                                <div key={idx} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:border-indigo-300 transition-all space-y-3">
+                                    {/* Card Header */}
+                                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="px-2.5 py-1 bg-blue-600 text-white font-black text-xs rounded-lg shadow-sm">
+                                                Q. {q.q_no || idx + 1}
+                                            </span>
+                                            <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 font-bold text-[11px] rounded-md">
+                                                {q.question_type || 'NORMAL'}
+                                            </span>
+                                            <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[11px] rounded-md">
+                                                {q.marks || 10} Marks
+                                            </span>
+                                            {q.correct_answer && (
+                                                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px] rounded-md flex items-center gap-1">
+                                                    <CheckCircle2 size={12} /> Solution Auto-Filled
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleCopy(q.question_text || '', `q-${idx}`, `Q.${q.q_no} Text`)}
+                                                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold flex items-center gap-1"
+                                            >
+                                                <Copy size={11} /> Copy Q
+                                            </button>
+                                            {q.correct_answer && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleCopy(q.correct_answer || '', `a-${idx}`, `Q.${q.q_no} Answer`)}
+                                                    className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded text-xs font-semibold flex items-center gap-1"
+                                                >
+                                                    <Copy size={11} /> Copy Ans
+                                                </button>
+                                            )}
+                                            {onSelectQuestion && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        onSelectQuestion(q, idx);
+                                                        showToast(`✓ Question Q.${q.q_no || idx + 1} and solution loaded into form!`);
+                                                    }}
+                                                    className="px-3.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm active:scale-95 transition-all"
+                                                >
+                                                    <ArrowDownRight size={13} />
+                                                    <span>Auto-Fill This Question</span>
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveQuestion(idx)}
+                                                className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-xs font-semibold flex items-center gap-1 transition-colors"
+                                                title="Remove this question/instruction card"
+                                            >
+                                                <Trash2 size={11} />
+                                                <span>Remove</span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Question Text */}
+                                    <div className="text-xs text-slate-800 leading-relaxed font-sans whitespace-pre-wrap bg-slate-50/70 p-3 rounded-lg border border-slate-100">
+                                        {q.question_text}
+                                    </div>
+
+                                    {/* Question Accounting / Financial Table */}
+                                    {renderTablePreview(q.table_data || q.structured_table)}
+
+                                    {/* Case Scenario Narrative Passage / Context */}
+                                    {q.case_scenario_passage && (
+                                        <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[11px] font-black text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
+                                                    <BookOpen size={13} /> Case Scenario Passage / Context
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleCopy(q.case_scenario_passage || '', `p-${idx}`, `Case Scenario Passage`)}
+                                                    className="px-2 py-0.5 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded text-[10px] font-bold flex items-center gap-1"
+                                                >
+                                                    <Copy size={10} /> Copy Story
+                                                </button>
+                                            </div>
+                                            <p className="text-xs text-amber-950 whitespace-pre-wrap font-sans leading-relaxed max-h-60 overflow-y-auto pr-1">
+                                                {q.case_scenario_passage}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Nested Sub-Questions for Case Scenario or Multi-part */}
+                                    {q.sub_questions && q.sub_questions.length > 0 && (
+                                        <div className="pt-2 border-t border-slate-200/80 space-y-2.5">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[11px] font-black text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
+                                                    <CheckSquare size={13} className="text-indigo-600" />
+                                                    Nested Sub-Questions ({q.sub_questions.length})
+                                                </span>
+                                                <span className="text-[10px] font-bold text-slate-500">
+                                                    {q.sub_questions.reduce((acc: number, sq: any) => acc + (sq.marks || 2), 0)} Total Marks
+                                                </span>
+                                            </div>
+                                            <div className="space-y-2.5">
+                                                {q.sub_questions.map((sq: any, sqIdx: number) => {
+                                                    const isSqMcq = sq.question_type === 'MCQ' || (sq.options && sq.options.length > 0);
+                                                    return (
+                                                        <div key={sqIdx} className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="w-5 h-5 rounded bg-indigo-600 text-white font-black text-[10px] flex items-center justify-center">
+                                                                        {sq.identifier || sqIdx + 1}
+                                                                    </span>
+                                                                    <span className="text-[10px] font-bold text-slate-500">
+                                                                        ({sq.marks || 2} Marks)
+                                                                    </span>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleCopy(sq.question_text || '', `sq-${idx}-${sqIdx}`, `Sub-Q ${sq.identifier}`)}
+                                                                    className="text-[10px] text-slate-500 hover:text-slate-800 flex items-center gap-0.5"
+                                                                >
+                                                                    <Copy size={10} /> Copy
+                                                                </button>
+                                                            </div>
+                                                            <p className="text-xs text-slate-800 font-sans leading-relaxed whitespace-pre-wrap">
+                                                                {sq.question_text}
+                                                            </p>
+                                                            {renderTablePreview(sq.table_data)}
+                                                            {isSqMcq && sq.options && sq.options.length > 0 && (
+                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 pt-1">
+                                                                    {sq.options.map((opt: any, oIdx: number) => {
+                                                                        const optLabel = String.fromCharCode(65 + oIdx);
+                                                                        const optText = typeof opt === 'string' ? opt : (opt.text || '');
+                                                                        const isCorr = typeof opt === 'object' && opt.is_correct;
+                                                                        return (
+                                                                            <div
+                                                                                key={oIdx}
+                                                                                className={`p-1.5 rounded-md text-[11px] border flex items-center gap-2 ${
+                                                                                    isCorr ? 'bg-emerald-50 border-emerald-300 font-bold text-emerald-900' : 'bg-white border-slate-200 text-slate-700'
+                                                                                }`}
+                                                                            >
+                                                                                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${isCorr ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                                                                                    {optLabel}
+                                                                                </span>
+                                                                                <span className="truncate">{optText}</span>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            )}
+                                                            {sq.correct_answer && (
+                                                                <div className="bg-emerald-50/70 border border-emerald-200 rounded p-2 text-[11px] text-emerald-950 font-sans">
+                                                                    <span className="font-bold text-emerald-800">Ans: </span>
+                                                                    {sq.correct_answer}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* MCQ Options */}
+                                    {isMcq && q.options && q.options.length > 0 && (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
+                                            {q.options.map((opt: any, oIdx: number) => {
+                                                const optLabel = String.fromCharCode(65 + oIdx);
+                                                const optText = typeof opt === 'string' ? opt : (opt.text || '');
+                                                const isCorr = typeof opt === 'object' && opt.is_correct;
+                                                return (
+                                                    <div
+                                                        key={oIdx}
+                                                        className={`p-2 rounded-lg text-xs border flex items-center gap-2 ${
+                                                            isCorr ? 'bg-emerald-50 border-emerald-300 font-bold text-emerald-900' : 'bg-slate-50 border-slate-200 text-slate-700'
+                                                        }`}
+                                                    >
+                                                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${isCorr ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                                                            {optLabel}
+                                                        </span>
+                                                        <span className="truncate">{optText}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    {/* Solution / Correct Answer */}
+                                    {q.correct_answer && (
+                                        <div className="bg-emerald-50/60 border border-emerald-200 rounded-lg p-3 space-y-2">
+                                            <span className="text-[11px] font-black text-emerald-800 uppercase tracking-wider flex items-center gap-1">
+                                                ✓ Suggested Solution / Model Answer
+                                            </span>
+                                            <p className="text-xs text-emerald-950 whitespace-pre-wrap font-sans leading-relaxed">
+                                                {q.correct_answer}
+                                            </p>
+
+                                            {/* Solution Accounting Table */}
+                                            {renderTablePreview(q.answer_table_data || q.solution_table || q.matched_answer?.structured_table || q.structured_table_solution)}
+
+                                            {q.working_notes && (
+                                                <div className="mt-2 pt-2 border-t border-emerald-200/60">
+                                                    <span className="text-[10px] font-bold text-emerald-700 uppercase">Working Notes:</span>
+                                                    <p className="text-xs text-emerald-900 whitespace-pre-wrap font-mono mt-0.5">{q.working_notes}</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            ) : !hasAnyFile ? (
                 <div className="p-12 text-center flex flex-col items-center justify-center space-y-3 bg-slate-50/50">
                     <div className="w-16 h-16 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center shadow-inner">
                         <Upload size={32} />
@@ -784,6 +1322,192 @@ export default function PdfLiveWorkspace({
                             </div>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* MULTI-PROVIDER AI KEY CONFIG MODAL */}
+            {showKeyModal && (
+                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                                    <Bot size={18} />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-sm text-slate-900">AI Provider Configuration</h3>
+                                    <p className="text-[11px] text-slate-500">Auto-detects question numbers & fills solutions</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowKeyModal(false)}
+                                className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {/* Provider Selection Tabs */}
+                        <div className="flex items-center bg-slate-100 rounded-xl p-1 border border-slate-200 text-xs font-bold">
+                            <button
+                                type="button"
+                                onClick={() => setActiveKeyTab('gemini')}
+                                className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                                    activeKeyTab === 'gemini'
+                                        ? 'bg-white text-indigo-700 shadow-sm font-black'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                            >
+                                <Bot size={14} className="text-indigo-600" />
+                                <span>Google Gemini</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setActiveKeyTab('openai')}
+                                className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                                    activeKeyTab === 'openai'
+                                        ? 'bg-white text-emerald-700 shadow-sm font-black'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                            >
+                                <Zap size={14} className="text-emerald-600" />
+                                <span>OpenAI (ChatGPT)</span>
+                            </button>
+                        </div>
+
+                        {/* GEMINI TAB CONTENT */}
+                        {activeKeyTab === 'gemini' && (
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                                        Gemini API Key
+                                    </label>
+                                    <input
+                                        type="password"
+                                        placeholder="AIzaSy..."
+                                        value={apiKeyInput}
+                                        onChange={e => {
+                                            setApiKeyInput(e.target.value);
+                                            setKeyTestStatus(null);
+                                        }}
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    />
+                                    <p className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+                                        <span>Supports Gemini 2.0 Flash & Gemini 1.5 Flash</span>
+                                        <a
+                                            href="https://aistudio.google.com/app/apikey"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-indigo-600 hover:underline flex items-center gap-0.5 font-semibold"
+                                        >
+                                            Get API Key <ExternalLink size={10} />
+                                        </a>
+                                    </p>
+                                </div>
+
+                                {keyTestStatus && (
+                                    <div
+                                        className={`p-3 rounded-lg text-xs flex items-center gap-2 ${
+                                            keyTestStatus.success
+                                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                                : 'bg-red-50 text-red-800 border border-red-200'
+                                        }`}
+                                    >
+                                        {keyTestStatus.success ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
+                                        <span>{keyTestStatus.message}</span>
+                                    </div>
+                                )}
+
+                                <div className="flex items-center justify-end gap-2 pt-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleTestAndSaveKey(false)}
+                                        disabled={isTestingKey || !apiKeyInput.trim()}
+                                        className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                                    >
+                                        {isTestingKey ? 'Testing...' : 'Test Connection'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleTestAndSaveKey(true)}
+                                        disabled={isTestingKey || !apiKeyInput.trim()}
+                                        className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-md transition-all active:scale-95 disabled:opacity-50"
+                                    >
+                                        Save & Connect
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* OPENAI TAB CONTENT */}
+                        {activeKeyTab === 'openai' && (
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                                        OpenAI API Key
+                                    </label>
+                                    <input
+                                        type="password"
+                                        placeholder="sk-proj-..."
+                                        value={openaiKeyInput}
+                                        onChange={e => {
+                                            setOpenaiKeyInput(e.target.value);
+                                            setOpenaiKeyTestStatus(null);
+                                        }}
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
+                                    />
+                                    <p className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+                                        <span>Supports GPT-4o, GPT-4o-mini & GPT-4.1</span>
+                                        <a
+                                            href="https://platform.openai.com/api-keys"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-emerald-600 hover:underline flex items-center gap-0.5 font-semibold"
+                                        >
+                                            Get API Key <ExternalLink size={10} />
+                                        </a>
+                                    </p>
+                                </div>
+
+                                {openaiKeyTestStatus && (
+                                    <div
+                                        className={`p-3 rounded-lg text-xs flex items-center gap-2 ${
+                                            openaiKeyTestStatus.success
+                                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                                : 'bg-red-50 text-red-800 border border-red-200'
+                                        }`}
+                                    >
+                                        {openaiKeyTestStatus.success ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
+                                        <span>{openaiKeyTestStatus.message}</span>
+                                    </div>
+                                )}
+
+                                <div className="flex items-center justify-end gap-2 pt-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleTestAndSaveOpenaiKey(false)}
+                                        disabled={isTestingOpenaiKey || !openaiKeyInput.trim()}
+                                        className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                                    >
+                                        {isTestingOpenaiKey ? 'Testing...' : 'Test Connection'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleTestAndSaveOpenaiKey(true)}
+                                        disabled={isTestingOpenaiKey || !openaiKeyInput.trim()}
+                                        className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md transition-all active:scale-95 disabled:opacity-50"
+                                    >
+                                        Save & Connect
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-[11px] text-slate-500">
+                            💡 API keys are securely validated on the server and saved in database settings (<code className="text-slate-700">PlatformSetting</code>). Keys are never exposed to browser clients.
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

@@ -1,5 +1,8 @@
 from django.contrib import admin
-from .models import QuestionPaper, AnswerPaper, Notes, Video, MCQ, Bookmark, SubjectiveQuestion, Feedback
+from .models import (
+    QuestionPaper, AnswerPaper, Notes, Video, MCQ, Bookmark,
+    SubjectiveQuestion, Feedback, Scenario, Answer, SubQuestion
+)
 
 admin.site.register(QuestionPaper)
 admin.site.register(AnswerPaper)
@@ -8,6 +11,9 @@ admin.site.register(Video)
 admin.site.register(MCQ)
 admin.site.register(Bookmark)
 admin.site.register(SubjectiveQuestion)
+admin.site.register(SubQuestion)
+admin.site.register(Scenario)
+admin.site.register(Answer)
 
 @admin.register(Feedback)
 class FeedbackAdmin(admin.ModelAdmin):

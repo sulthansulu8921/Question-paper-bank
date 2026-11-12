@@ -66,6 +66,24 @@ class SubjectiveQuestionViewSet(viewsets.ModelViewSet):
 
         params = self.request.query_params
 
+        # Multi-tenant isolation: Platform-wide questions + institution-specific questions
+        user = self.request.user
+        from django.db.models import Q
+        if user and user.is_authenticated:
+            if user.is_superuser:
+                inst_filter = params.get('institution_id')
+                if inst_filter:
+                    queryset = queryset.filter(institution_id=inst_filter)
+            elif getattr(user, 'institution', None):
+                queryset = queryset.filter(Q(is_platform_wide=True) | Q(institution=user.institution))
+            else:
+                queryset = queryset.filter(is_platform_wide=True)
+        else:
+            queryset = queryset.filter(is_platform_wide=True)
+
+        if not (user and user.is_authenticated and (user.is_staff or user.is_superuser)):
+            queryset = queryset.filter(status__in=['ACTIVE', 'PUBLISHED'])
+
         subject_id = params.get('subject_id')
         if subject_id:
             queryset = queryset.filter(subject_id=subject_id)
@@ -787,56 +805,828 @@ class ImportQuestionsExcelView(APIView):
 # PDF Question Extraction: POST /api/materials/questions/extract-from-pdf/
 # Accepts a PDF file, extracts text (or renders pages for scanned PDFs),
 # sends to Gemini 1.5 Flash, returns structured question JSON for review.
-# ─────────────────────────────────────────────────────────────
 import fitz  # PyMuPDF
 import base64
 import json
 import re
+import os
 import requests as http_requests
 
-EXTRACTION_PROMPT = """You are an expert CA (Chartered Accountancy) exam question extractor.
+def resolve_gemini_api_key(explicit_key=None):
+    """
+    Resolves the Gemini API Key from:
+    1. Explicit key passed in request (user input / client)
+    2. PlatformSetting model in the database
+    3. GEMINI_API_KEY environment variable (.env)
+    """
+    if explicit_key and str(explicit_key).strip():
+        return str(explicit_key).strip()
+    try:
+        from subscriptions.models import PlatformSetting
+        ps = PlatformSetting.objects.filter(key="GEMINI_API_KEY").first()
+        if ps and ps.value and ps.value.strip():
+            return ps.value.strip()
+    except Exception:
+        pass
+    env_key = os.environ.get('GEMINI_API_KEY')
+    if env_key and env_key.strip():
+        return env_key.strip()
+    return None
 
-Your task: Extract ALL questions from the provided CA exam paper PDF content and return them as a strict JSON array.
+def test_gemini_api_key(api_key):
+    """Tests if a Gemini API Key is valid and active."""
+    if not api_key:
+        return False, None, "No API key provided."
+    models = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"]
+    last_err = "Unknown error"
+    for m in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": "Reply with JSON: {\"status\": \"ok\"}"}]}],
+            "generationConfig": {"temperature": 0, "responseMimeType": "application/json"}
+        }
+        try:
+            r = http_requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=12)
+            if r.status_code == 200:
+                return True, m, "Connected successfully"
+            else:
+                last_err = f"HTTP {r.status_code}: {r.text[:200]}"
+        except Exception as e:
+            last_err = str(e)
+    return False, None, last_err
 
-EXTRACTION RULES:
-1. Extract EVERY question — numbered (Q1, 1(a), Question 1) or unnumbered.
-2. For each question produce this exact JSON structure:
-{
-  "q_no": "1",                    // Question number as string, e.g. "1", "1(a)", "2(b)(ii)"
-  "question_text": "...",         // Full question statement including all sub-text
-  "correct_answer": null,         // Model answer / solution if present in the document, else null
-  "table_data": null,             // If QUESTION has a table → {"headers":["Col1","Col2"],"rows":[["v1","v2"]]}
-  "answer_table_data": null,      // If ANSWER/SOLUTION has tables/ledgers/journals → same format
-  "marks": 10,                    // Marks as integer. Default 10 if not stated.
-  "question_type": "NORMAL",      // "NORMAL" | "MCQ" | "MIXED" | "THEORY"
-  "difficulty": "MEDIUM",         // "EASY" | "MEDIUM" | "HARD" — estimate by question complexity
-  "sub_questions": []             // Array of sub-parts if any, each: {"identifier":"a","question_text":"...","correct_answer":null,"table_data":null,"answer_table_data":null,"marks":5}
-}
+def resolve_openai_api_key(explicit_key=None):
+    """
+    Resolves the OpenAI API Key from:
+    1. Explicit key passed in request (user input / client)
+    2. PlatformSetting model in the database
+    3. OPENAI_API_KEY environment variable (.env)
+    """
+    if explicit_key and str(explicit_key).strip():
+        return str(explicit_key).strip()
+    try:
+        from subscriptions.models import PlatformSetting
+        ps = PlatformSetting.objects.filter(key="OPENAI_API_KEY").first()
+        if ps and ps.value and ps.value.strip():
+            return ps.value.strip()
+    except Exception:
+        pass
+    env_key = os.environ.get('OPENAI_API_KEY')
+    if env_key and env_key.strip():
+        return env_key.strip()
+    return None
 
-TABLE DETECTION RULES (CRITICAL):
-- Convert ALL tables to JSON format: {"headers": [...], "rows": [[...]]}
-- This includes: ledger accounts, journal entries, trial balance, P&L account, balance sheet, cash flow, ratio analysis, cost sheets, reconciliation statements
-- Preserve ALL column headers and ALL rows accurately
-- If a table has merged cells or totals rows, include them as separate rows
-- Never leave table data as plain text — always convert to JSON
+def test_openai_api_key(api_key):
+    """
+    Tests if an OpenAI API Key is valid and active.
+    Verifies authentication via /v1/models and checks quota availability.
+    """
+    if not api_key:
+        return False, None, "No OpenAI API key provided."
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    try:
+        r = http_requests.get("https://api.openai.com/v1/models", headers=headers, timeout=12)
+        if r.status_code != 200:
+            return False, None, f"OpenAI authentication failed (HTTP {r.status_code}): {r.text[:200]}"
+        
+        test_models = ["gpt-4o-mini", "gpt-4.1-mini", "gpt-5-mini", "gpt-5-nano"]
+        for m in test_models:
+            payload = {
+                "model": m,
+                "messages": [{"role": "user", "content": 'Respond with JSON: {"status": "ok"}'}],
+                "max_tokens": 15
+            }
+            chat_r = http_requests.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers, timeout=15)
+            if chat_r.status_code == 200:
+                return True, m, "OpenAI API connected and active!"
+            elif chat_r.status_code == 429:
+                err_body = chat_r.json().get('error', {}) if 'application/json' in chat_r.headers.get('content-type', '') else {}
+                if 'insufficient_quota' in str(err_body) or 'credit_balance_exhausted' in str(err_body):
+                    return True, m, "OpenAI key authenticated successfully! (Note: 0 remaining credits on account. Top up at platform.openai.com/settings/organization/billing)"
+                return True, m, f"Key authenticated (HTTP 429: {err_body.get('message', '')[:120]})"
+        return True, "gpt-4o-mini", "OpenAI key authenticated successfully!"
+    except Exception as e:
+        return False, None, f"OpenAI connection error: {str(e)}"
 
-SUB-QUESTION RULES:
-- If a question has parts (a), (b), (c) or (i), (ii), (iii) — put the intro in question_text, parts in sub_questions[]
-- Each sub-question identifier should be just the part label: "a", "b", "i", "ii"
-- Sub-questions can themselves have table_data and answer_table_data
+def roman_to_int(s):
+    """Converts a Roman numeral string (e.g. 'I', 'IV', 'V') or digit string to an integer."""
+    if not s:
+        return 1
+    roman_map = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}
+    clean = str(s).upper().strip()
+    if clean.isdigit():
+        return int(clean)
+    total = 0
+    prev_val = 0
+    for char in reversed(clean):
+        val = roman_map.get(char, 0)
+        if val >= prev_val:
+            total += val
+        else:
+            total -= val
+        prev_val = val
+    return total if total > 0 else 1
 
-MCQ RULES:
-- Set question_type to "MCQ"
-- Include all options (A), (B), (C), (D) in question_text
-- If answer is given, put it in correct_answer as the letter, e.g. "C"
+def extract_mcq_options_from_text(text):
+    """
+    Extracts MCQ options labeled (a)-(d), (A)-(D), (i)-(iv), or (1)-(4) from a question string.
+    Returns (cleaned_stem, options_list).
+    """
+    if not text:
+        return text, []
 
-IMPORTANT:
-- Return ONLY a valid JSON array — no markdown, no code blocks, no explanation
-- Never invent data — extract only what is actually in the document
-- Preserve all numbers, figures, and technical terminology exactly
+    opt_pattern = re.compile(
+        r'(?:^|\n)\s*(?:\((?P<id>[a-d]|[ivx]+|[1-4])\)|(?P<id2>[a-d]|[ivx]+|[1-4])[\.\)])\s*(?P<content>.*?)(?=(?:\n\s*(?:\((?:[a-d]|[ivx]+|[1-4])\)|(?:[a-d]|[ivx]+|[1-4])[\.\)]))|\Z)',
+        re.IGNORECASE | re.DOTALL
+    )
 
-JSON array output:
+    matches = list(opt_pattern.finditer(text))
+    if len(matches) >= 2:
+        first_match_start = matches[0].start()
+        stem = text[:first_match_start].strip()
+        options = []
+        for idx, m in enumerate(matches):
+            opt_text = m.group('content').strip()
+            opt_text = re.sub(r'(?i)\(?\s*\d+\s*Marks?\s*\)?', '', opt_text).strip()
+            options.append({
+                "text": opt_text,
+                "is_correct": False,
+                "order": idx
+            })
+        return stem, options
+    return text, []
+
+def reconcile_case_scenarios(questions):
+    """
+    Reconciles Case Scenarios and child sub-questions:
+    If a Case Scenario question exists (or a narrative question that holds the case scenario context)
+    followed by questions matching the scenario range (e.g. 1 to 5),
+    bundle those questions into the parent Case Scenario's sub_questions list.
+    """
+    if not isinstance(questions, list) or len(questions) <= 1:
+        return questions
+
+    reconciled = []
+    i = 0
+    while i < len(questions):
+        q = questions[i]
+        q_text = str(q.get('question_text') or '')
+        passage = str(q.get('case_scenario_passage') or '')
+        q_type = str(q.get('question_type') or 'NORMAL').upper()
+        full_text = f"{q_text} {passage}"
+
+        is_cs = (
+            q_type == 'CASE_SCENARIO' or
+            bool(passage) or
+            'case scenario' in full_text.lower() or
+            'case study' in full_text.lower() or
+            str(q.get('q_no', '')).upper().startswith('CS') or
+            bool(re.search(r'(?i)\banswer\s+(?:the\s+following\s+)?(?:Question\s*(?:s|\s*Nos?\.?)|Q(?:s|\.|\s*Nos?\.?))?\s*\d+\s*(?:-|to)\s*\d+', full_text))
+        )
+
+        if not is_cs:
+            reconciled.append(q)
+            i += 1
+            continue
+
+        # Determine range of child questions
+        range_m = re.search(r'(?i)\banswer\s+(?:the\s+following\s+)?(?:Question\s*(?:s|\s*Nos?\.?)|Q(?:s|\.|\s*Nos?\.?))?\s*(\d+)\s*(?:-|to)\s*(\d+)', full_text)
+        start_no = int(range_m.group(1)) if range_m else 1
+        end_no = int(range_m.group(2)) if range_m else 5
+
+        # Format parent question
+        q['question_type'] = 'CASE_SCENARIO'
+        if not q.get('case_scenario_passage'):
+            q['case_scenario_passage'] = q_text
+
+        # Standardize and preserve original q_no
+        orig_q_num = str(q.get('q_no') or q.get('question_number') or '').strip()
+        cs_header_m = re.search(r'(?i)\bCase\s*(?:Scenario|Study)\s*(?:-|No\.?|#)?\s*([0-9]+|[IVXLCDM]+)\b', full_text)
+        if cs_header_m:
+            case_id = roman_to_int(cs_header_m.group(1))
+            q['q_no'] = orig_q_num if (orig_q_num and not orig_q_num.upper().startswith('CS')) else str(case_id)
+        elif not orig_q_num:
+            q['q_no'] = "1"
+        else:
+            q['q_no'] = orig_q_num
+        q['original_question_number'] = q['q_no']
+
+        if not q.get('sub_questions'):
+            q['sub_questions'] = q.get('subquestions') or []
+
+        existing_sub_ids = {str(sq.get('identifier', '')) for sq in q['sub_questions']}
+
+        # Absorb subsequent matching child questions
+        j = i + 1
+        while j < len(questions):
+            candidate = questions[j]
+            cand_q_no = str(candidate.get('q_no') or candidate.get('question_number') or '').strip()
+            try:
+                cand_int = int(re.sub(r'^[Qq]\.?\s*', '', cand_q_no))
+            except ValueError:
+                cand_int = None
+
+            if cand_int is not None and start_no <= cand_int <= end_no:
+                # This is a sub-question of this case scenario!
+                cand_stem = str(candidate.get('question_text') or '')
+                cand_opts = candidate.get('options') or []
+                if not cand_opts or len(cand_opts) < 2:
+                    stem, extracted_opts = extract_mcq_options_from_text(cand_stem)
+                    if extracted_opts:
+                        cand_stem = stem
+                        cand_opts = extracted_opts
+
+                cand_stem = re.sub(r'^\s*(?:Question\s*(?:No\.?)?|Q)?\s*\d+\s*[\.\)]?\s*', '', cand_stem).strip()
+
+                letter_code = chr(97 + len(q['sub_questions']))
+                sub_ident = f"{q['q_no']}({letter_code})"
+
+                sq_item = {
+                    "identifier": sub_ident,
+                    "original_question_number": cand_q_no or str(cand_int),
+                    "sub_question_number": sub_ident,
+                    "question_text": cand_stem,
+                    "marks": candidate.get('marks') or 2,
+                    "question_type": "MCQ",
+                    "options": cand_opts,
+                    "correct_answer": candidate.get('correct_answer') or '',
+                    "working_notes": candidate.get('working_notes') or '',
+                    "table_data": candidate.get('table_data'),
+                    "answer_table_data": candidate.get('answer_table_data')
+                }
+                if str(cand_int) not in existing_sub_ids and sub_ident not in existing_sub_ids:
+                    q['sub_questions'].append(sq_item)
+                    existing_sub_ids.add(str(cand_int))
+                    existing_sub_ids.add(sub_ident)
+                j += 1
+            else:
+                break
+
+        # Also sanitize any existing sub-questions inside the Case Scenario
+        for sq_idx, sq in enumerate(q.get('sub_questions', [])):
+            sq_opts = sq.get('options') or []
+            if not sq_opts or len(sq_opts) < 2:
+                stem, extracted_opts = extract_mcq_options_from_text(sq.get('question_text', ''))
+                if extracted_opts:
+                    sq['question_text'] = re.sub(r'^\s*(?:Question\s*(?:No\.?)?|Q)?\s*\d+\s*[\.\)]?\s*', '', stem).strip()
+                    sq['options'] = extracted_opts
+                    sq['question_type'] = 'MCQ'
+            if not sq.get('identifier'):
+                sq['identifier'] = f"{q['q_no']}({chr(97 + sq_idx)})"
+
+        q['subquestions'] = q['sub_questions']
+        q['marks'] = sum(sq.get('marks', 2) for sq in q['sub_questions']) or (2 * (end_no - start_no + 1))
+        reconciled.append(q)
+        i = j
+
+    return reconciled
+
+def sanitize_extracted_questions(parsed):
+    """
+    Standardizes and validates raw questions extracted by any AI model (Gemini or OpenAI).
+    Ensures:
+    - Integer marks
+    - Proper single-parent Case Scenario bundling with child sub-questions (1 to 5)
+    - Normalization of question_type
+    - Correct placement of [TABLE_1] after the first two paragraphs of case scenario passages
+    - Normalization of cursor tables
+    - Clean sub-questions and MCQ options (handling (i)-(iv) and (a)-(d))
+    """
+    if isinstance(parsed, dict) and "questions" in parsed:
+        parsed = parsed["questions"]
+    if not isinstance(parsed, list):
+        return []
+
+    # First reconcile any split Case Scenarios and child questions
+    parsed = reconcile_case_scenarios(parsed)
+
+    sanitized = []
+    for idx, q in enumerate(parsed):
+        if not isinstance(q, dict):
+            continue
+        q_num = str(q.get('q_no') or (idx + 1)).strip()
+        q_text_val = str(q.get('question_text') or '').strip()
+        passage_val = str(q.get('case_scenario_passage') or q.get('passage') or '').strip()
+
+        ans_val = str(q.get('correct_answer') or '').strip()
+        wn_val = str(q.get('working_notes') or '').strip()
+        m_val = q.get('marks')
+        try:
+            m_int = int(m_val) if m_val is not None else 10
+        except (ValueError, TypeError):
+            m_int = 10
+        q_type = str(q.get('question_type') or 'NORMAL').upper()
+        if passage_val or q.get('is_case_scenario') or q_num.startswith('CS'):
+            q_type = 'CASE_SCENARIO'
+        if q_type not in ['NORMAL', 'MCQ', 'THEORY', 'CASE_SCENARIO']:
+            q_type = 'NORMAL'
+
+        if q_type == 'CASE_SCENARIO' and not passage_val and len(q_text_val) > 80:
+            passage_val = q_text_val
+
+        if not q_text_val and not passage_val:
+            continue
+
+        raw_opts = q.get('options') or []
+        # If question is top-level MCQ and options aren't extracted yet, extract them
+        if q_type != 'CASE_SCENARIO' and (not raw_opts or len(raw_opts) < 2):
+            stem, extracted_opts = extract_mcq_options_from_text(q_text_val)
+            if extracted_opts:
+                q_text_val = stem
+                raw_opts = extracted_opts
+                q_type = 'MCQ'
+
+        raw_table = q.get('table_data')
+        # If case scenario has table_data, ensure it's normalized as cursor table
+        # and ensure [TABLE_1] is positioned after the first 2 paragraphs if not already placed
+        if raw_table and (q_type == 'CASE_SCENARIO' or passage_val):
+            if isinstance(raw_table, dict) and 'headers' in raw_table:
+                raw_table = [{'type': 'cursor', **raw_table}]
+            elif isinstance(raw_table, list):
+                raw_table = [{'type': 'cursor', **t} if isinstance(t, dict) and 'headers' in t else t for t in raw_table]
+
+            if '[TABLE' not in passage_val:
+                paras = [p.strip() for p in re.split(r'\n\s*\n', passage_val) if p.strip()]
+                if len(paras) >= 2:
+                    passage_val = paras[0] + "\n\n" + paras[1] + "\n\n[TABLE_1]\n\n" + "\n\n".join(paras[2:])
+                else:
+                    lines = [l.strip() for l in passage_val.split('\n') if l.strip()]
+                    if len(lines) >= 2:
+                        passage_val = lines[0] + "\n\n" + lines[1] + "\n\n[TABLE_1]\n\n" + "\n\n".join(lines[2:])
+                    elif len(lines) == 1:
+                        sentences = re.split(r'(?<=[.:])\s+', lines[0])
+                        if len(sentences) >= 2:
+                            passage_val = sentences[0] + "\n\n" + sentences[1] + "\n\n[TABLE_1]\n\n" + " ".join(sentences[2:])
+                        else:
+                            passage_val = lines[0] + "\n\n[TABLE_1]"
+                    else:
+                        passage_val = "[TABLE_1]\n\n" + passage_val
+
+        sanitized_sub_qs = []
+        for sq_idx, sq in enumerate(q.get('sub_questions') or []):
+            sq_ident = str(sq.get('identifier') or (sq_idx + 1)).strip()
+            sq_text = str(sq.get('question_text') or '').strip()
+            sq_type = str(sq.get('question_type') or ('MCQ' if q_type == 'CASE_SCENARIO' else 'NORMAL')).upper()
+            sq_opts = sq.get('options') or []
+            if sq_type == 'MCQ' and (not sq_opts or len(sq_opts) < 2):
+                stem, extracted_opts = extract_mcq_options_from_text(sq_text)
+                if extracted_opts:
+                    sq_text = stem
+                    sq_opts = extracted_opts
+            sanitized_sub_qs.append({
+                "identifier": sq_ident,
+                "question_text": sq_text,
+                "marks": sq.get('marks') or (2 if q_type == 'CASE_SCENARIO' else 1),
+                "question_type": sq_type,
+                "options": sq_opts,
+                "correct_answer": str(sq.get('correct_answer') or '').strip(),
+                "working_notes": str(sq.get('working_notes') or '').strip(),
+                "table_data": sq.get('table_data'),
+                "answer_table_data": sq.get('answer_table_data')
+            })
+
+        sanitized.append({
+            "q_no": q_num,
+            "question_text": q_text_val,
+            "case_scenario_passage": passage_val,
+            "correct_answer": ans_val,
+            "working_notes": wn_val,
+            "marks": m_int,
+            "question_type": q_type,
+            "difficulty": q.get('difficulty') or 'MEDIUM',
+            "table_data": raw_table,
+            "answer_table_data": q.get('answer_table_data'),
+            "options": raw_opts,
+            "sub_questions": sanitized_sub_qs
+        })
+    return sanitized
+
+def extract_questions_with_gemini(q_text, ans_text=None, api_key=None):
+    """
+    Uses Google Gemini AI to analyze raw exam PDF text, automatically detect
+    question numbers (Q1, 1(a), 2, etc.), question texts, types, marks, options,
+    tables, and automatically match or generate comprehensive answers & solutions.
+    """
+    key = resolve_gemini_api_key(api_key)
+    if not key:
+        return None, "No Gemini API Key found. Configure GEMINI_API_KEY in Admin Settings or Workspace."
+
+    prompt = f"""You are an elite academic exam paper extractor and expert Chartered Accountancy (CA) professor.
+
+Analyze the Question Paper text (and Answer Paper text if provided) and extract ALL questions into a structured JSON array.
+
+CORE INSTRUCTIONS:
+1. STRICT EXCLUSION - NEVER EXTRACT GENERAL EXAM INSTRUCTIONS AS QUESTIONS:
+   - DO NOT extract instructions, rubric rules, structural notices, or candidate guidelines as questions!
+   - Common non-questions to COMPLETELY IGNORE AND SKIP:
+     * "The question paper comprises two parts, Part I and Part II."
+     * "Part I comprises Case Scenario based Multiple Choice Questions (MCQs)"
+     * "Part II comprises questions which require descriptive type answers."
+     * "Question No. 1 is compulsory..."
+     * "Attempt any four questions from the remaining five questions."
+     * "Working notes should form part of the respective answers."
+     * "Candidates are permitted to use non-programmable calculators."
+     * "Answers to questions of Part I are to be given on OMR answer sheet."
+   - ONLY extract actual test problems, questions, case studies, or MCQ prompts where a student must solve or calculate an answer!
+
+2. QUESTION NUMBERS (CRITICAL):
+   - Accurately identify every genuine question number (e.g. "1", "1(a)", "1(b)", "2", "3(a)", "4", "CS1", etc.) and set "q_no".
+3. QUESTION TEXT:
+   - Extract full problem statement including all instructions, financial numbers, facts, and guidelines in "question_text".
+4. QUESTION TYPE & CASE SCENARIOS (CRITICAL):
+   - "NORMAL" (Practical / Numerical problem)
+   - "MCQ" (Multiple Choice Question)
+   - "THEORY" (Theoretical / Descriptive question)
+   - "CASE_SCENARIO" (Case study or comprehensive story with multiple child questions/MCQs)
+   * CRITICAL RULES FOR CASE SCENARIOS (E.G. "Case Scenario I", "Case Scenario II"):
+     - When an exam paper has "Case Scenario I" or "Case Scenario 1":
+       The narrative text immediately following it often starts with a numbered paragraph like:
+       "1. SBHA Ltd deals in business of manufacturing..." or "1. ABC Ltd..."
+       WARNING: DO NOT EXTRACT "1. SBHA Ltd..." AS QUESTION 1!
+       This numbered paragraph is the FIRST PARAGRAPH of the Case Scenario background story!
+       The ENTIRE narrative story (all paragraphs from the start of Case Scenario I until "Based on the information given in above Case Scenario, answer the following Question Nos. 1-5") belongs to ONE SINGLE PARENT QUESTION!
+     - Set "question_type": "CASE_SCENARIO".
+     - Set "q_no": "CS1" (or "CS2", etc.).
+     - Extract the entire narrative background context into "case_scenario_passage".
+     - PRESERVE IN-POSITION TABLES (CRITICAL):
+       If the case scenario text has a table (e.g. after the first two paragraphs, or between paragraphs), place "[TABLE_1]" directly inside "case_scenario_passage" at the EXACT position where the table appears in the original text (e.g. right after Paragraph 2). If there is a second table, place "[TABLE_2]" at its position.
+       Extract the corresponding table(s) into "table_data" with "type": "cursor":
+       [
+         {{"type": "cursor", "headers": ["Header 1", "Header 2"], "rows": [["Val 1", "Val 2"]]}}
+       ]
+     - ALL child questions (e.g. Questions 1 to 5) under "Based on the information given in above Case Scenario, answer the following Question Nos. 1-5" MUST BE NESTED INSIDE "sub_questions" OF THIS ONE PARENT QUESTION!
+       DO NOT create separate top-level questions for Questions 1-5!
+       Each child MCQ in "sub_questions" MUST have:
+       "identifier": "1", "question_text": "...", "question_type": "MCQ", "marks": 2,
+       "options": [{{"text": "...", "is_correct": true/false, "order": 0}}, ...], (extract all options from (i), (ii), (iii), (iv) or (a), (b), (c), (d))
+       "correct_answer": "Option letter and step-by-step rationale."
+     - Parent question marks = 10 (or 2 marks * number of child questions).
+     - Any subsequent independent questions (e.g. Questions 6, 7 under "Multiple Choice Questions") MUST be extracted as separate top-level questions!
+5. MARKS:
+   - Integer marks (e.g. 5, 10, 14, 16, 20). If unstated, default to 10 for practical/descriptive, 2 for MCQ.
+6. MCQ OPTIONS:
+   - If question is an MCQ, extract "options": [
+       {{"text": "...", "is_correct": true/false, "order": 0}},
+       {{"text": "...", "is_correct": true/false, "order": 1}},
+       {{"text": "...", "is_correct": true/false, "order": 2}},
+       {{"text": "...", "is_correct": true/false, "order": 3}}
+     ]
+7. SUB-QUESTIONS:
+   - If a question has subparts (a, b, c) or (i, ii), put general intro in "question_text" and parts in "sub_questions" with "identifier", "question_text", "marks", "correct_answer", and "working_notes".
+8. TABLES (CRITICAL - PRESERVE EXACT GRIDS):
+   - For all 4-column Balance Sheets / Trial Balances (e.g. Particulars | Amount (₹) | Particulars | Amount (₹)), Schedule III statements, Journal entries, Ledgers, and financial tables:
+     You MUST extract as clean JSON:
+     {{"headers": ["Particulars", "Amount (₹)", "Particulars", "Amount (₹)"], "rows": [["Term Loans (Secured)", "40,00,000", "Investments (Non-current)", "9,00,000"], ...]}}
+     DO NOT flatten 4-column tables into 2 columns! Preserve both the left side and right side as 4 separate columns!
+     Put in "table_data" for question tables, and "answer_table_data" for solution tables.
+9. ANSWERS & SOLUTIONS (MANDATORY AUTO-FILL):
+   - If Answer Paper text is provided below: MATCH each question number to its exact model answer, journal entries, and solutions from the Answer Paper!
+   - If NO Answer Paper is provided: As an expert CA professor, SOLVE the question step-by-step and write out the complete, rigorous model answer in "correct_answer" and supporting computations/ledger entries in "working_notes"!
+   - Never leave "correct_answer" empty! Provide the comprehensive solution so the answer field is automatically filled.
+
+OUTPUT FORMAT: Return STRICT JSON matching this schema:
+[
+  {{
+    "q_no": "1",
+    "question_text": "...",
+    "case_scenario_passage": "Narrative passage text with [TABLE_1] positioned between paragraphs if applicable",
+    "correct_answer": "Full step-by-step model solution and final result statement.",
+    "working_notes": "Supporting calculations, journal entries, and notes.",
+    "marks": 10,
+    "question_type": "NORMAL",
+    "difficulty": "MEDIUM",
+    "table_data": null,
+    "answer_table_data": null,
+    "options": [],
+    "sub_questions": [
+      {{
+        "identifier": "a",
+        "question_text": "...",
+        "marks": 5,
+        "correct_answer": "...",
+        "working_notes": "...",
+        "question_type": "NORMAL",
+        "table_data": null,
+        "answer_table_data": null,
+        "options": []
+      }}
+    ]
+  }}
+]
+
+QUESTION PAPER CONTENT:
+---
+{q_text[:45000]}
+---
 """
+    if ans_text and ans_text.strip():
+        prompt += f"""
+ANSWER PAPER / SUGGESTED ANSWERS CONTENT:
+---
+{ans_text[:45000]}
+---
+CRITICAL: Match each extracted question above with its corresponding suggested answer from this Answer Paper content!
+"""
+
+    models_to_try = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"]
+    last_err = None
+
+    for model in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.1,
+                "responseMimeType": "application/json"
+            }
+        }
+        try:
+            resp = http_requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=110)
+            if resp.status_code == 200:
+                res_data = resp.json()
+                raw_text = res_data['candidates'][0]['content']['parts'][0]['text']
+                clean_text = raw_text.strip()
+                if clean_text.startswith("```"):
+                    clean_text = re.sub(r'^```(?:json)?\s*', '', clean_text)
+                    clean_text = re.sub(r'\s*```$', '', clean_text)
+                parsed = json.loads(clean_text)
+                sanitized = sanitize_extracted_questions(parsed)
+                if sanitized:
+                    return sanitized, None
+            else:
+                last_err = f"Gemini ({model}) HTTP {resp.status_code}: {resp.text[:250]}"
+        except Exception as e:
+            last_err = f"Gemini ({model}) error: {str(e)}"
+
+    return None, last_err
+
+def extract_questions_with_openai(q_text, ans_text=None, api_key=None):
+    """
+    Uses OpenAI (gpt-4o-mini, gpt-4o, etc.) to analyze raw exam PDF text, automatically detect
+    question numbers (Q1, 1(a), 2, etc.), question texts, types, marks, options,
+    case scenario passages with positioned [TABLE_1], and match or generate answers.
+    """
+    key = resolve_openai_api_key(api_key)
+    if not key:
+        return None, "No OpenAI API Key found. Configure OPENAI_API_KEY in Admin Settings, Workspace, or request."
+
+    prompt = f"""You are an elite academic exam paper extractor and expert Chartered Accountancy (CA) professor.
+
+Analyze the Question Paper text (and Answer Paper text if provided) and extract ALL questions into a structured JSON array.
+
+CORE INSTRUCTIONS:
+1. STRICT EXCLUSION - NEVER EXTRACT GENERAL EXAM INSTRUCTIONS AS QUESTIONS:
+   - DO NOT extract instructions, rubric rules, structural notices, or candidate guidelines as questions!
+   - Common non-questions to COMPLETELY IGNORE AND SKIP:
+     * "The question paper comprises two parts, Part I and Part II."
+     * "Part I comprises Case Scenario based Multiple Choice Questions (MCQs)"
+     * "Part II comprises questions which require descriptive type answers."
+     * "Question No. 1 is compulsory..."
+     * "Attempt any four questions from the remaining five questions."
+     * "Working notes should form part of the respective answers."
+     * "Candidates are permitted to use non-programmable calculators."
+     * "Answers to questions of Part I are to be given on OMR answer sheet."
+   - ONLY extract actual test problems, questions, case studies, or MCQ prompts where a student must solve or calculate an answer!
+
+2. QUESTION NUMBERS (CRITICAL):
+   - Accurately identify every genuine question number (e.g. "1", "1(a)", "1(b)", "2", "3(a)", "4", "CS1", etc.) and set "q_no".
+3. QUESTION TEXT:
+   - Extract full problem statement including all instructions, financial numbers, facts, and guidelines in "question_text".
+4. QUESTION TYPE & CASE SCENARIOS (CRITICAL):
+   - "NORMAL" (Practical / Numerical problem)
+   - "MCQ" (Multiple Choice Question)
+   - "THEORY" (Theoretical / Descriptive question)
+   - "CASE_SCENARIO" (Case study or comprehensive story with multiple child questions/MCQs)
+   * CRITICAL RULES FOR CASE SCENARIOS (E.G. "Case Scenario I", "Case Scenario II"):
+     - When an exam paper has "Case Scenario I" or "Case Scenario 1":
+       The narrative text immediately following it often starts with a numbered paragraph like:
+       "1. SBHA Ltd deals in business of manufacturing..." or "1. ABC Ltd..."
+       WARNING: DO NOT EXTRACT "1. SBHA Ltd..." AS QUESTION 1!
+       This numbered paragraph is the FIRST PARAGRAPH of the Case Scenario background story!
+       The ENTIRE narrative story (all paragraphs from the start of Case Scenario I until "Based on the information given in above Case Scenario, answer the following Question Nos. 1-5") belongs to ONE SINGLE PARENT QUESTION!
+     - Set "question_type": "CASE_SCENARIO".
+     - Set "q_no": "CS1" (or "CS2", etc.).
+     - Extract the entire narrative background context into "case_scenario_passage".
+     - PRESERVE IN-POSITION TABLES (CRITICAL):
+       If the case scenario text has a table (e.g. after the first two paragraphs, or between paragraphs), place "[TABLE_1]" directly inside "case_scenario_passage" at the EXACT position where the table appears in the original text (e.g. right after Paragraph 2). If there is a second table, place "[TABLE_2]" at its position.
+       Extract the corresponding table(s) into "table_data" with "type": "cursor":
+       [
+         {{"type": "cursor", "headers": ["Header 1", "Header 2"], "rows": [["Val 1", "Val 2"]]}}
+       ]
+     - ALL child questions (e.g. Questions 1 to 5) under "Based on the information given in above Case Scenario, answer the following Question Nos. 1-5" MUST BE NESTED INSIDE "sub_questions" OF THIS ONE PARENT QUESTION!
+       DO NOT create separate top-level questions for Questions 1-5!
+       Each child MCQ in "sub_questions" MUST have:
+       "identifier": "1", "question_text": "...", "question_type": "MCQ", "marks": 2,
+       "options": [{{"text": "...", "is_correct": true/false, "order": 0}}, ...], (extract all options from (i), (ii), (iii), (iv) or (a), (b), (c), (d))
+       "correct_answer": "Option letter and step-by-step rationale."
+     - Parent question marks = 10 (or 2 marks * number of child questions).
+     - Any subsequent independent questions (e.g. Questions 6, 7 under "Multiple Choice Questions") MUST be extracted as separate top-level questions!
+5. MARKS:
+   - Integer marks (e.g. 5, 10, 14, 16, 20). If unstated, default to 10 for practical/descriptive, 2 for MCQ.
+6. MCQ OPTIONS:
+   - If question is an MCQ, extract "options": [
+       {{"text": "...", "is_correct": true/false, "order": 0}},
+       {{"text": "...", "is_correct": true/false, "order": 1}},
+       {{"text": "...", "is_correct": true/false, "order": 2}},
+       {{"text": "...", "is_correct": true/false, "order": 3}}
+     ]
+7. SUB-QUESTIONS:
+   - If a question has subparts (a, b, c) or (i, ii), put general intro in "question_text" and parts in "sub_questions" with "identifier", "question_text", "marks", "correct_answer", and "working_notes".
+8. TABLES (CRITICAL - PRESERVE EXACT GRIDS):
+   - For all 4-column Balance Sheets / Trial Balances, Schedule III statements, Journal entries, Ledgers, and financial tables:
+     Extract as clean JSON:
+     {{"headers": ["Particulars", "Amount (₹)", "Particulars", "Amount (₹)"], "rows": [["Term Loans (Secured)", "40,00,000", "Investments (Non-current)", "9,00,000"], ...]}}
+     DO NOT flatten 4-column tables into 2 columns! Preserve both the left side and right side as 4 separate columns!
+     Put in "table_data" for question tables, and "answer_table_data" for solution tables.
+9. ANSWERS & SOLUTIONS (MANDATORY AUTO-FILL):
+   - If Answer Paper text is provided below: MATCH each question number to its exact model answer, journal entries, and solutions from the Answer Paper!
+   - If NO Answer Paper is provided: As an expert CA professor, SOLVE the question step-by-step and write out the complete, rigorous model answer in "correct_answer" and supporting computations/ledger entries in "working_notes"!
+   - Never leave "correct_answer" empty! Provide the comprehensive solution so the answer field is automatically filled.
+
+OUTPUT FORMAT: Return a STRICT JSON object with key "questions":
+{{
+  "questions": [
+    {{
+      "q_no": "1",
+      "question_text": "...",
+      "case_scenario_passage": "Narrative passage text with [TABLE_1] positioned between paragraphs if applicable",
+      "correct_answer": "Full step-by-step model solution and final result statement.",
+      "working_notes": "Supporting calculations, journal entries, and notes.",
+      "marks": 10,
+      "question_type": "NORMAL",
+      "difficulty": "MEDIUM",
+      "table_data": null,
+      "answer_table_data": null,
+      "options": [],
+      "sub_questions": []
+    }}
+  ]
+}}
+
+QUESTION PAPER CONTENT:
+---
+{q_text[:50000]}
+---
+"""
+    if ans_text and ans_text.strip():
+        prompt += f"""
+ANSWER PAPER / SUGGESTED ANSWERS CONTENT:
+---
+{ans_text[:50000]}
+---
+CRITICAL: Match each extracted question above with its corresponding suggested answer from this Answer Paper content!
+"""
+
+    models_to_try = ["gpt-4o-mini", "gpt-4.1-mini", "gpt-5-mini", "gpt-4o"]
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    last_err = None
+
+    for model in models_to_try:
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "You are an elite academic exam paper extractor and expert Chartered Accountancy (CA) professor. Always output valid JSON object with key 'questions'."},
+                {"role": "user", "content": prompt}
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.1
+        }
+        try:
+            resp = http_requests.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers, timeout=120)
+            if resp.status_code == 200:
+                res_data = resp.json()
+                content = res_data['choices'][0]['message']['content'].strip()
+                parsed = json.loads(content)
+                sanitized = sanitize_extracted_questions(parsed)
+                if sanitized:
+                    return sanitized, None
+            else:
+                err_body = resp.json().get('error', {}) if 'application/json' in resp.headers.get('content-type', '') else {}
+                err_msg = err_body.get('message') or resp.text[:200]
+                last_err = f"OpenAI ({model}) HTTP {resp.status_code}: {err_msg}"
+                if resp.status_code == 429:
+                    break
+        except Exception as e:
+            last_err = f"OpenAI ({model}) error: {str(e)}"
+
+    return None, last_err
+
+def generate_answer_with_gemini(question_text, marks=10, q_type='NORMAL', subject='', table_data=None, api_key=None):
+    """
+    Generates a full step-by-step solution, working notes, and answer tables
+    for a single question on-demand using Gemini AI.
+    """
+    key = resolve_gemini_api_key(api_key)
+    if not key:
+        return None, "No Gemini API Key found. Configure GEMINI_API_KEY in Admin Settings or Workspace."
+
+    prompt = f"""You are an expert Chartered Accountancy (CA) professor and top exam evaluator.
+Provide a complete, mathematically rigorous, and professionally formatted model answer and step-by-step solution for the following exam question.
+
+Subject: {subject or 'Accountancy / Taxation / Corporate Law / Auditing'}
+Question Type: {q_type}
+Marks: {marks}
+
+QUESTION:
+{question_text}
+"""
+    if table_data:
+        prompt += f"\nQUESTION TABLE/FINANCIAL DATA:\n{json.dumps(table_data) if isinstance(table_data, (dict, list)) else table_data}\n"
+
+    prompt += """
+Respond in STRICT JSON with this schema:
+{
+  "correct_answer": "Complete step-by-step model solution, explanations, and final answer statement.",
+  "working_notes": "All supporting working notes, formulas, calculations, assumptions, or journal entries.",
+  "answer_table_data": null or {"headers": ["Col1", "Col2"], "rows": [["val1", "val2"]]},
+  "correct_mcq_option": null or "A" / "B" / "C" / "D" (if MCQ)
+}
+"""
+    models = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"]
+    last_err = None
+    for model in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"}
+        }
+        try:
+            resp = http_requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=60)
+            if resp.status_code == 200:
+                data = resp.json()
+                raw_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
+                if raw_text.startswith("```"):
+                    raw_text = re.sub(r'^```(?:json)?\s*', '', raw_text)
+                    raw_text = re.sub(r'\s*```$', '', raw_text)
+                return json.loads(raw_text), None
+            else:
+                last_err = f"HTTP {resp.status_code}: {resp.text[:200]}"
+        except Exception as e:
+            last_err = str(e)
+    return None, last_err
+
+def generate_answer_with_openai(question_text, marks=10, q_type='NORMAL', subject='', table_data=None, api_key=None):
+    """
+    Generates a full step-by-step solution, working notes, and answer tables
+    for a single question on-demand using OpenAI API.
+    """
+    key = resolve_openai_api_key(api_key)
+    if not key:
+        return None, "No OpenAI API Key found. Configure OPENAI_API_KEY in Admin Settings, Workspace, or request."
+
+    prompt = f"""You are an expert Chartered Accountancy (CA) professor and top exam evaluator.
+Provide a complete, mathematically rigorous, and professionally formatted model answer and step-by-step solution for the following exam question.
+
+Subject: {subject or 'Accountancy / Taxation / Corporate Law / Auditing'}
+Question Type: {q_type}
+Marks: {marks}
+
+QUESTION:
+{question_text}
+"""
+    if table_data:
+        prompt += f"\nQUESTION TABLE/FINANCIAL DATA:\n{json.dumps(table_data) if isinstance(table_data, (dict, list)) else table_data}\n"
+
+    prompt += """
+Respond in STRICT JSON object with this schema:
+{
+  "correct_answer": "Complete step-by-step model solution, explanations, and final answer statement.",
+  "working_notes": "All supporting working notes, formulas, calculations, assumptions, or journal entries.",
+  "answer_table_data": null or {"headers": ["Col1", "Col2"], "rows": [["val1", "val2"]]},
+  "correct_mcq_option": null or "A" / "B" / "C" / "D" (if MCQ)
+}
+"""
+    models = ["gpt-4o-mini", "gpt-4.1-mini", "gpt-5-mini", "gpt-4o"]
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    last_err = None
+
+    for model in models:
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "You are an expert Chartered Accountancy (CA) professor. Always output valid JSON object."},
+                {"role": "user", "content": prompt}
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.1
+        }
+        try:
+            resp = http_requests.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers, timeout=60)
+            if resp.status_code == 200:
+                data = resp.json()
+                raw_text = data['choices'][0]['message']['content'].strip()
+                return json.loads(raw_text), None
+            else:
+                err_body = resp.json().get('error', {}) if 'application/json' in resp.headers.get('content-type', '') else {}
+                err_msg = err_body.get('message') or resp.text[:200]
+                last_err = f"OpenAI HTTP {resp.status_code}: {err_msg}"
+                if resp.status_code == 429:
+                    break
+        except Exception as e:
+            last_err = str(e)
+
+    return None, last_err
+
 
 # ─────────────────────────────────────────────────────────────
 # Deterministic Non-AI PDF Question Extractor & Parser Engine
@@ -1017,7 +1807,9 @@ def parse_questions_from_raw_text(text):
         re.IGNORECASE
     )
     marks_pattern = re.compile(r'(?i)(?:\(|\[)\s*(?:Marks?:\s*)?(\d+)\s*(?:Marks?|M)\s*(?:\)|\])')
-    case_scenario_pattern = re.compile(r'(?i)Case\s*(?:Scenario|Study)\s*(?:-|No\.?)?\s*(\d{1,2})\b')
+    case_scenario_pattern = re.compile(r'(?i)\bCase\s*(?:Scenario|Study)\s*(?:-|No\.?|#)?\s*([0-9]+|[IVXLCDM]+)\b')
+    anchor_pattern = re.compile(r'(?i)\banswer\s+(?:the\s+following\s+)?(?:Question\s*(?:s|\s*Nos?\.?)|Q(?:s|\.|\s*Nos?\.?))?\s*(\d+)\s*(?:-|to)\s*(\d+)')
+    section_break_pattern = re.compile(r'(?i)^\s*(?:Multiple\s+Choice\s+Questions|Part\s*(?:-|:)?\s*(?:[IVXLCDM]+|[A-D])\b|Division\s*(?:-|:)?\s*[A-D]\b|Section\s*(?:-|:)?\s*[A-D]\b)')
     answer_pattern = re.compile(
         r'(?i)^\s*(?:Correct\s+)?(?:Answer|Ans|Option|Choice)(?:\s+Key|\s+Option|\s+Choice)?\s*(?::|\s*-\s*|\s+is\s+|\s*\.)\s*(.*)',
         re.IGNORECASE
@@ -1177,6 +1969,7 @@ def parse_questions_from_raw_text(text):
     current_q = None
     current_sq = None
     in_case_scenario = False
+    case_scenario_questions_started = False
     case_start = None
     case_end = None
     in_explanation = False
@@ -1186,12 +1979,14 @@ def parse_questions_from_raw_text(text):
         # Check for Case Scenario start
         case_match = case_scenario_pattern.search(stripped)
         if case_match:
-            case_num = case_match.group(1)
+            case_raw = case_match.group(1)
+            case_num = roman_to_int(case_raw)
             current_q = {
                 "q_no": f"CS{case_num}",
                 "question_text": stripped,
+                "case_scenario_passage": "",
                 "marks": 10,
-                "question_type": "MIXED",
+                "question_type": "CASE_SCENARIO",
                 "difficulty": "MEDIUM",
                 "attempt": attempt,
                 "year": year,
@@ -1200,17 +1995,40 @@ def parse_questions_from_raw_text(text):
             questions.append(current_q)
             current_sq = None
             in_case_scenario = True
+            case_scenario_questions_started = False
             case_start = None
             case_end = None
             in_explanation = False
             continue
 
-        # Range detection under Case Scenario
-        if in_case_scenario and case_start is None:
-            range_match = re.search(r'(?i)Question(?:s|\s*No\.?)?\s*(\d+)\s*(?:-|to)\s*(\d+)', stripped)
-            if range_match:
-                case_start = int(range_match.group(1))
-                case_end = int(range_match.group(2))
+        # Check section break (e.g. Multiple Choice Questions / Part II) ending case scenario
+        if in_case_scenario and section_break_pattern.search(stripped):
+            in_case_scenario = False
+            case_scenario_questions_started = False
+            current_sq = None
+            continue
+
+        # Range detection / narrative passage under Case Scenario
+        if in_case_scenario and not case_scenario_questions_started:
+            anchor_match = anchor_pattern.search(stripped)
+            if anchor_match:
+                case_start = int(anchor_match.group(1))
+                case_end = int(anchor_match.group(2))
+                case_scenario_questions_started = True
+                if current_q:
+                    if current_q.get("case_scenario_passage"):
+                        current_q["case_scenario_passage"] += "\n\n" + stripped
+                    else:
+                        current_q["case_scenario_passage"] = stripped
+                continue
+            else:
+                # Still narrative passage! Even if paragraph starts with e.g. "1. SBHA Ltd..."
+                if current_q:
+                    if current_q.get("case_scenario_passage"):
+                        current_q["case_scenario_passage"] += "\n\n" + stripped
+                    else:
+                        current_q["case_scenario_passage"] = stripped
+                continue
 
         # Check for inline answers/steps inside questions
         ans_match = answer_pattern.match(stripped)
@@ -1314,26 +2132,22 @@ def parse_questions_from_raw_text(text):
                 in_explanation = False
                 is_scenario_sub = False
 
-                if in_case_scenario:
-                    if case_start is not None and case_start <= q_num_int <= case_end:
-                        is_scenario_sub = True
-                    elif case_start is None:
-                        # Fallback sequence detection
-                        if q_num_int == 1:
+                if in_case_scenario and case_scenario_questions_started:
+                    if case_start is not None and case_end is not None:
+                        if case_start <= q_num_int <= case_end:
                             is_scenario_sub = True
-                        elif current_q and current_q.get("sub_questions"):
-                            try:
-                                last_id = int(current_q["sub_questions"][-1]["identifier"])
-                                if q_num_int == last_id + 1:
-                                    is_scenario_sub = True
-                            except ValueError:
-                                pass
+                        else:
+                            in_case_scenario = False
+                    elif q_num_int <= 5:
+                        is_scenario_sub = True
 
                 if is_scenario_sub:
                     current_sq = {
                         "identifier": q_num,
                         "question_text": stripped,
                         "marks": 2,
+                        "question_type": "MCQ",
+                        "options": [],
                         "table_data": None
                     }
                     marks_m = marks_pattern.search(stripped)
@@ -1344,6 +2158,7 @@ def parse_questions_from_raw_text(text):
                     continue
                 else:
                     in_case_scenario = False
+                    case_scenario_questions_started = False
                     case_start = None
                     case_end = None
 
@@ -1457,10 +2272,16 @@ def parse_questions_from_raw_text(text):
                 if marks_m:
                     current_q["marks"] = int(marks_m.group(1))
                     stripped = marks_pattern.sub('', stripped).strip()
-                if is_section_header:
-                    current_q["question_text"] += "\n\n" + stripped
+                if in_case_scenario and not case_scenario_questions_started:
+                    if current_q.get("case_scenario_passage"):
+                        current_q["case_scenario_passage"] += "\n\n" + stripped
+                    else:
+                        current_q["case_scenario_passage"] = stripped
                 else:
-                    current_q["question_text"] += "\n" + stripped
+                    if is_section_header:
+                        current_q["question_text"] += "\n\n" + stripped
+                    else:
+                        current_q["question_text"] += "\n" + stripped
 
     # Helper to split solution text
     def split_answer_and_working_notes(correct_answer):
@@ -1508,7 +2329,12 @@ def parse_questions_from_raw_text(text):
         q["working_notes"] = q_wn
 
         if q.get("sub_questions"):
-            q["question_type"] = "MIXED"
+            if q["q_no"].startswith("CS") or q.get("question_type") == "CASE_SCENARIO":
+                q["question_type"] = "CASE_SCENARIO"
+                q["marks"] = sum(sq.get("marks", 2) for sq in q["sub_questions"]) or 10
+            else:
+                q["question_type"] = "MIXED"
+
             for sq in q["sub_questions"]:
                 cleaned_sq, sq_table_json = extract_table_from_text(sq.get("question_text", ""))
                 if sq_table_json:
@@ -1525,18 +2351,26 @@ def parse_questions_from_raw_text(text):
                 sq["answer"] = sq_clean_ans
                 sq["working_notes"] = sq_wn
 
-                sq_text_lower = sq["question_text"].lower()
-                if "choose the correct" in sq_text_lower or ("(a)" in sq_text_lower and "(b)" in sq_text_lower) or ("(a)" in sq_text_lower and "option" in sq_text_lower):
+                # Extract MCQ options for sub-questions
+                stem, opts = extract_mcq_options_from_text(sq.get("question_text", ""))
+                if opts:
+                    clean_stem = re.sub(r'^\s*(?:Question\s*(?:No\.?)?|Q)?\s*\d+\s*[\.\)]?\s*', '', stem).strip()
+                    sq["question_text"] = clean_stem or stem
+                    sq["options"] = opts
                     sq["question_type"] = "MCQ"
-                elif any(term in sq_text_lower for term in ["calculate", "compute", "prepare", "journalize", "ledger"]):
-                    sq["question_type"] = "NORMAL"
                 else:
-                    sq["question_type"] = "THEORY"
+                    sq_text_lower = sq["question_text"].lower()
+                    if "choose the correct" in sq_text_lower or ("(a)" in sq_text_lower and "(b)" in sq_text_lower) or ("(a)" in sq_text_lower and "option" in sq_text_lower):
+                        sq["question_type"] = "MCQ"
+                    elif any(term in sq_text_lower for term in ["calculate", "compute", "prepare", "journalize", "ledger"]):
+                        sq["question_type"] = "NORMAL"
+                    else:
+                        sq["question_type"] = "THEORY"
 
             # Merge back normal questions with MCQ option sub-questions
-            if not q["q_no"].startswith("CS") and len(q["sub_questions"]) == 4:
+            if not q["q_no"].startswith("CS") and q.get("question_type") != "CASE_SCENARIO" and len(q["sub_questions"]) == 4:
                 idents = [s["identifier"].lower() for s in q["sub_questions"]]
-                if idents == ["a", "b", "c", "d"]:
+                if idents in (["a", "b", "c", "d"], ["i", "ii", "iii", "iv"], ["1", "2", "3", "4"]):
                     is_mcq = True
                     question_verbs = ["explain", "discuss", "calculate", "compute", "prepare", "define", "distinguish", "state", "write"]
                     for s in q["sub_questions"]:
@@ -1545,22 +2379,38 @@ def parse_questions_from_raw_text(text):
                             is_mcq = False
                             break
                     if is_mcq:
-                        extra_text = ""
-                        for s in q["sub_questions"]:
-                            label = s["identifier"].upper()
-                            extra_text += f"\n({label}) {s['question_text']}"
-                        q["question_text"] += extra_text
+                        q["options"] = [
+                            {
+                                "text": s["question_text"],
+                                "is_correct": False,
+                                "order": idx
+                            }
+                            for idx, s in enumerate(q["sub_questions"])
+                        ]
                         q["question_type"] = "MCQ"
+                        q["marks"] = 2
                         q["sub_questions"] = []
             continue
 
-        text_lower = q["question_text"].lower()
-        if "choose the correct" in text_lower or ("(a)" in text_lower and "(b)" in text_lower) or ("(a)" in text_lower and "option" in text_lower):
+        # Top-level question processing
+        stem, opts = extract_mcq_options_from_text(q.get("question_text", ""))
+        if opts:
+            clean_stem = re.sub(r'^\s*(?:Question\s*(?:No\.?)?|Q)?\s*\d+\s*[\.\)]?\s*', '', stem).strip()
+            q["question_text"] = clean_stem or stem
+            q["options"] = opts
             q["question_type"] = "MCQ"
-        elif any(term in text_lower for term in ["calculate", "compute", "prepare", "journalize", "ledger"]):
-            q["question_type"] = "NORMAL"
+            q["marks"] = q.get("marks") or 2
         else:
-            q["question_type"] = "THEORY"
+            text_lower = q["question_text"].lower()
+            if "choose the correct" in text_lower or ("(a)" in text_lower and "(b)" in text_lower) or ("(a)" in text_lower and "option" in text_lower):
+                q["question_type"] = "MCQ"
+            elif any(term in text_lower for term in ["calculate", "compute", "prepare", "journalize", "ledger"]):
+                q["question_type"] = "NORMAL"
+            else:
+                q["question_type"] = "THEORY"
+
+    # Reconcile Case Scenarios and bundle child questions
+    questions = reconcile_case_scenarios(questions)
 
     return questions, attempt, year
 
@@ -1646,13 +2496,79 @@ class PDFQuestionExtractView(APIView):
 
         # Process main/question PDF
         q_text, pages_images_b64, is_scanned, total_pages = extract_text_and_tables_from_pdf(pdf_file)
-        questions, extracted_attempt, extracted_year = parse_questions_from_raw_text(q_text) if q_text else ([], 'MAY', '2025')
 
         # Process separate answer PDF if provided
+        ans_text = ""
         if answer_pdf_file:
             ans_text, _, _, _ = extract_text_and_tables_from_pdf(answer_pdf_file)
+
+        provider_param = str(request.data.get('provider') or request.data.get('engine') or '').lower()
+        use_gemini_param = str(request.data.get('use_gemini', 'true')).lower() in ('true', '1', 'yes')
+        gemini_api_key = request.data.get('gemini_api_key')
+        openai_api_key = request.data.get('openai_api_key')
+
+        questions = []
+        engine_used = 'regex'
+        ai_powered = False
+        advisory = None
+        extracted_attempt = 'MAY'
+        extracted_year = '2025'
+
+        if q_text and (provider_param in ('openai', 'gemini', 'auto') or use_gemini_param):
+            if provider_param == 'openai':
+                providers_to_try = ['openai', 'gemini']
+            elif provider_param == 'gemini':
+                providers_to_try = ['gemini', 'openai']
+            else:
+                has_oai = bool(resolve_openai_api_key(openai_api_key))
+                providers_to_try = ['openai', 'gemini'] if has_oai else ['gemini', 'openai']
+
+            attempted_errors = []
+            for p in providers_to_try:
+                if p == 'openai':
+                    oai_qs, oai_err = extract_questions_with_openai(
+                        q_text=q_text,
+                        ans_text=ans_text if answer_pdf_file else None,
+                        api_key=openai_api_key
+                    )
+                    if oai_qs and len(oai_qs) > 0:
+                        questions = oai_qs
+                        engine_used = 'openai'
+                        ai_powered = True
+                        advisory = "Successfully parsed question numbers, options, and auto-filled answers with OpenAI."
+                        break
+                    else:
+                        attempted_errors.append(f"OpenAI: {oai_err or 'No questions extracted'}")
+                elif p == 'gemini':
+                    gemini_qs, gemini_err = extract_questions_with_gemini(
+                        q_text=q_text,
+                        ans_text=ans_text if answer_pdf_file else None,
+                        api_key=gemini_api_key
+                    )
+                    if gemini_qs and len(gemini_qs) > 0:
+                        questions = gemini_qs
+                        engine_used = 'gemini'
+                        ai_powered = True
+                        advisory = "Successfully parsed question numbers, options, and automatically filled answers with Gemini AI."
+                        if provider_param == 'openai':
+                            advisory = "OpenAI had insufficient credits or rate limit; automatically fell back to Gemini AI!"
+                        break
+                    else:
+                        attempted_errors.append(f"Gemini: {gemini_err or 'No questions extracted'}")
+
+            if not questions:
+                # Graceful fallback to regex parser
+                questions, extracted_attempt, extracted_year = parse_questions_from_raw_text(q_text)
+                engine_used = 'regex_fallback'
+                ai_powered = False
+                advisory = f"AI providers unavailable ({'; '.join(attempted_errors)}), used local parser fallback."
+        elif q_text:
+            questions, extracted_attempt, extracted_year = parse_questions_from_raw_text(q_text)
+            engine_used = 'regex'
+
+        # If regex or fallback was used and a separate answer PDF was provided, map answers
+        if engine_used in ('regex', 'regex_fallback') and answer_pdf_file and ans_text:
             ans_questions, _, _ = parse_questions_from_raw_text(ans_text)
-            # Map extracted answers onto questions
             ans_map = {}
             for aq in ans_questions:
                 if aq.get('q_no'):
@@ -1669,6 +2585,34 @@ class PDFQuestionExtractView(APIView):
                     sq_key = f"{q_num}_{sq.get('identifier', '').lower()}"
                     if sq_key in ans_map and not sq.get('correct_answer'):
                         sq['correct_answer'] = ans_map[sq_key]
+
+        # Clean out any non-question exam instruction headers accidentally captured
+        instruction_triggers = [
+            "question paper comprises",
+            "part i comprises",
+            "part ii comprises",
+            "part iii comprises",
+            "case scenario based multiple choice",
+            "questions which require descriptive",
+            "all questions are compulsory",
+            "working notes should form part",
+            "candidates are permitted",
+            "candidates are allowed",
+            "answers to questions of part",
+            "answers are to be given on omr",
+            "answers are to be written in",
+            "do not write anything on",
+            "instructions to candidates",
+            "reading time"
+        ]
+        sanitized_questions = []
+        for q in questions:
+            q_text_low = (q.get('question_text') or '').lower().strip()
+            is_instruction = any(trig in q_text_low for trig in instruction_triggers)
+            if is_instruction and len(q_text_low) < 300:
+                continue
+            sanitized_questions.append(q)
+        questions = sanitized_questions
 
         # Metadata params
         auto_save = str(request.data.get('auto_save', '')).lower() in ('true', '1', 'yes')
@@ -1701,6 +2645,9 @@ class PDFQuestionExtractView(APIView):
             'raw_question_text': q_text or '',
             'raw_answer_text': ans_text if answer_pdf_file else '',
             'total_extracted': len(questions),
+            'engine': engine_used,
+            'ai_powered': ai_powered,
+            'advisory': advisory,
             'is_scanned': is_scanned,
             'pages': total_pages,
             'auto_saved': auto_save,
@@ -1709,6 +2656,7 @@ class PDFQuestionExtractView(APIView):
             'file_url': file_url,
             'page_images': pages_images_b64 if is_scanned else []
         }, status=200)
+
 
 
 def save_extracted_questions_to_db(questions, source=None, attempt=None, year=None, subject_id=None, icai_topic_id=None, status='ACTIVE', user=None, pdf_url=None):
@@ -1895,6 +2843,214 @@ class ParseTextOnlyView(APIView):
             'attempt': attempt,
             'year': year
         }, status=200)
+
+
+class AIGenerateAnswerView(APIView):
+    """
+    On-demand AI solution generator for an individual question.
+    Produces complete step-by-step model answer, working notes, journal entries, and tables
+    using OpenAI or Google Gemini with automatic failover.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsStaffOrReadOnly]
+
+    def post(self, request):
+        question_text = request.data.get('question_text', '').strip()
+        if not question_text:
+            return Response({'error': 'question_text is required.'}, status=400)
+
+        marks = request.data.get('marks', 10)
+        q_type = request.data.get('question_type', 'NORMAL')
+        subject = request.data.get('subject', '')
+        table_data = request.data.get('table_data')
+        provider = str(request.data.get('provider') or 'auto').lower()
+        gemini_api_key = request.data.get('gemini_api_key')
+        openai_api_key = request.data.get('openai_api_key')
+
+        providers_to_try = []
+        if provider == 'openai':
+            providers_to_try = ['openai', 'gemini']
+        elif provider == 'gemini':
+            providers_to_try = ['gemini', 'openai']
+        else:
+            has_oai = bool(resolve_openai_api_key(openai_api_key))
+            providers_to_try = ['openai', 'gemini'] if has_oai else ['gemini', 'openai']
+
+        result = None
+        engine_used = None
+        failover_note = None
+        errors = []
+
+        for p in providers_to_try:
+            if p == 'openai':
+                res, err = generate_answer_with_openai(
+                    question_text=question_text,
+                    marks=marks,
+                    q_type=q_type,
+                    subject=subject,
+                    table_data=table_data,
+                    api_key=openai_api_key
+                )
+                if res:
+                    result = res
+                    engine_used = 'openai'
+                    break
+                else:
+                    errors.append(f"OpenAI: {err}")
+            elif p == 'gemini':
+                res, err = generate_answer_with_gemini(
+                    question_text=question_text,
+                    marks=marks,
+                    q_type=q_type,
+                    subject=subject,
+                    table_data=table_data,
+                    api_key=gemini_api_key
+                )
+                if res:
+                    result = res
+                    engine_used = 'gemini'
+                    if provider == 'openai':
+                        failover_note = "OpenAI had insufficient credits or rate limit; generated solution with Gemini AI."
+                    break
+                else:
+                    errors.append(f"Gemini: {err}")
+
+        if result:
+            return Response({
+                'success': True,
+                'correct_answer': result.get('correct_answer', ''),
+                'working_notes': result.get('working_notes', ''),
+                'answer_table_data': result.get('answer_table_data'),
+                'correct_mcq_option': result.get('correct_mcq_option'),
+                'engine': engine_used,
+                'failover_note': failover_note
+            }, status=200)
+        else:
+            return Response({
+                'success': False,
+                'error': f"Failed to generate solution. ({'; '.join(errors)})"
+            }, status=500)
+
+
+class TestGeminiKeyView(APIView):
+    """
+    Endpoint to test and configure the Gemini API Key.
+    GET: checks if an active key is configured.
+    POST: verifies the provided key against Google Gemini API and optionally saves to PlatformSetting.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsStaffOrReadOnly]
+
+    def get(self, request):
+        key = resolve_gemini_api_key()
+        if key:
+            masked = key[:6] + "..." + key[-4:] if len(key) > 10 else "***"
+            return Response({
+                'has_key': True,
+                'masked_key': masked
+            }, status=200)
+        return Response({'has_key': False}, status=200)
+
+    def post(self, request):
+        test_key = request.data.get('gemini_api_key', '').strip() or resolve_gemini_api_key()
+        if not test_key:
+            return Response({'valid': False, 'error': 'No Gemini API key provided.'}, status=400)
+
+        save_flag = str(request.data.get('save', '')).lower() in ('true', '1', 'yes')
+        valid, model, details = test_gemini_api_key(test_key)
+
+        if valid:
+            if save_flag:
+                try:
+                    from subscriptions.models import PlatformSetting
+                    PlatformSetting.objects.update_or_create(
+                        key="GEMINI_API_KEY",
+                        defaults={"value": test_key, "description": "Google Gemini API Key for question & answer auto-fill"}
+                    )
+                except Exception as e:
+                    print("Could not persist key to PlatformSetting:", e)
+            return Response({
+                'valid': True,
+                'model': model,
+                'message': f'Gemini AI is connected successfully using model {model}!'
+            }, status=200)
+        else:
+            return Response({
+                'valid': False,
+                'error': f'Failed to authenticate with Gemini API: {str(details)[:300]}'
+            }, status=400)
+
+
+class TestOpenAIKeyView(APIView):
+    """
+    Endpoint to test and configure the OpenAI API Key.
+    GET: checks if an active key is configured.
+    POST: verifies the provided key against OpenAI API and optionally saves to PlatformSetting.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsStaffOrReadOnly]
+
+    def get(self, request):
+        key = resolve_openai_api_key()
+        if key:
+            masked = key[:7] + "..." + key[-4:] if len(key) > 12 else "***"
+            return Response({
+                'has_key': True,
+                'masked_key': masked
+            }, status=200)
+        return Response({'has_key': False}, status=200)
+
+    def post(self, request):
+        test_key = request.data.get('openai_api_key', '').strip() or resolve_openai_api_key()
+        if not test_key:
+            return Response({'valid': False, 'error': 'No OpenAI API key provided.'}, status=400)
+
+        save_flag = str(request.data.get('save', '')).lower() in ('true', '1', 'yes')
+        valid, model, details = test_openai_api_key(test_key)
+
+        if valid:
+            if save_flag:
+                try:
+                    from subscriptions.models import PlatformSetting
+                    PlatformSetting.objects.update_or_create(
+                        key="OPENAI_API_KEY",
+                        defaults={"value": test_key, "description": "OpenAI API Key for question & answer auto-fill"}
+                    )
+                except Exception as e:
+                    print("Could not persist OpenAI key to PlatformSetting:", e)
+            return Response({
+                'valid': True,
+                'model': model,
+                'message': details
+            }, status=200)
+        else:
+            return Response({
+                'valid': False,
+                'error': f'Failed to authenticate with OpenAI API: {str(details)[:300]}'
+            }, status=400)
+
+
+class AIStatusView(APIView):
+    """
+    Returns configured status of both Gemini and OpenAI AI providers.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsStaffOrReadOnly]
+
+    def get(self, request):
+        gemini_key = resolve_gemini_api_key()
+        openai_key = resolve_openai_api_key()
+
+        return Response({
+            'gemini': {
+                'has_key': bool(gemini_key),
+                'masked_key': (gemini_key[:6] + "..." + gemini_key[-4:]) if (gemini_key and len(gemini_key) > 10) else None,
+                'provider': 'gemini'
+            },
+            'openai': {
+                'has_key': bool(openai_key),
+                'masked_key': (openai_key[:7] + "..." + openai_key[-4:]) if (openai_key and len(openai_key) > 12) else None,
+                'provider': 'openai'
+            },
+            'active_provider': 'openai' if openai_key else ('gemini' if gemini_key else 'none')
+        }, status=200)
+
 
 
 
@@ -2545,7 +3701,7 @@ Daily study goal: {study_hours} hours.
 Please generate a highly customized 7-day study plan matching the schema.
 """
             
-            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
             headers = {
                 "x-goog-api-key": gemini_api_key
             }
@@ -2729,4 +3885,584 @@ Please generate a highly customized 7-day study plan matching the schema.
             'chapter_weakness': chapter_list[:20],
             'top_students': list(top_students),
         })
+
+
+import logging
+from django.db import transaction
+
+logger = logging.getLogger(__name__)
+
+from materials.models import QuestionImportJob, ImportBatch, SourceDocument, ImportAuditLog
+from materials.serializers import (
+    QuestionImportJobListSerializer, QuestionImportJobDetailSerializer,
+    ImportBatchListSerializer, ImportBatchDetailSerializer,
+    SourceDocumentSerializer, ImportAuditLogSerializer
+)
+from materials.ai_worker import start_import_job_async, start_import_batch_async
+from materials.ai_importer import (
+    publish_approved_questions_to_database, publish_approved_batch_to_database,
+    infer_document_type, auto_pair_batch_documents, compute_file_hash,
+    extract_document_metadata_fast
+)
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+
+class QuestionImportJobViewSet(viewsets.ModelViewSet):
+    queryset = QuestionImportJob.objects.all()
+    permission_classes = [permissions.IsAuthenticated, IsStaffOrReadOnly]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return QuestionImportJob.objects.none()
+        if user.is_superuser:
+            return QuestionImportJob.objects.all()
+        from django.db.models import Q
+        if getattr(user, 'institution', None):
+            return QuestionImportJob.objects.filter(
+                Q(institution=user.institution) | Q(created_by=user)
+            )
+        return QuestionImportJob.objects.filter(created_by=user)
+
+    def get_serializer_class(self):
+        if self.action in ['list']:
+            return QuestionImportJobListSerializer
+        return QuestionImportJobDetailSerializer
+
+    def create(self, request, *args, **kwargs):
+        qp_file = request.FILES.get('question_pdf')
+        ans_file = request.FILES.get('answer_pdf')
+
+        if not qp_file:
+            return Response({'error': 'Question Paper PDF is required.'}, status=400)
+
+        # Optional metadata overrides
+        ca_level = request.data.get('ca_level', 'CA Intermediate')
+        level_id = request.data.get('level_id')
+        paper_id = request.data.get('paper_id')
+        chapter_id = request.data.get('chapter_id')
+        topic_id = request.data.get('topic_id')
+        exam_session = request.data.get('exam_session', 'July 2026')
+        exam_year_raw = request.data.get('exam_year', '2026')
+        source = request.data.get('source', 'Mock Test Paper – Series I')
+        auto_process = str(request.data.get('auto_process', 'true')).lower() in ('true', '1', 'yes')
+
+        try:
+            exam_year = int(exam_year_raw) if exam_year_raw else 2026
+        except (ValueError, TypeError):
+            exam_year = 2026
+
+        user = request.user if request.user.is_authenticated else None
+        user_inst = getattr(user, 'institution', None) if user else None
+        is_plat_wide = request.data.get('is_platform_wide')
+        if is_plat_wide is not None:
+            is_platform_wide = str(is_plat_wide).lower() in ('true', '1', 'yes')
+        else:
+            is_platform_wide = (user_inst is None)
+
+        target_question_type = str(request.data.get('target_question_type', 'ALL')).upper()
+        if target_question_type not in ('ALL', 'MCQ', 'DESCRIPTIVE', 'CASE_SCENARIO'):
+            target_question_type = 'ALL'
+
+        job = QuestionImportJob.objects.create(
+            created_by=user,
+            institution=user_inst,
+            is_platform_wide=is_platform_wide,
+            question_pdf=qp_file,
+            answer_pdf=ans_file,
+            question_pdf_filename=qp_file.name,
+            answer_pdf_filename=ans_file.name if ans_file else '',
+            status='uploaded',
+            stage_label='Uploaded - Ready to process',
+            progress_percent=0,
+            ca_level=ca_level,
+            level_id=level_id if level_id else None,
+            paper_id=paper_id if paper_id else None,
+            chapter_id=chapter_id if chapter_id else None,
+            topic_id=topic_id if topic_id else None,
+            exam_session=exam_session,
+            exam_year=exam_year,
+            source=source,
+            extracted_metadata={'target_question_type': target_question_type}
+        )
+
+        if auto_process:
+            start_import_job_async(job.id)
+
+        serializer = QuestionImportJobDetailSerializer(job, context={'request': request})
+        return Response(serializer.data, status=201)
+
+    @action(detail=True, methods=['get'])
+    def status(self, request, pk=None):
+        job = self.get_object()
+        return Response({
+            'id': str(job.id),
+            'status': job.status,
+            'stage_label': job.stage_label,
+            'progress_percent': job.progress_percent,
+            'error_message': job.error_message,
+            'model_used': job.model_used,
+            'total_tokens': job.total_input_tokens + job.total_output_tokens,
+            'processing_time_seconds': job.processing_time_seconds,
+            'question_count': job.extracted_payload.get('validation', {}).get('question_count', 0) if job.extracted_payload else 0
+        })
+
+    @action(detail=True, methods=['post'])
+    def start(self, request, pk=None):
+        job = self.get_object()
+        if job.status in ['extracting', 'parsing_questions', 'parsing_answers', 'matching', 'validating']:
+            return Response({'message': 'Job is already running.', 'status': job.status})
+        
+        job.status = 'extracting'
+        job.stage_label = 'Starting AI extraction pipeline...'
+        job.progress_percent = 5
+        job.error_message = None
+        job.save()
+
+        start_import_job_async(job.id)
+        return Response({'message': 'Extraction pipeline started.', 'status': job.status})
+
+    @action(detail=True, methods=['post'], url_path='reprocess')
+    def reprocess(self, request, pk=None):
+        job = self.get_object()
+        job.status = 'extracting'
+        job.stage_label = 'Reprocessing document with AI pipeline...'
+        job.progress_percent = 5
+        job.error_message = None
+        job.save()
+
+        start_import_job_async(job.id)
+        return Response({'message': 'Job reprocessing started.', 'status': job.status})
+
+    @action(detail=True, methods=['post'], url_path='link-answer')
+    def link_answer(self, request, pk=None):
+        job = self.get_object()
+        ans_file = request.FILES.get('answer_pdf') or request.FILES.get('file')
+        if not ans_file:
+            return Response({'error': 'Answer PDF file is required.'}, status=400)
+
+        job.answer_pdf = ans_file
+        job.answer_pdf_filename = ans_file.name
+        job.status = 'extracting'
+        job.stage_label = f'Answer PDF "{ans_file.name}" linked. Resuming AI processing...'
+        job.progress_percent = 10
+        job.error_message = None
+        job.save()
+
+        start_import_job_async(job.id)
+        return Response({
+            'message': f'Answer PDF "{ans_file.name}" linked successfully. Pipeline resumed.',
+            'status': job.status
+        })
+
+    @action(detail=True, methods=['post'], url_path='rematch')
+    def rematch(self, request, pk=None):
+        job = self.get_object()
+        payload = job.extracted_payload or {}
+        sections = payload.get('sections', [])
+        all_questions = []
+        for sec in sections:
+            all_questions.extend(sec.get('questions', []))
+
+        from materials.ai_importer import (
+            match_questions_and_answers, validate_extracted_dataset,
+            classify_and_enrich_questions
+        )
+        raw_answers = payload.get('raw_answers', [])
+        if all_questions and raw_answers:
+            matched_qs, ans_stats = match_questions_and_answers(all_questions, raw_answers)
+            enriched_qs = classify_and_enrich_questions(matched_qs, job)
+            validation = validate_extracted_dataset(enriched_qs)
+            sec_dict = {}
+            for q in enriched_qs:
+                s_name = q.get('section', 'General')
+                sec_dict.setdefault(s_name, []).append(q)
+            new_sections = [{"section_name": k, "questions": v} for k, v in sec_dict.items()]
+            payload['sections'] = new_sections
+            payload['answer_statistics'] = ans_stats
+            payload['validation'] = validation
+            job.extracted_payload = payload
+            job.save()
+            return Response({'message': 'Questions and answers re-matched successfully.', 'validation': validation})
+        else:
+            job.status = 'extracting'
+            job.stage_label = 'Re-running extraction and matching pipeline...'
+            job.progress_percent = 10
+            job.save()
+            start_import_job_async(job.id)
+            return Response({'message': 'Pipeline triggered for re-extraction and matching.', 'status': job.status})
+
+    @action(detail=True, methods=['put', 'patch'])
+    def payload(self, request, pk=None):
+        job = self.get_object()
+        new_payload = request.data.get('payload') or request.data
+        if not isinstance(new_payload, dict):
+            return Response({'error': 'Invalid payload format, expected JSON object.'}, status=400)
+        
+        job.extracted_payload = new_payload
+        job.save()
+        return Response({'message': 'Draft payload saved successfully.', 'status': job.status})
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        job = self.get_object()
+        payload = job.extracted_payload or {}
+        sections = payload.get('sections', [])
+        question_id = request.data.get('question_id')
+        approve_all = str(request.data.get('approve_all', 'false')).lower() in ('true', '1', 'yes')
+
+        modified = 0
+        for sec in sections:
+            for q in sec.get('questions', []):
+                if approve_all or (question_id and q.get('question_id') == question_id):
+                    q['is_approved'] = True
+                    modified += 1
+
+        job.extracted_payload = payload
+        job.save()
+        return Response({'message': f'Approved {modified} questions.', 'status': job.status})
+
+    @action(detail=True, methods=['post'])
+    def publish(self, request, pk=None):
+        job = self.get_object()
+        approved_only = str(request.data.get('approved_only', 'false')).lower() in ('true', '1', 'yes')
+        count, err = publish_approved_questions_to_database(job, approved_only=approved_only)
+        if err and count == 0:
+            return Response({'error': err}, status=400)
+        return Response({
+            'message': f'Successfully published {count} questions to the live question bank.',
+            'published_count': count,
+            'warnings': err,
+            'status': job.status
+        })
+
+    @action(detail=True, methods=['get'], url_path='audit-logs')
+    def audit_logs(self, request, pk=None):
+        job = self.get_object()
+        logs = job.audit_logs.all()
+        serializer = ImportAuditLogSerializer(logs, many=True)
+        return Response(serializer.data)
+
+
+class ImportBatchViewSet(viewsets.ModelViewSet):
+    queryset = ImportBatch.objects.all()
+    permission_classes = [permissions.IsAuthenticated, IsStaffOrReadOnly]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return ImportBatch.objects.none()
+        if user.is_superuser:
+            return ImportBatch.objects.all()
+        from django.db.models import Q
+        if getattr(user, 'institution', None):
+            return ImportBatch.objects.filter(
+                Q(institution=user.institution) | Q(created_by=user)
+            )
+        return ImportBatch.objects.filter(created_by=user)
+
+    def get_serializer_class(self):
+        if self.action in ['list']:
+            return ImportBatchListSerializer
+        return ImportBatchDetailSerializer
+
+    def create(self, request, *args, **kwargs):
+        uploaded_files = request.FILES.getlist('files') or request.FILES.getlist('files[]')
+        if not uploaded_files:
+            qp = request.FILES.get('question_pdf')
+            ans = request.FILES.get('answer_pdf')
+            if qp:
+                uploaded_files.append(qp)
+            if ans:
+                uploaded_files.append(ans)
+
+        if not uploaded_files:
+            return Response({'error': 'At least one PDF file is required to create an import batch.'}, status=400)
+
+        name = request.data.get('name') or f"AI Batch {request.data.get('source', 'CA Paper')} - {timezone.now().strftime('%d %b %Y, %H:%M')}"
+        ca_level = request.data.get('ca_level', 'CA Intermediate')
+        level_id = request.data.get('level_id')
+        paper_id = request.data.get('paper_id')
+        chapter_id = request.data.get('chapter_id')
+        topic_id = request.data.get('topic_id')
+        exam_session = request.data.get('exam_session', 'August 2026')
+        exam_year_raw = request.data.get('exam_year', '2026')
+        source = request.data.get('source', 'Mock Test Paper – Series II')
+        auto_process = str(request.data.get('auto_process', 'true')).lower() in ('true', '1', 'yes')
+
+        try:
+            exam_year = int(exam_year_raw) if exam_year_raw else 2026
+        except (ValueError, TypeError):
+            exam_year = 2026
+
+        user = request.user if request.user.is_authenticated else None
+        user_inst = getattr(user, 'institution', None) if user else None
+        is_plat_wide = request.data.get('is_platform_wide')
+        if is_plat_wide is not None:
+            is_platform_wide = str(is_plat_wide).lower() in ('true', '1', 'yes')
+        else:
+            is_platform_wide = (user_inst is None)
+
+        file_types_raw = request.data.get('file_types')
+        file_types_map = {}
+        if file_types_raw:
+            try:
+                if isinstance(file_types_raw, str):
+                    parsed_types = json.loads(file_types_raw)
+                else:
+                    parsed_types = file_types_raw
+                if isinstance(parsed_types, dict):
+                    file_types_map = parsed_types
+                elif isinstance(parsed_types, list):
+                    for idx, t in enumerate(parsed_types):
+                        if idx < len(uploaded_files):
+                            file_types_map[uploaded_files[idx].name] = t
+            except Exception:
+                pass
+
+        target_question_type = str(request.data.get('target_question_type', 'ALL')).upper()
+        if target_question_type not in ('ALL', 'MCQ', 'DESCRIPTIVE', 'CASE_SCENARIO'):
+            target_question_type = 'ALL'
+
+        with transaction.atomic():
+            batch = ImportBatch.objects.create(
+                created_by=user,
+                institution=user_inst,
+                is_platform_wide=is_platform_wide,
+                name=name,
+                ca_level=ca_level,
+                level_id=level_id if level_id else None,
+                paper_id=paper_id if paper_id else None,
+                chapter_id=chapter_id if chapter_id else None,
+                topic_id=topic_id if topic_id else None,
+                exam_session=exam_session,
+                exam_year=exam_year,
+                source=source,
+                status='uploaded',
+                stage_label=f"Uploaded {len(uploaded_files)} document(s) - Initializing",
+                progress_percent=0,
+                total_documents=len(uploaded_files),
+                batch_payload={'target_question_type': target_question_type}
+            )
+
+            saved_docs = []
+            seen_hashes_in_batch = set()
+
+            for f in uploaded_files:
+                doc_record = SourceDocument.objects.create(
+                    batch=batch,
+                    institution=user_inst,
+                    file=f,
+                    filename=f.name,
+                    file_hash='',
+                    file_size_bytes=f.size,
+                    file_type=file_types_map.get(f.name, 'UNKNOWN'),
+                    status='uploaded'
+                )
+
+                try:
+                    f_hash = compute_file_hash(doc_record.file.path)
+                    doc_record.file_hash = f_hash
+                    
+                    import fitz
+                    pdoc = fitz.open(doc_record.file.path)
+                    doc_record.page_count = len(pdoc)
+                    pdoc.close()
+
+                    meta = extract_document_metadata_fast(doc_record.file.path)
+                    doc_record.extracted_metadata = meta
+                    doc_record.inferred_type = meta.get('inferred_type', 'UNKNOWN')
+                    if doc_record.file_type == 'UNKNOWN':
+                        doc_record.file_type = meta.get('inferred_type', 'UNKNOWN')
+
+                    if f_hash in seen_hashes_in_batch:
+                        doc_record.status = 'duplicate'
+                        meta['is_duplicate'] = True
+                        meta['duplicate_reason'] = 'Duplicate file uploaded in the same batch'
+                        doc_record.extracted_metadata = meta
+
+                    seen_hashes_in_batch.add(f_hash)
+                    doc_record.save()
+                except Exception as e:
+                    logger.warning(f"Error inspecting uploaded source doc: {e}")
+
+                saved_docs.append(doc_record)
+
+            # Filter out exact duplicate files from pairing
+            active_docs = [d for d in saved_docs if d.status != 'duplicate']
+            pairs = auto_pair_batch_documents(active_docs)
+            created_jobs = []
+            for p in pairs:
+                qp_doc = p['qp']
+                ans_doc = p.get('ans')
+                qp_meta = getattr(qp_doc, 'extracted_metadata', {}) or {}
+
+                # Resolve paper if possible
+                job_paper_id = paper_id
+                if not job_paper_id and qp_meta.get('subject'):
+                    from master_data.models import ICAIPaper
+                    subj_str = qp_meta['subject'].lower()
+                    matched_p = ICAIPaper.objects.filter(name__icontains=subj_str).first()
+                    if matched_p:
+                        job_paper_id = matched_p.id
+
+                job = QuestionImportJob.objects.create(
+                    batch=batch,
+                    created_by=user,
+                    institution=user_inst,
+                    is_platform_wide=is_platform_wide,
+                    question_pdf=qp_doc.file,
+                    answer_pdf=ans_doc.file if ans_doc else None,
+                    question_pdf_filename=qp_doc.filename,
+                    answer_pdf_filename=ans_doc.filename if ans_doc else '',
+                    status='uploaded',
+                    stage_label='Document pair linked to batch',
+                    progress_percent=0,
+                    ca_level=ca_level or qp_meta.get('course', 'CA Intermediate'),
+                    level_id=level_id if level_id else None,
+                    paper_id=job_paper_id if job_paper_id else None,
+                    chapter_id=chapter_id if chapter_id else None,
+                    topic_id=topic_id if topic_id else None,
+                    exam_session=exam_session or qp_meta.get('exam_session', 'MAY'),
+                    exam_year=exam_year or qp_meta.get('exam_year', 2026),
+                    source=source or qp_meta.get('series_title', 'Mock Test Paper'),
+                    extracted_metadata={'target_question_type': target_question_type}
+                )
+                qp_doc.job = job
+                qp_doc.save()
+                if ans_doc and ans_doc.id != qp_doc.id:
+                    ans_doc.job = job
+                    ans_doc.save()
+                created_jobs.append(job)
+
+            ImportAuditLog.objects.create(
+                batch=batch,
+                user=user,
+                action='CREATE_BATCH',
+                details={'documents_count': len(saved_docs), 'jobs_count': len(created_jobs)}
+            )
+
+        if auto_process and created_jobs:
+            start_import_batch_async(batch.id)
+
+        serializer = ImportBatchDetailSerializer(batch, context={'request': request})
+        return Response(serializer.data, status=201)
+
+    @action(detail=True, methods=['get'])
+    def status(self, request, pk=None):
+        batch = self.get_object()
+        return Response({
+            'id': str(batch.id),
+            'name': batch.name,
+            'status': batch.status,
+            'stage_label': batch.stage_label,
+            'progress_percent': batch.progress_percent,
+            'error_message': batch.error_message,
+            'total_documents': batch.total_documents,
+            'total_questions_detected': batch.total_questions_detected,
+            'matched_answers_count': batch.matched_answers_count,
+            'missing_answers_count': batch.missing_answers_count,
+            'tables_count': batch.tables_count,
+            'mcqs_count': batch.mcqs_count,
+            'duplicate_candidates_count': batch.duplicate_candidates_count,
+            'low_confidence_count': batch.low_confidence_count,
+            'published_questions_count': batch.published_questions_count,
+            'model_used': batch.model_used,
+            'total_tokens': batch.total_input_tokens + batch.total_output_tokens,
+            'processing_time_seconds': batch.processing_time_seconds,
+            'jobs_count': batch.jobs.count()
+        })
+
+    @action(detail=True, methods=['post'])
+    def start(self, request, pk=None):
+        batch = self.get_object()
+        if batch.status in ['processing']:
+            return Response({'message': 'Batch is already processing.', 'status': batch.status})
+        
+        batch.status = 'processing'
+        batch.stage_label = 'Starting batch AI extraction pipeline...'
+        batch.progress_percent = 5
+        batch.error_message = None
+        batch.save()
+
+        start_import_batch_async(batch.id)
+        return Response({'message': 'Batch processing started.', 'status': batch.status})
+
+    @action(detail=True, methods=['post'], url_path='reprocess')
+    def reprocess(self, request, pk=None):
+        batch = self.get_object()
+        batch.status = 'processing'
+        batch.stage_label = 'Reprocessing batch with AI pipeline...'
+        batch.progress_percent = 5
+        batch.error_message = None
+        batch.save()
+
+        start_import_batch_async(batch.id)
+        return Response({'message': 'Batch reprocessing started.', 'status': batch.status})
+
+    @action(detail=True, methods=['get', 'put', 'patch'])
+    def payload(self, request, pk=None):
+        batch = self.get_object()
+        if request.method == 'GET':
+            return Response({'payload': batch.batch_payload or {}, 'status': batch.status})
+        new_payload = request.data.get('payload') or request.data
+        if not isinstance(new_payload, dict):
+            return Response({'error': 'Invalid payload format, expected JSON object.'}, status=400)
+        
+        batch.batch_payload = new_payload
+        batch.save()
+        return Response({'message': 'Batch draft payload saved successfully.', 'status': batch.status})
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        batch = self.get_object()
+        approve_all = str(request.data.get('approve_all', 'true')).lower() in ('true', '1', 'yes')
+        question_id = request.data.get('question_id')
+        job_id = request.data.get('job_id')
+
+        modified = 0
+        jobs_qs = batch.jobs.filter(id=job_id) if job_id else batch.jobs.all()
+        for j in jobs_qs:
+            payload = j.extracted_payload or {}
+            sections = payload.get('sections', [])
+            for sec in sections:
+                for q in sec.get('questions', []):
+                    if approve_all or (question_id and q.get('question_id') == question_id):
+                        q['is_approved'] = True
+                        modified += 1
+            j.extracted_payload = payload
+            j.save()
+
+        ImportAuditLog.objects.create(
+            batch=batch,
+            user=request.user if request.user.is_authenticated else None,
+            action='APPROVE_QUESTIONS',
+            details={'modified_count': modified, 'approve_all': approve_all}
+        )
+
+        return Response({'message': f'Approved {modified} questions in batch.', 'status': batch.status})
+
+    @action(detail=True, methods=['post'])
+    def publish(self, request, pk=None):
+        batch = self.get_object()
+        approved_only = str(request.data.get('approved_only', 'false')).lower() in ('true', '1', 'yes')
+        count, err = publish_approved_batch_to_database(batch, approved_only=approved_only)
+        if err and count == 0:
+            return Response({'error': err}, status=400)
+        return Response({
+            'message': f'Successfully published {count} questions to the live question bank.',
+            'published_count': count,
+            'warnings': err,
+            'status': batch.status
+        })
+
+    @action(detail=True, methods=['get'], url_path='audit-logs')
+    def audit_logs(self, request, pk=None):
+        batch = self.get_object()
+        logs = batch.audit_logs.all()
+        serializer = ImportAuditLogSerializer(logs, many=True)
+        return Response(serializer.data)
+
+
 

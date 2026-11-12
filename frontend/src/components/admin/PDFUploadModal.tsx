@@ -42,6 +42,7 @@ export default function PDFUploadModal({ open, onClose, icaiTopicId, chapterId: 
         auto_save: true,
     });
 
+    const [useGemini, setUseGemini] = useState(true);
     const [statusStep, setStatusStep] = useState<'IDLE' | 'EXTRACTING' | 'REVIEW' | 'SAVING' | 'DONE' | 'ERROR'>('IDLE');
     const [statusMsg, setStatusMsg] = useState('');
     const [extractedData, setExtractedData] = useState<any>(null);
@@ -63,7 +64,10 @@ export default function PDFUploadModal({ open, onClose, icaiTopicId, chapterId: 
         }
 
         setStatusStep('EXTRACTING');
-        setStatusMsg('Extracting text, tables, sub-questions (a,b,c) and matching answers...');
+        setStatusMsg(useGemini
+            ? 'Gemini AI is analyzing questions, detecting question numbers, and generating/matching solutions...'
+            : 'Extracting text, tables, sub-questions (a,b,c) and matching answers...'
+        );
 
         const fd = new FormData();
         if (questionFile) fd.append('question_pdf', questionFile);
@@ -76,6 +80,11 @@ export default function PDFUploadModal({ open, onClose, icaiTopicId, chapterId: 
         fd.append('year', form.year);
         fd.append('attempt', form.attempt);
         fd.append('source', form.source);
+
+        const savedKey = localStorage.getItem('GEMINI_API_KEY');
+        if (savedKey) fd.append('gemini_api_key', savedKey);
+        fd.append('use_gemini', useGemini ? 'true' : 'false');
+        fd.append('engine', useGemini ? 'gemini' : 'regex');
 
         try {
             const res = await api.post('/materials/questions/extract-from-pdf/', fd, {
@@ -293,6 +302,33 @@ export default function PDFUploadModal({ open, onClose, icaiTopicId, chapterId: 
                                     {subjects.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </select>
                             </div>
+
+                            {/* Gemini AI Toggle */}
+                            <div className="col-span-full flex items-center justify-between p-3.5 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border border-indigo-200 rounded-xl">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-sm">
+                                        <Sparkles size={16} />
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-bold text-slate-900">Google Gemini AI Engine</span>
+                                            <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 font-bold text-[10px] rounded">Recommended</span>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500">
+                                            Automatically parses question numbers (Q1, 1(a), 1(b)), extracts options, and auto-fills complete step-by-step solutions & working notes.
+                                        </p>
+                                    </div>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={useGemini}
+                                        onChange={e => setUseGemini(e.target.checked)}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                </label>
+                            </div>
                         </div>
                     )}
 
@@ -437,9 +473,10 @@ export default function PDFUploadModal({ open, onClose, icaiTopicId, chapterId: 
                         <button
                             onClick={handleExtract}
                             disabled={!questionFile && !answerFile}
-                            className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50 shadow-md"
+                            className="px-6 py-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl font-bold text-xs flex items-center gap-2 disabled:opacity-50 shadow-md active:scale-95 transition-all"
                         >
-                            <Sparkles size={16} /> Upload & Extract Questions/Answers
+                            <Sparkles size={16} className="text-yellow-300" />
+                            <span>{useGemini ? '⚡ Auto-Extract & Solve with Gemini AI' : 'Upload & Extract Questions'}</span>
                         </button>
                     )}
                 </div>

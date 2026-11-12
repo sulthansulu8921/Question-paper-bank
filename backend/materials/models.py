@@ -1,3 +1,4 @@
+import uuid
 from django.db import models
 from courses.models import Course, Subject, Topic, SubTopic
 from django.conf import settings
@@ -63,6 +64,35 @@ class Bookmark(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class Scenario(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    import_batch = models.ForeignKey(
+        'ImportBatch', on_delete=models.SET_NULL, null=True, blank=True, related_name='scenarios'
+    )
+    parent_question = models.ForeignKey(
+        'SubjectiveQuestion', on_delete=models.CASCADE, null=True, blank=True, related_name='scenario_records'
+    )
+    scenario_text = models.TextField(blank=True, default='')
+    source_document = models.ForeignKey(
+        'SourceDocument', on_delete=models.SET_NULL, null=True, blank=True, related_name='scenarios'
+    )
+    source_page_start = models.IntegerField(null=True, blank=True)
+    source_page_end = models.IntegerField(null=True, blank=True)
+    table_data = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"Scenario {str(self.id)[:8]} ({len(self.scenario_text)} chars)"
+
+    @property
+    def scenario_id(self):
+        return self.id
+
+
 class SubjectiveQuestion(models.Model):
     QUESTION_TYPE_CHOICES = [
         ('MCQ', 'MCQ'),
@@ -117,6 +147,25 @@ class SubjectiveQuestion(models.Model):
     table_data = models.TextField(blank=True, null=True)
     formula_data = models.TextField(blank=True, null=True)
     answer_table_data = models.TextField(blank=True, null=True)
+    # Parent-child and scenario relationships
+    scenario = models.ForeignKey(
+        Scenario, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='questions'
+    )
+    parent_question = models.ForeignKey(
+        'self', on_delete=models.CASCADE,
+        null=True, blank=True, related_name='child_questions'
+    )
+    original_question_number = models.CharField(max_length=50, blank=True, default='')
+    sub_question_number = models.CharField(max_length=50, blank=True, default='')
+    source_document = models.ForeignKey(
+        'SourceDocument', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='questions'
+    )
+    chapter = models.ForeignKey(
+        'master_data.ICAIChapter', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='questions'
+    )
 
     pdf_url = models.URLField(blank=True, null=True)
     image_url = models.URLField(blank=True, null=True)
@@ -127,6 +176,11 @@ class SubjectiveQuestion(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, related_name='created_questions'
     )
+    institution = models.ForeignKey(
+        'authentication.Institution', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='subjective_questions'
+    )
+    is_platform_wide = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -191,14 +245,27 @@ class SubjectiveQuestion(models.Model):
             return None
         return self.icai_topic.full_path
 
+    @property
+    def question_id(self):
+        return self.id
+
 
 class SubQuestion(models.Model):
     TYPE_CHOICES = [('NORMAL', 'Theory'), ('MCQ', 'MCQ')]
 
     parent_question = models.ForeignKey(SubjectiveQuestion, on_delete=models.CASCADE, related_name='parts')
-    identifier = models.CharField(max_length=10, blank=True)
+    scenario = models.ForeignKey(
+        Scenario, on_delete=models.SET_NULL, null=True, blank=True, related_name='sub_questions'
+    )
+    original_question_number = models.CharField(max_length=50, blank=True, default='')
+    sub_question_number = models.CharField(max_length=50, blank=True, default='')
+    source_document = models.ForeignKey(
+        'SourceDocument', on_delete=models.SET_NULL, null=True, blank=True, related_name='sub_questions'
+    )
+    matching_status = models.CharField(max_length=50, default='matched')
+    identifier = models.CharField(max_length=50, blank=True)
     question_text = models.TextField()
-    question_type = models.CharField(max_length=10, choices=TYPE_CHOICES, default='NORMAL')
+    question_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='NORMAL')
     correct_answer = models.TextField(blank=True, null=True)
     table_data = models.TextField(blank=True, null=True)
     formula_data = models.TextField(blank=True, null=True)
@@ -212,6 +279,34 @@ class SubQuestion(models.Model):
 
     def __str__(self):
         return f"Part {self.identifier} of Q{self.parent_question.q_no}"
+
+
+class Answer(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    question = models.ForeignKey(
+        SubjectiveQuestion, on_delete=models.CASCADE, related_name='answer_records'
+    )
+    sub_question = models.ForeignKey(
+        SubQuestion, on_delete=models.CASCADE, null=True, blank=True, related_name='answer_records'
+    )
+    answer_content = models.TextField(blank=True, default='')
+    answer_source_document = models.ForeignKey(
+        'SourceDocument', on_delete=models.SET_NULL, null=True, blank=True, related_name='answers'
+    )
+    answer_source_page = models.IntegerField(null=True, blank=True)
+    matching_status = models.CharField(max_length=50, default='matched')  # 'matched', 'needs_review', 'unmatched'
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"Answer for Q{self.question_id} ({self.matching_status})"
+
+    @property
+    def answer_id(self):
+        return self.id
 
 
 class QuestionOption(models.Model):
@@ -367,5 +462,189 @@ class MockTestTemplate(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class ImportBatch(models.Model):
+    STATUS_CHOICES = [
+        ('uploaded', 'Uploaded'),
+        ('processing', 'Processing Documents'),
+        ('extracted', 'Extracted'),
+        ('needs_review', 'Needs Review'),
+        ('approved', 'Approved'),
+        ('published', 'Published to Question Bank'),
+        ('failed', 'Processing Failed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255, default='AI Import Batch')
+    ca_level = models.CharField(max_length=50, blank=True, default='CA Intermediate')
+    level = models.ForeignKey('master_data.CALevel', null=True, blank=True, on_delete=models.SET_NULL, related_name='import_batches')
+    paper = models.ForeignKey('master_data.ICAIPaper', null=True, blank=True, on_delete=models.SET_NULL, related_name='import_batches')
+    chapter = models.ForeignKey('master_data.ICAIChapter', null=True, blank=True, on_delete=models.SET_NULL, related_name='import_batches')
+    topic = models.ForeignKey('master_data.ICAITopic', null=True, blank=True, on_delete=models.SET_NULL, related_name='import_batches')
+
+    exam_session = models.CharField(max_length=50, blank=True, default='August 2026')
+    exam_year = models.IntegerField(null=True, blank=True, default=2026)
+    source = models.CharField(max_length=150, blank=True, default='Mock Test Paper – Series II')
+
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='uploaded', db_index=True)
+    stage_label = models.CharField(max_length=150, default='Batch uploaded - Ready to process')
+    progress_percent = models.IntegerField(default=0)
+    error_message = models.TextField(null=True, blank=True)
+
+    total_documents = models.IntegerField(default=0)
+    total_questions_detected = models.IntegerField(default=0)
+    matched_answers_count = models.IntegerField(default=0)
+    missing_answers_count = models.IntegerField(default=0)
+    tables_count = models.IntegerField(default=0)
+    mcqs_count = models.IntegerField(default=0)
+    duplicate_candidates_count = models.IntegerField(default=0)
+    low_confidence_count = models.IntegerField(default=0)
+    published_questions_count = models.IntegerField(default=0)
+
+    batch_payload = models.JSONField(default=dict, blank=True)
+
+    ai_provider = models.CharField(max_length=50, default='gemini')
+    model_used = models.CharField(max_length=100, blank=True, default='gemini-3.5-flash')
+    total_input_tokens = models.IntegerField(default=0)
+    total_output_tokens = models.IntegerField(default=0)
+    estimated_cost_usd = models.FloatField(default=0.0)
+    processing_time_seconds = models.FloatField(default=0.0)
+
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='import_batches')
+    institution = models.ForeignKey('authentication.Institution', on_delete=models.SET_NULL, null=True, blank=True, related_name='import_batches')
+    is_platform_wide = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Import Batch {self.name} ({self.status})"
+
+
+class QuestionImportJob(models.Model):
+    STATUS_CHOICES = [
+        ('uploaded', 'Uploaded'),
+        ('extracting', 'Extracting Text & Tables'),
+        ('parsing_questions', 'Parsing Question Paper'),
+        ('parsing_answers', 'Parsing Answer Paper'),
+        ('matching', 'Matching Questions with Answers'),
+        ('validating', 'Validating Structure & Marks'),
+        ('review_required', 'Ready for Review'),
+        ('needs_review', 'Needs Review'),
+        ('approved', 'Approved'),
+        ('published', 'Published to Question Bank'),
+        ('failed', 'Processing Failed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(ImportBatch, on_delete=models.SET_NULL, null=True, blank=True, related_name='jobs')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='import_jobs')
+    institution = models.ForeignKey('authentication.Institution', on_delete=models.SET_NULL, null=True, blank=True, related_name='import_jobs')
+    is_platform_wide = models.BooleanField(default=True)
+
+    # Uploaded PDFs
+    question_pdf = models.FileField(upload_to='materials/import_jobs/question_pdfs/')
+    answer_pdf = models.FileField(upload_to='materials/import_jobs/answer_pdfs/', null=True, blank=True)
+    question_pdf_filename = models.CharField(max_length=255, blank=True)
+    answer_pdf_filename = models.CharField(max_length=255, blank=True)
+
+    # Processing state
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='uploaded', db_index=True)
+    stage_label = models.CharField(max_length=150, default='Uploaded - Ready to process')
+    progress_percent = models.IntegerField(default=0)
+    error_message = models.TextField(null=True, blank=True)
+
+    # Academic & Paper Target Metadata
+    ca_level = models.CharField(max_length=50, blank=True, default='CA Intermediate')
+    level = models.ForeignKey('master_data.CALevel', null=True, blank=True, on_delete=models.SET_NULL, related_name='import_jobs')
+    paper = models.ForeignKey('master_data.ICAIPaper', null=True, blank=True, on_delete=models.SET_NULL, related_name='import_jobs')
+    chapter = models.ForeignKey('master_data.ICAIChapter', null=True, blank=True, on_delete=models.SET_NULL, related_name='import_jobs')
+    topic = models.ForeignKey('master_data.ICAITopic', null=True, blank=True, on_delete=models.SET_NULL, related_name='import_jobs')
+
+    exam_session = models.CharField(max_length=50, blank=True, default='July 2026')
+    exam_year = models.IntegerField(null=True, blank=True, default=2026)
+    exam_date = models.CharField(max_length=50, blank=True, default='')
+    source = models.CharField(max_length=150, blank=True, default='Mock Test Paper – Series I')
+    maximum_marks = models.IntegerField(default=100)
+    duration_minutes = models.IntegerField(default=180)
+
+    # AI Model & Extraction Metadata
+    extracted_metadata = models.JSONField(default=dict, blank=True)
+    extracted_payload = models.JSONField(default=dict, blank=True)
+
+    ai_provider = models.CharField(max_length=50, default='gemini')
+    model_used = models.CharField(max_length=100, blank=True, default='')
+    total_input_tokens = models.IntegerField(default=0)
+    total_output_tokens = models.IntegerField(default=0)
+    estimated_cost_usd = models.FloatField(default=0.0)
+    processing_time_seconds = models.FloatField(default=0.0)
+
+    published_question_count = models.IntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Import Job {str(self.id)[:8]} - {self.source} ({self.status})"
+
+
+class SourceDocument(models.Model):
+    FILE_TYPE_CHOICES = [
+        ('QUESTION_PAPER', 'Question Paper'),
+        ('SUGGESTED_ANSWER', 'Suggested Answer'),
+        ('COMBINED', 'Combined Question & Answer'),
+        ('UNKNOWN', 'Unclassified / Other'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(ImportBatch, on_delete=models.CASCADE, null=True, blank=True, related_name='documents')
+    job = models.ForeignKey(QuestionImportJob, on_delete=models.CASCADE, null=True, blank=True, related_name='documents')
+    institution = models.ForeignKey('authentication.Institution', on_delete=models.SET_NULL, null=True, blank=True, related_name='source_documents')
+    file = models.FileField(upload_to='materials/import_batches/documents/')
+    filename = models.CharField(max_length=255)
+    file_hash = models.CharField(max_length=64, db_index=True)
+    file_type = models.CharField(max_length=30, choices=FILE_TYPE_CHOICES, default='UNKNOWN')
+    inferred_type = models.CharField(max_length=30, choices=FILE_TYPE_CHOICES, default='UNKNOWN')
+    page_count = models.IntegerField(default=0)
+    file_size_bytes = models.BigIntegerField(default=0)
+    status = models.CharField(max_length=30, default='uploaded')
+    extracted_text = models.TextField(blank=True, default='')
+    extracted_metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"{self.filename} ({self.file_type})"
+
+
+class ImportAuditLog(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(ImportBatch, on_delete=models.CASCADE, null=True, blank=True, related_name='audit_logs')
+    job = models.ForeignKey(QuestionImportJob, on_delete=models.CASCADE, null=True, blank=True, related_name='audit_logs')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    action = models.CharField(max_length=50)
+    question_reference = models.CharField(max_length=100, blank=True, default='')
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.action} on {self.question_reference or 'batch'} by {self.user}"
+
+
 
 

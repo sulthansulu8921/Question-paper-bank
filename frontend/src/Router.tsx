@@ -14,6 +14,7 @@ import AdminDashboard from '@/pages/admin/AdminDashboard';
 import AdminQuestionBank from '@/pages/admin/AdminQuestionBank';
 import AdminAnalytics from '@/pages/admin/AdminAnalytics';
 import AddQuestion from '@/pages/admin/AddQuestion';
+import AdminAIQuestionImport from '@/pages/admin/AdminAIQuestionImport';
 import AdminSubjectManager from '@/pages/admin/AdminSubjectManager';
 import AdminPaperManager from '@/pages/admin/AdminPaperManager';
 import AdminAnswerManager from '@/pages/admin/AdminAnswerManager';
@@ -201,6 +202,7 @@ export default function AppRouter() {
                     <Route path="live-classes" element={<Navigate to="/admin/classroom?tab=live" replace />} />
                     <Route path="notifications" element={<SuperAdminRoute><AdminNotificationManager /></SuperAdminRoute>} />
                     <Route path="questions/new" element={<QuestionAdminRoute><AddQuestion /></QuestionAdminRoute>} />
+                    <Route path="questions/import" element={<QuestionAdminRoute><AdminAIQuestionImport /></QuestionAdminRoute>} />
                     <Route path="questions/:id/edit" element={<QuestionAdminRoute><AddQuestion /></QuestionAdminRoute>} />
                     <Route path="analytics" element={<SuperAdminRoute><AdminAnalytics /></SuperAdminRoute>} />
                     <Route path="users" element={<SuperAdminRoute><AdminUserManager /></SuperAdminRoute>} />

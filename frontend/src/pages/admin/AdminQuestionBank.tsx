@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/api/axios';
 import {
     Search, Plus, Edit, Trash2,
-    SortAsc, SortDesc, Filter, Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2
+    SortAsc, SortDesc, Filter, Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2,
+    Sparkles
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ICAICascadeSelector, { type ICAISelection } from '@/components/admin/ICAICascadeSelector';
@@ -44,8 +45,6 @@ const Badge = ({ text, color, bg }: { text: string, color: string, bg: string })
     </span>
 );
 
-import PDFUploadModal from '@/components/admin/PDFUploadModal';
-
 export default function AdminQuestionBank() {
     const queryClient = useQueryClient();
 
@@ -59,7 +58,6 @@ export default function AdminQuestionBank() {
     const [showFilters, setShowFilters] = useState(false);
     const [sortKey, setSortKey] = useState('id');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-    const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
 
     const [icaiFilter, setIcaiFilter] = useState<ICAISelection>({
         levelId: '',
@@ -267,25 +265,23 @@ export default function AdminQuestionBank() {
                         <span>{importing ? 'Importing...' : 'Import Excel'}</span>
                     </button>
 
-                    {/* Upload PDF Question Paper */}
+                    {/* AI Dual-PDF Import (QP + Answer Sheet) */}
                     <Link
-                        to="/admin/questions/new"
+                        to="/admin/questions/import"
                         className="primary-btn flex-center gap-sm"
-                        style={{ background: '#0284c7', borderColor: '#0284c7', color: '#ffffff' }}
+                        style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)', borderColor: '#6366f1', color: '#ffffff', boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)' }}
                     >
-                        <Upload size={18} />
-                        <span>Upload PDF Question Paper</span>
+                        <Sparkles size={18} />
+                        <span>AI PDF Question Paper Import</span>
                     </Link>
 
-                    <Link to="/admin/questions/new" className="primary-btn flex-center gap-sm"><Plus size={18} /><span>Add New</span></Link>
+                    {/* Add Single Question Manually */}
+                    <Link to="/admin/questions/new" className="primary-btn flex-center gap-sm">
+                        <Plus size={18} />
+                        <span>Add Single Question</span>
+                    </Link>
                 </div>
             </div>
-
-            <PDFUploadModal
-                open={isPdfModalOpen}
-                onClose={() => setIsPdfModalOpen(false)}
-                onUploaded={() => queryClient.invalidateQueries({ queryKey: ['admin-questions'] })}
-            />
 
             <div className="qm-table-card">
                 <div className="table-toolbar">

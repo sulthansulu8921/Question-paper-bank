@@ -1,14 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/api/axios';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams, useLocation, Link } from 'react-router-dom';
 import ICAICascadeSelector, { type ICAISelection } from '@/components/admin/ICAICascadeSelector';
-import PDFUploadModal from '@/components/admin/PDFUploadModal';
 import PdfLiveWorkspace from '@/components/admin/PdfLiveWorkspace';
 import {
     Loader2, Upload, Star, FileText, Zap, Plus, Trash2,
     HelpCircle, CheckSquare, MessageSquare, Clipboard, X,
-    Bold, Underline, AlignCenter, Sparkles
+    Bold, Underline, AlignCenter, Sparkles, Minimize2, Maximize2
 } from 'lucide-react';
 import '@/styles/admin/AddQuestion.css';
 
@@ -196,6 +195,116 @@ const parseTablesHelper = (val: string): any[] => {
     return [];
 };
 
+// ─── Case Scenario Passage Live Renderer with In-Position Tables ──
+const RenderPassageWithInlineTables = ({ text, tableJson }: { text: string; tableJson: string }) => {
+    if (!text && !tableJson) {
+        return (
+            <div className="text-slate-400 text-xs italic py-8 text-center bg-white rounded-lg border border-dashed border-amber-200">
+                Case Scenario passage is currently empty. Type or load text to preview.
+            </div>
+        );
+    }
+    const tables = parseTablesHelper(tableJson);
+    const cursorTables = tables.filter(t => t.type === 'cursor');
+    const activeTables = cursorTables.length > 0 ? cursorTables : tables;
+
+    if (!text.includes('[TABLE')) {
+        return (
+            <div className="space-y-3 text-slate-800 text-xs font-medium leading-relaxed bg-white p-3.5 rounded-lg border border-amber-200 max-h-[320px] overflow-y-auto">
+                <div className="whitespace-pre-wrap">{text}</div>
+                {activeTables.map((t, idx) => (
+                    <div key={idx} className="my-2.5 overflow-x-auto rounded-lg border border-amber-200 bg-amber-50/20 shadow-xs">
+                        <table className="w-full text-[11px] text-left border-collapse font-mono">
+                            <thead>
+                                <tr className="bg-amber-100/70 border-b border-amber-200 font-sans">
+                                    {t.headers?.map((h: string, hIdx: number) => (
+                                        <th key={hIdx} className="px-3 py-1.5 font-bold text-amber-900 border-r border-amber-200 last:border-none">
+                                            {h}
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {t.rows?.map((row: string[], rIdx: number) => (
+                                    <tr key={rIdx} className="hover:bg-amber-50/50">
+                                        {row.map((cell: string, cIdx: number) => (
+                                            <td key={cIdx} className="px-3 py-1.5 text-slate-700 border-r border-slate-100 last:border-none">
+                                                {cell}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                ))}
+            </div>
+        );
+    }
+
+    const regex = /(\[TABLE(?:_\d+)?\])/g;
+    const parts = text.split(regex);
+    let generalCursorIndex = 0;
+
+    return (
+        <div className="space-y-2 text-slate-800 text-xs font-medium leading-relaxed bg-white p-3.5 rounded-lg border border-amber-200 max-h-[320px] overflow-y-auto">
+            {parts.map((part, index) => {
+                if (part.startsWith('[TABLE')) {
+                    let targetTable = null;
+                    const match = part.match(/\[TABLE_(\d+)\]/);
+                    if (match) {
+                        const tableNum = parseInt(match[1], 10);
+                        targetTable = activeTables[tableNum - 1];
+                    } else {
+                        targetTable = activeTables[generalCursorIndex];
+                        generalCursorIndex++;
+                    }
+
+                    if (targetTable) {
+                        return (
+                            <div key={index} className="my-2.5 overflow-x-auto rounded-lg border border-amber-300 bg-white shadow-xs">
+                                <div className="px-2.5 py-1 bg-amber-100/80 border-b border-amber-200 flex items-center justify-between text-[10px] font-bold text-amber-900">
+                                    <span>📍 In-Position Table #{match ? match[1] : 1}</span>
+                                    <span className="text-[10px] text-amber-700 font-mono">{part}</span>
+                                </div>
+                                <table className="w-full text-[11px] text-left border-collapse font-mono">
+                                    <thead>
+                                        <tr className="bg-amber-50 border-b border-amber-200 font-sans">
+                                            {targetTable.headers?.map((h: string, hIdx: number) => (
+                                                <th key={hIdx} className="px-3 py-1.5 font-bold text-amber-900 border-r border-amber-200 last:border-none">
+                                                    {h}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {targetTable.rows?.map((row: string[], rIdx: number) => (
+                                            <tr key={rIdx} className="hover:bg-amber-50/40">
+                                                {row.map((cell: string, cIdx: number) => (
+                                                    <td key={cIdx} className="px-3 py-1.5 text-slate-700 border-r border-slate-100 last:border-none">
+                                                        {cell}
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        );
+                    }
+                    return (
+                        <div key={index} className="my-1.5 p-2 border border-dashed border-amber-300 bg-amber-50/50 rounded text-xs text-amber-700 font-mono">
+                            {part} (Placeholder)
+                        </div>
+                    );
+                } else {
+                    return part ? <div key={index} className="whitespace-pre-wrap">{part}</div> : null;
+                }
+            })}
+        </div>
+    );
+};
+
 // ─── Multi Table Manager Component ────────────────────────────────
 const MultiTableManager = ({
     value,
@@ -338,6 +447,7 @@ export default function AddQuestion() {
     const isEdit = !!id;
     const queryClient = useQueryClient();
     const [searchParams] = useSearchParams();
+    const location = useLocation();
 
     const insertTextAtCursor = (
         elementId: string,
@@ -396,6 +506,43 @@ export default function AddQuestion() {
     // Table builders visibility states
     const [showQTable, setShowQTable] = useState(false);
     const [showATable, setShowATable] = useState(false);
+    const [caseScenarioView, setCaseScenarioView] = useState<'editor' | 'preview' | 'split'>('split');
+
+    const placeTableAfterParagraph = (paraNum: number = 2) => {
+        let passage = form.case_scenario_passage || '';
+        passage = passage.replace(/\[TABLE(?:_\d+)?\]/g, '').trim();
+
+        let paras = passage.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+        if (paras.length < paraNum) {
+            paras = passage.split(/\n/).map(p => p.trim()).filter(Boolean);
+        }
+
+        let newPassage = '';
+        if (paras.length >= paraNum) {
+            newPassage = paras.slice(0, paraNum).join('\n\n') + '\n\n[TABLE_1]\n\n' + paras.slice(paraNum).join('\n\n');
+        } else if (paras.length > 0) {
+            newPassage = paras.join('\n\n') + '\n\n[TABLE_1]';
+        } else {
+            newPassage = '[TABLE_1]\n\n' + passage;
+        }
+
+        set('case_scenario_passage', newPassage);
+
+        const currentTables = parseTablesHelper(form.table_data);
+        if (currentTables.length === 0) {
+            const newTable = {
+                type: 'cursor',
+                headers: ['Particulars', 'Amount (₹)'],
+                rows: [['', '']]
+            };
+            set('table_data', JSON.stringify([newTable]));
+        } else {
+            const updated = currentTables.map(t => ({ ...t, type: 'cursor' }));
+            set('table_data', JSON.stringify(updated));
+        }
+        setShowQTable(true);
+        showToast(`✓ Table [TABLE_1] positioned after paragraph ${paraNum}`);
+    };
 
     const [icai, setIcai] = useState<ICAISelection>({
         levelId: '',
@@ -448,8 +595,67 @@ export default function AddQuestion() {
     }>>([]);
 
     const [uploading, setUploading] = useState(false);
-    const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
+
+    // Auto-populate from AI Question Importer if navigated via "Edit in Manual Form"
+    useEffect(() => {
+        const prefill = (location.state as any)?.prefillQuestion;
+        if (prefill) {
+            setForm(prev => ({
+                ...prev,
+                question_type: prefill.question_type || 'NORMAL',
+                marks: String(prefill.marks || ''),
+                source: prefill.source || 'MTP-01',
+                year: String(prefill.year || '2026'),
+                q_no: String(prefill.question_number || prefill.q_no || ''),
+                attempt: prefill.attempt || 'MAY',
+                difficulty: prefill.difficulty || 'MEDIUM',
+                tags: prefill.tags || '',
+                question_text: prefill.question_text || '',
+                case_scenario_passage: prefill.case_scenario_passage || '',
+                correct_answer: prefill.official_answer?.answer_text || prefill.matched_answer?.answer_text || prefill.correct_answer || '',
+                table_data: prefill.table_data ? (typeof prefill.table_data === 'string' ? prefill.table_data : JSON.stringify(prefill.table_data)) : '',
+                answer_table_data: (prefill.official_answer?.answer_table_data || prefill.matched_answer?.answer_table_data || prefill.answer_table_data) ? (typeof (prefill.official_answer?.answer_table_data || prefill.matched_answer?.answer_table_data || prefill.answer_table_data) === 'string' ? (prefill.official_answer?.answer_table_data || prefill.matched_answer?.answer_table_data || prefill.answer_table_data) : JSON.stringify(prefill.official_answer?.answer_table_data || prefill.matched_answer?.answer_table_data || prefill.answer_table_data)) : '',
+            }));
+
+            if (prefill.options && Array.isArray(prefill.options)) {
+                setOptions(prefill.options.map((opt: any, idx: number) => ({
+                    text: opt.text || opt.option_text || '',
+                    is_correct: Boolean(opt.is_correct),
+                    order: idx
+                })));
+            }
+
+            if (prefill.subquestions && Array.isArray(prefill.subquestions)) {
+                setSubQuestions(prefill.subquestions.map((sq: any) => ({
+                    identifier: sq.identifier || '(a)',
+                    question_text: sq.question_text || '',
+                    question_type: sq.question_type || 'NORMAL',
+                    marks: Number(sq.marks) || 1,
+                    table_data: sq.table_data ? (typeof sq.table_data === 'string' ? sq.table_data : JSON.stringify(sq.table_data)) : '',
+                    options: (sq.options || []).map((o: any, idx: number) => ({
+                        text: o.text || '',
+                        is_correct: Boolean(o.is_correct),
+                        order: idx
+                    }))
+                })));
+                setSubAnswers(prefill.subquestions.map((sq: any) => ({
+                    identifier: sq.identifier || '(a)',
+                    correct_answer: sq.official_answer?.answer_text || sq.matched_answer?.answer_text || '',
+                    answer_table_data: sq.official_answer?.answer_table_data ? (typeof sq.official_answer.answer_table_data === 'string' ? sq.official_answer.answer_table_data : JSON.stringify(sq.official_answer.answer_table_data)) : ''
+                })));
+            }
+
+            if (prefill.suggested_chapter_id || prefill.chapter_id) {
+                setIcai(prev => ({
+                    ...prev,
+                    paperId: String(prefill.paper_id || prev.paperId || ''),
+                    chapterId: String(prefill.suggested_chapter_id || prefill.chapter_id || ''),
+                    topicId: String(prefill.suggested_topic_id || prefill.topic_id || ''),
+                }));
+            }
+        }
+    }, [location.state]);
 
     // Embedded PDF Two-Panel Question + Answer Workspace panel states
     const [showPdfPanel, setShowPdfPanel] = useState(true);
@@ -468,6 +674,7 @@ export default function AddQuestion() {
     const [workspaceZoom, setWorkspaceZoom] = useState<number>(100);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [mobileActiveTab, setMobileActiveTab] = useState<'QP' | 'AP'>('QP');
+    const [isWorkspaceMinimized, setIsWorkspaceMinimized] = useState(false);
 
     const splitContainerRef = useRef<HTMLDivElement>(null);
 
@@ -533,6 +740,82 @@ export default function AddQuestion() {
         }
     };
 
+    const [aiProvider, setAiProvider] = useState<'gemini' | 'openai'>('gemini');
+
+    useEffect(() => {
+        api.get('/materials/questions/ai-status/').then(res => {
+            if (res.data?.active_provider === 'openai') {
+                setAiProvider('openai');
+            } else if (res.data?.active_provider === 'gemini') {
+                setAiProvider('gemini');
+            }
+        }).catch(() => {});
+    }, []);
+
+    const [isGeneratingAiAnswer, setIsGeneratingAiAnswer] = useState(false);
+
+    const handleAiGenerateAnswer = async () => {
+        if (!form.question_text.trim()) {
+            alert('Please enter or extract question text first before generating an answer.');
+            return;
+        }
+
+        setIsGeneratingAiAnswer(true);
+        try {
+            const savedGeminiKey = localStorage.getItem('GEMINI_API_KEY') || '';
+            const savedOpenaiKey = localStorage.getItem('OPENAI_API_KEY') || '';
+            const res = await api.post('/materials/questions/ai-generate-answer/', {
+                question_text: form.question_text,
+                marks: form.marks ? parseInt(form.marks, 10) : 10,
+                question_type: form.question_type,
+                table_data: form.table_data,
+                provider: aiProvider,
+                gemini_api_key: savedGeminiKey,
+                openai_api_key: savedOpenaiKey
+            });
+
+            if (res.data?.success) {
+                const ans = res.data.correct_answer || '';
+                const wn = res.data.working_notes || '';
+                const fullSolution = wn ? `${ans}\n\nWorking Notes:\n${wn}` : ans;
+
+                setForm(prev => ({
+                    ...prev,
+                    correct_answer: fullSolution
+                }));
+
+                if (res.data.answer_table_data) {
+                    setForm(prev => ({
+                        ...prev,
+                        answer_table_data: JSON.stringify(res.data.answer_table_data)
+                    }));
+                }
+
+                if (form.question_type === 'MCQ' && res.data.correct_mcq_option) {
+                    const optLetter = res.data.correct_mcq_option.toUpperCase();
+                    const optIdx = optLetter.charCodeAt(0) - 65;
+                    if (optIdx >= 0 && optIdx < options.length) {
+                        setOptions(prev => prev.map((o, idx) => ({
+                            ...o,
+                            is_correct: idx === optIdx
+                        })));
+                    }
+                }
+
+                const engineName = res.data.engine === 'openai' ? '⚡ OpenAI' : '✨ Gemini AI';
+                if (res.data.failover_note) {
+                    showToast(`✓ Solution auto-filled with ${engineName} (${res.data.failover_note})`);
+                } else {
+                    showToast(`✓ ${engineName} generated and auto-filled the complete solution & working notes!`);
+                }
+            }
+        } catch (err: any) {
+            alert(err.response?.data?.error || 'Failed to generate solution with AI.');
+        } finally {
+            setIsGeneratingAiAnswer(false);
+        }
+    };
+
     const handleStartPdfExtraction = async () => {
         if (!pdfQuestionFile && !pdfAnswerFile) {
             alert('Please select a Question Paper PDF or Answer Paper PDF.');
@@ -555,13 +838,28 @@ export default function AddQuestion() {
         if (form.attempt) fd.append('attempt', form.attempt);
         if (icai.topicId) fd.append('icai_topic_id', icai.topicId);
 
+        const savedGeminiKey = localStorage.getItem('GEMINI_API_KEY');
+        const savedOpenaiKey = localStorage.getItem('OPENAI_API_KEY');
+        if (savedGeminiKey) fd.append('gemini_api_key', savedGeminiKey);
+        if (savedOpenaiKey) fd.append('openai_api_key', savedOpenaiKey);
+        fd.append('provider', aiProvider);
+        fd.append('use_gemini', 'true');
+        fd.append('engine', aiProvider);
+
         try {
             const res = await api.post('/materials/questions/extract-from-pdf/', fd, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
             setExtractedPdfData(res.data);
-            setSelectedQIdx(0);
-            showToast('✓ PDFs scanned successfully! Questions & Answers loaded.');
+            const questionsList = res.data.questions || [];
+            if (questionsList.length > 0) {
+                setSelectedQIdx(0);
+                handleSelectQuestionFromPdf(questionsList[0], 0);
+            }
+            const aiBadge = res.data.ai_powered
+                ? (res.data.engine === 'openai' ? '⚡ OpenAI' : '✨ Gemini AI')
+                : 'Scanner';
+            showToast(`✓ ${questionsList.length} questions extracted with ${aiBadge}! Q.${questionsList[0]?.q_no || 1} & solutions auto-filled into form.`);
         } catch (err: any) {
             alert(err.response?.data?.error || 'Failed to extract text model from PDF.');
         } finally {
@@ -569,24 +867,43 @@ export default function AddQuestion() {
         }
     };
 
+    const extractOptionsFromText = (text: string): { stem: string; options: Array<{ text: string; is_correct: boolean; order: number }> } => {
+        if (!text) return { stem: text, options: [] };
+        const optPattern = /(?:^|\n)\s*(?:\(([a-d]|[ivx]+|[1-4])\)|([a-d]|[ivx]+|[1-4])[\.\)])\s*(.*?)(?=(?:\n\s*(?:\((?:[a-d]|[ivx]+|[1-4])\)|(?:[a-d]|[ivx]+|[1-4])[\.\)]))|$)/gis;
+        const matches = Array.from(text.matchAll(optPattern));
+        if (matches.length >= 2) {
+            const firstMatchIndex = matches[0].index ?? 0;
+            const stem = text.slice(0, firstMatchIndex).trim();
+            const options = matches.map((m, idx) => {
+                let optText = (m[3] || '').trim();
+                optText = optText.replace(/\(?\s*\d+\s*Marks?\s*\)?/gi, '').trim();
+                return {
+                    text: optText,
+                    is_correct: false,
+                    order: idx
+                };
+            });
+            return { stem, options };
+        }
+        return { stem: text, options: [] };
+    };
+
     const handleSelectQuestionFromPdf = (q: any, idx?: number) => {
         if (idx !== undefined) setSelectedQIdx(idx);
 
         let qText = q.question_text || '';
+        let passage = q.case_scenario_passage || q.passage || '';
         let extractedOpts: any[] = [];
-        const optionRegex = /(?:^|\n)\s*([A-D])[\.\)]\s*(.*?)(?=\n\s*[A-D][\.\)]|$)/gs;
-        const matches = Array.from(qText.matchAll(optionRegex));
 
         let detectedType = q.question_type || 'NORMAL';
+        if (passage || q.question_type === 'CASE_SCENARIO' || q.is_case_scenario || (q.q_no && String(q.q_no).toUpperCase().startsWith('CS'))) {
+            detectedType = 'CASE_SCENARIO';
+        }
 
-        if (matches.length >= 2) {
-            detectedType = 'MCQ';
-            extractedOpts = matches.map((m: any, oIdx: number) => ({
-                text: m[2].trim(),
-                is_correct: false,
-                order: oIdx
-            }));
-            qText = qText.split(/(?:^|\n)\s*A[\.\)]/)[0].trim();
+        if (detectedType === 'CASE_SCENARIO') {
+            if (!passage && qText.length > 80) {
+                passage = qText;
+            }
         } else if (q.options && q.options.length > 0) {
             detectedType = 'MCQ';
             extractedOpts = q.options.map((opt: any, oIdx: number) => ({
@@ -594,17 +911,55 @@ export default function AddQuestion() {
                 is_correct: opt.is_correct || false,
                 order: oIdx
             }));
+        } else {
+            const extracted = extractOptionsFromText(qText);
+            if (extracted.options.length >= 2) {
+                detectedType = 'MCQ';
+                extractedOpts = extracted.options;
+                qText = extracted.stem;
+            }
         }
+
+        const rawQTable = q.table_data || (q.structured_table ? JSON.stringify(q.structured_table) : '');
+        const rawATable = q.answer_table_data || q.solution_table || (q.matched_answer?.structured_table ? JSON.stringify(q.matched_answer.structured_table) : '');
+
+        let parsedQTables = parseTablesHelper(typeof rawQTable === 'object' ? JSON.stringify(rawQTable) : (rawQTable || ''));
+        if (detectedType === 'CASE_SCENARIO' && parsedQTables.length > 0) {
+            parsedQTables = parsedQTables.map(t => ({ ...t, type: 'cursor' }));
+            // If passage does not contain [TABLE_1], position it right after the first two paragraphs
+            if (!passage.includes('[TABLE')) {
+                let paras = passage.split(/\n\s*\n/).map((p: string) => p.trim()).filter(Boolean);
+                if (paras.length < 2) {
+                    paras = passage.split(/\n/).map((p: string) => p.trim()).filter(Boolean);
+                }
+                if (paras.length >= 2) {
+                    passage = paras[0] + '\n\n' + paras[1] + '\n\n[TABLE_1]\n\n' + paras.slice(2).join('\n\n');
+                } else if (paras.length === 1) {
+                    passage = paras[0] + '\n\n[TABLE_1]';
+                } else {
+                    passage = '[TABLE_1]\n\n' + passage;
+                }
+            }
+        }
+
+        let qTableStr = parsedQTables.length > 0 ? JSON.stringify(parsedQTables) : (typeof rawQTable === 'object' ? JSON.stringify(rawQTable) : (rawQTable || ''));
+        let aTableStr = typeof rawATable === 'object' ? JSON.stringify(rawATable) : (rawATable || '');
 
         setForm(prev => ({
             ...prev,
             q_no: q.q_no || prev.q_no,
             question_text: qText || prev.question_text,
+            case_scenario_passage: passage || prev.case_scenario_passage,
             correct_answer: q.correct_answer || prev.correct_answer,
             marks: String(q.marks || prev.marks),
             section: q.section || prev.section,
             question_type: detectedType,
+            table_data: qTableStr || prev.table_data,
+            answer_table_data: aTableStr || prev.answer_table_data,
         }));
+
+        if (qTableStr) setShowQTable(true);
+        if (aTableStr) setShowATable(true);
 
         if (detectedType === 'MCQ') {
             while (extractedOpts.length < 4) {
@@ -613,25 +968,80 @@ export default function AddQuestion() {
             setOptions(extractedOpts);
         }
 
-        const subQs = q.sub_questions || q.parts || [];
+        const subQs = q.sub_questions || q.subquestions || q.parts || [];
         if (subQs.length > 0) {
-            setSubQuestions(subQs.map((sq: any, sIdx: number) => ({
-                identifier: sq.identifier || `(${String.fromCharCode(97 + sIdx)})`,
-                question_text: sq.question_text || '',
-                question_type: sq.question_type || 'NORMAL',
-                marks: sq.marks || 1,
-                table_data: sq.table_data || '',
-                options: sq.options || []
-            })));
+            setSubQuestions(subQs.map((sq: any, sIdx: number) => {
+                let sqText = sq.question_text || '';
+                let sqOpts = (sq.options || []).map((opt: any, oIdx: number) => ({
+                    text: typeof opt === 'string' ? opt : (opt.text || ''),
+                    is_correct: opt.is_correct || false,
+                    order: oIdx
+                }));
+
+                // If sub-question options not pre-populated, extract them from question text
+                if (sqOpts.length < 2) {
+                    const extracted = extractOptionsFromText(sqText);
+                    if (extracted.options.length >= 2) {
+                        sqText = extracted.stem;
+                        sqOpts = extracted.options;
+                    }
+                }
+
+                // Clean leading question number from prompt if needed (e.g. "1 In respect of..." -> "In respect of...")
+                sqText = sqText.replace(/^\s*(?:Question\s*(?:No\.?)?|Q)?\s*\d+\s*[\.\)]?\s*/i, '').trim();
+
+                const isCaseScenario = detectedType === 'CASE_SCENARIO' || q.question_type === 'CASE_SCENARIO';
+                if (isCaseScenario || sq.question_type === 'MCQ') {
+                    while (sqOpts.length < 4) {
+                        sqOpts.push({ text: '', is_correct: false, order: sqOpts.length });
+                    }
+                }
+                return {
+                    identifier: sq.identifier || `${sIdx + 1}`,
+                    question_text: sqText,
+                    question_type: isCaseScenario ? 'MCQ' : (sq.question_type || 'NORMAL'),
+                    marks: sq.marks || (isCaseScenario ? 2 : 1),
+                    table_data: typeof sq.table_data === 'object' ? JSON.stringify(sq.table_data) : (sq.table_data || ''),
+                    options: sqOpts
+                };
+            }));
 
             setSubAnswers(subQs.map((sq: any, sIdx: number) => ({
-                identifier: sq.identifier || `(${String.fromCharCode(97 + sIdx)})`,
+                identifier: sq.identifier || `${sIdx + 1}`,
                 correct_answer: sq.correct_answer || '',
-                answer_table_data: sq.answer_table_data || ''
+                answer_table_data: typeof sq.answer_table_data === 'object' ? JSON.stringify(sq.answer_table_data) : (sq.answer_table_data || '')
             })));
+        } else if (detectedType === 'CASE_SCENARIO') {
+            // Preset 5 empty MCQ sub-questions ready to edit
+            setSubQuestions([
+                { identifier: '1', question_text: '', question_type: 'MCQ', marks: 2, table_data: '', options: [{ text: '', is_correct: false, order: 0 }, { text: '', is_correct: false, order: 1 }, { text: '', is_correct: false, order: 2 }, { text: '', is_correct: false, order: 3 }] },
+                { identifier: '2', question_text: '', question_type: 'MCQ', marks: 2, table_data: '', options: [{ text: '', is_correct: false, order: 0 }, { text: '', is_correct: false, order: 1 }, { text: '', is_correct: false, order: 2 }, { text: '', is_correct: false, order: 3 }] },
+                { identifier: '3', question_text: '', question_type: 'MCQ', marks: 2, table_data: '', options: [{ text: '', is_correct: false, order: 0 }, { text: '', is_correct: false, order: 1 }, { text: '', is_correct: false, order: 2 }, { text: '', is_correct: false, order: 3 }] },
+                { identifier: '4', question_text: '', question_type: 'MCQ', marks: 2, table_data: '', options: [{ text: '', is_correct: false, order: 0 }, { text: '', is_correct: false, order: 1 }, { text: '', is_correct: false, order: 2 }, { text: '', is_correct: false, order: 3 }] },
+                { identifier: '5', question_text: '', question_type: 'MCQ', marks: 2, table_data: '', options: [{ text: '', is_correct: false, order: 0 }, { text: '', is_correct: false, order: 1 }, { text: '', is_correct: false, order: 2 }, { text: '', is_correct: false, order: 3 }] },
+            ]);
+            setSubAnswers([
+                { identifier: '1', correct_answer: '', answer_table_data: '' },
+                { identifier: '2', correct_answer: '', answer_table_data: '' },
+                { identifier: '3', correct_answer: '', answer_table_data: '' },
+                { identifier: '4', correct_answer: '', answer_table_data: '' },
+                { identifier: '5', correct_answer: '', answer_table_data: '' },
+            ]);
         }
 
         showToast(`✓ Question Q.${q.q_no || (idx !== undefined ? idx + 1 : 1)} loaded into form`);
+    };
+
+    const handleRemoveExtractedQuestion = (idxToRemove: number) => {
+        setExtractedPdfData((prev: any) => {
+            if (!prev || !prev.questions) return prev;
+            const newQs = prev.questions.filter((_: any, i: number) => i !== idxToRemove);
+            return {
+                ...prev,
+                questions: newQs
+            };
+        });
+        showToast('✓ Question removed from workspace');
     };
 
     // Fetch existing question
@@ -1101,6 +1511,13 @@ export default function AddQuestion() {
                     </div>
                 </div>
                 <div className="flex gap-3">
+                    <Link
+                        to="/admin/questions/import"
+                        className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg font-semibold text-sm flex items-center gap-2 shadow-sm transition-all"
+                    >
+                        <Sparkles size={18} />
+                        <span>AI PDF Question Importer</span>
+                    </Link>
                     <button
                         type="button"
                         onClick={() => setShowPdfPanel(!showPdfPanel)}
@@ -1155,366 +1572,413 @@ export default function AddQuestion() {
                     onStartScan={handleStartPdfExtraction}
                     isScanning={isExtractingPdf}
                     extractedData={extractedPdfData}
+                    onSelectQuestion={handleSelectQuestionFromPdf}
+                    onRemoveQuestion={handleRemoveExtractedQuestion}
                     showToast={showToast}
                     onClose={() => setShowPdfPanel(false)}
+                    aiProvider={aiProvider}
+                    onAiProviderChange={setAiProvider}
                 />
             )}
 
             {/* MAIN SCREEN — 50/50 WORKSPACE */}
             {showPdfPanel && extractedPdfData && (
-                        <div className="space-y-4">
-                            {/* Navigation Bar & Mode Controls */}
-                            <div className="bg-slate-900 text-white p-3 rounded-xl flex flex-wrap justify-between items-center gap-3 shadow-md">
-                                {/* Mode Tabs */}
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setRawTextTab('FORMATTED')}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${rawTextTab === 'FORMATTED' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
-                                    >
-                                        [ Formatted Question Paper ]
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setRawTextTab('QP')}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${rawTextTab === 'QP' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
-                                    >
-                                        [ Raw Question Text ]
-                                    </button>
-                                    {extractedPdfData.raw_answer_text && (
+                <div className="space-y-4">
+                    {/* Navigation Bar & Mode Controls */}
+                    <div className="bg-slate-900 text-white p-3 rounded-xl flex flex-wrap justify-between items-center gap-3 shadow-md">
+                        {/* Mode Tabs */}
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setRawTextTab('FORMATTED')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${rawTextTab === 'FORMATTED' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                            >
+                                [ Formatted Question Paper ]
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setRawTextTab('QP')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${rawTextTab === 'QP' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                            >
+                                [ Raw Question Text ]
+                            </button>
+                            {extractedPdfData.raw_answer_text && (
+                                <button
+                                    type="button"
+                                    onClick={() => setRawTextTab('AP')}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${rawTextTab === 'AP' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                >
+                                    [ Raw Answer Text ]
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Synchronized Question Navigation */}
+                        {rawTextTab === 'FORMATTED' && extractedPdfData.questions?.length > 0 && (
+                            <div className="flex items-center gap-3">
+                                <button
+                                    type="button"
+                                    disabled={selectedQIdx <= 0}
+                                    onClick={() => scrollToQuestion(Math.max(0, selectedQIdx - 1))}
+                                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-lg text-xs font-bold transition-all"
+                                >
+                                    [ ← Previous ]
+                                </button>
+                                <span className="px-3 py-1 bg-blue-600 text-white font-black text-xs rounded-lg shadow-sm">
+                                    Q.{extractedPdfData.questions[selectedQIdx]?.q_no || selectedQIdx + 1}
+                                </span>
+                                <button
+                                    type="button"
+                                    disabled={selectedQIdx >= extractedPdfData.questions.length - 1}
+                                    onClick={() => scrollToQuestion(Math.min(extractedPdfData.questions.length - 1, selectedQIdx + 1))}
+                                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-lg text-xs font-bold transition-all"
+                                >
+                                    [ Next → ]
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Page & Zoom */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs text-slate-300 font-medium">
+                                Page 1 / {extractedPdfData.total_pages || 1}
+                            </span>
+                            <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-lg">
+                                <button
+                                    type="button"
+                                    onClick={() => setWorkspaceZoom(prev => Math.max(80, prev - 10))}
+                                    className="px-2 py-0.5 text-xs font-bold text-slate-300 hover:text-white"
+                                    title="Zoom Out"
+                                >
+                                    [ − ]
+                                </button>
+                                <span className="text-xs font-bold text-blue-400 px-1">{workspaceZoom}%</span>
+                                <button
+                                    type="button"
+                                    onClick={() => setWorkspaceZoom(prev => Math.min(150, prev + 10))}
+                                    className="px-2 py-0.5 text-xs font-bold text-slate-300 hover:text-white"
+                                    title="Zoom In"
+                                >
+                                    [ + ]
+                                </button>
+                            </div>
+
+                            {/* Minimize / Expand Toggle */}
+                            <button
+                                type="button"
+                                onClick={() => setIsWorkspaceMinimized(prev => !prev)}
+                                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ml-1"
+                                title={isWorkspaceMinimized ? "Expand Question Paper Workspace" : "Minimize Question Paper Workspace"}
+                            >
+                                {isWorkspaceMinimized ? (
+                                    <>
+                                        <Maximize2 size={13} className="text-emerald-400" />
+                                        <span>[ 🔼 Expand ]</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Minimize2 size={13} className="text-amber-400" />
+                                        <span>[ 🔽 Minimize ]</span>
+                                    </>
+                                )}
+                            </button>
+
+                            {/* Close Button */}
+                            <button
+                                type="button"
+                                onClick={() => setShowPdfPanel(false)}
+                                className="p-1.5 bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-slate-700 rounded-lg transition-all"
+                                title="Close Workspace"
+                            >
+                                <X size={15} />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* FORMATTED MODE: 50/50 SPLIT PANELS (Hidden when minimized) */}
+                    {!isWorkspaceMinimized && rawTextTab === 'FORMATTED' && (
+                        <div
+                            ref={splitContainerRef}
+                            className="split-workspace-container flex-col md:flex-row"
+                            style={{ fontSize: `${workspaceZoom}%` }}
+                        >
+                            {/* Mobile View Switcher Tabs */}
+                            <div className="flex md:hidden bg-slate-100 p-2 border-b border-slate-200 w-full">
+                                <button
+                                    type="button"
+                                    onClick={() => setMobileActiveTab('QP')}
+                                    className={`flex-1 py-2 text-xs font-bold rounded-lg ${mobileActiveTab === 'QP' ? 'bg-blue-600 text-white' : 'text-slate-700'}`}
+                                >
+                                    📄 QUESTION PAPER
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setMobileActiveTab('AP')}
+                                    className={`flex-1 py-2 text-xs font-bold rounded-lg ${mobileActiveTab === 'AP' ? 'bg-emerald-600 text-white' : 'text-slate-700'}`}
+                                >
+                                    📘 ANSWER PAPER
+                                </button>
+                            </div>
+
+                            {/* 3. QUESTION PAPER PANEL (50% LEFT) */}
+                            <div
+                                className={`workspace-panel ${mobileActiveTab === 'QP' ? 'flex' : 'hidden md:flex'}`}
+                                style={{ width: window.innerWidth > 768 ? `${leftPanelWidthPercent}%` : '100%' }}
+                            >
+                                <div className="workspace-panel-header">
+                                    <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                        📄 QUESTION PAPER
+                                    </span>
+                                    <div className="flex items-center gap-1 bg-slate-200 p-1 rounded-lg text-[11px] font-bold">
                                         <button
                                             type="button"
-                                            onClick={() => setRawTextTab('AP')}
-                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${rawTextTab === 'AP' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                            onClick={() => setQpViewMode('TEXT')}
+                                            className={`px-2 py-0.5 rounded ${qpViewMode === 'TEXT' ? 'bg-blue-600 text-white' : 'text-slate-700'}`}
                                         >
-                                            [ Raw Answer Text ]
+                                            [ Text View ]
                                         </button>
-                                    )}
+                                        <button
+                                            type="button"
+                                            onClick={() => setQpViewMode('PDF')}
+                                            className={`px-2 py-0.5 rounded ${qpViewMode === 'PDF' ? 'bg-blue-600 text-white' : 'text-slate-700'}`}
+                                        >
+                                            [ PDF View ]
+                                        </button>
+                                    </div>
                                 </div>
 
-                                {/* Synchronized Question Navigation */}
-                                {rawTextTab === 'FORMATTED' && extractedPdfData.questions?.length > 0 && (
-                                    <div className="flex items-center gap-3">
-                                        <button
-                                            type="button"
-                                            disabled={selectedQIdx <= 0}
-                                            onClick={() => scrollToQuestion(Math.max(0, selectedQIdx - 1))}
-                                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-lg text-xs font-bold transition-all"
-                                        >
-                                            [ ← Previous ]
-                                        </button>
-                                        <span className="px-3 py-1 bg-blue-600 text-white font-black text-xs rounded-lg shadow-sm">
-                                            Q.{extractedPdfData.questions[selectedQIdx]?.q_no || selectedQIdx + 1}
-                                        </span>
-                                        <button
-                                            type="button"
-                                            disabled={selectedQIdx >= extractedPdfData.questions.length - 1}
-                                            onClick={() => scrollToQuestion(Math.min(extractedPdfData.questions.length - 1, selectedQIdx + 1))}
-                                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-lg text-xs font-bold transition-all"
-                                        >
-                                            [ Next → ]
-                                        </button>
-                                    </div>
-                                )}
+                                <div className="p-4 overflow-y-auto space-y-4 max-h-[600px] flex-1 bg-slate-50/50">
+                                    {qpViewMode === 'PDF' && pdfQuestionFile ? (
+                                        <iframe
+                                            src={URL.createObjectURL(pdfQuestionFile)}
+                                            className="w-full h-[550px] border-none rounded-xl"
+                                            title="Question Paper PDF View"
+                                        />
+                                    ) : (
+                                        (extractedPdfData.questions || []).map((q: any, idx: number) => {
+                                            const isSelected = selectedQIdx === idx;
+                                            return (
+                                                <div
+                                                    key={idx}
+                                                    id={`qp-card-${idx}`}
+                                                    draggable={true}
+                                                    onDragStart={e => {
+                                                        e.dataTransfer.setData('application/json', JSON.stringify({ type: 'QUESTION', question: q, index: idx }));
+                                                    }}
+                                                    onClick={() => setSelectedQIdx(idx)}
+                                                    className={`workspace-card space-y-3 ${isSelected ? 'active-question' : ''}`}
+                                                >
+                                                    <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                                                        <span className="px-2.5 py-1 bg-blue-600 text-white font-black text-xs rounded-lg shadow-sm">
+                                                            Q.{q.q_no || idx + 1}
+                                                        </span>
+                                                        {q.marks && (
+                                                            <span className="px-2 py-0.5 bg-amber-50 text-amber-700 font-bold text-xs rounded border border-amber-200">
+                                                                {q.marks} Marks
+                                                            </span>
+                                                        )}
+                                                    </div>
 
-                                {/* Page & Zoom */}
-                                <div className="flex items-center gap-3">
-                                    <span className="text-xs text-slate-300 font-medium">
-                                        Page 1 / {extractedPdfData.total_pages || 1}
-                                    </span>
-                                    <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-lg">
-                                        <button
-                                            type="button"
-                                            onClick={() => setWorkspaceZoom(prev => Math.max(80, prev - 10))}
-                                            className="px-2 py-0.5 text-xs font-bold text-slate-300 hover:text-white"
-                                        >
-                                            [ − ]
-                                        </button>
-                                        <span className="text-xs font-bold text-blue-400 px-1">{workspaceZoom}%</span>
-                                        <button
-                                            type="button"
-                                            onClick={() => setWorkspaceZoom(prev => Math.min(150, prev + 10))}
-                                            className="px-2 py-0.5 text-xs font-bold text-slate-300 hover:text-white"
-                                        >
-                                            [ + ]
-                                        </button>
-                                    </div>
+                                                    <div className="text-slate-900 text-xs leading-relaxed select-text">
+                                                        {renderFormattedContent(q.question_text, q.table_data)}
+                                                    </div>
+
+                                                    {/* Display MCQ Options if available */}
+                                                    {q.options && q.options.length > 0 && (
+                                                        <div className="grid grid-cols-2 gap-2 pt-1">
+                                                            {q.options.map((opt: any, oIdx: number) => (
+                                                                <div key={oIdx} className="bg-slate-50 border border-slate-200 rounded p-2 text-xs">
+                                                                    <span className="font-bold text-blue-600 mr-1">{String.fromCharCode(65 + oIdx)}.</span>
+                                                                    <span>{typeof opt === 'string' ? opt : opt.text}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Action Buttons */}
+                                                    <div className="flex items-center gap-2 pt-2 border-t border-slate-100 flex-wrap">
+                                                        <button
+                                                            type="button"
+                                                            onClick={e => {
+                                                                e.stopPropagation();
+                                                                let txt = q.question_text || '';
+                                                                if (q.options?.length > 0) {
+                                                                    txt += '\n\n' + q.options.map((o: any, oIdx: number) => `${String.fromCharCode(65 + oIdx)}. ${typeof o === 'string' ? o : o.text}`).join('\n');
+                                                                }
+                                                                copyToClipboard(txt, '✓ Question copied');
+                                                            }}
+                                                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold flex items-center gap-1 transition-all"
+                                                        >
+                                                            <Clipboard size={12} /> Copy Question
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={e => {
+                                                                e.stopPropagation();
+                                                                handleAddManually();
+                                                            }}
+                                                            className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded text-xs font-bold flex items-center gap-1 transition-all"
+                                                        >
+                                                            ✏️ Add Manually
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={e => {
+                                                                e.stopPropagation();
+                                                                handleSelectQuestionFromPdf(q, idx);
+                                                            }}
+                                                            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
+                                                        >
+                                                            <Sparkles size={12} /> Use Question
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={e => {
+                                                                e.stopPropagation();
+                                                                handleRemoveExtractedQuestion(idx);
+                                                            }}
+                                                            className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-xs font-bold flex items-center gap-1 transition-all"
+                                                            title="Remove question card"
+                                                        >
+                                                            <Trash2 size={12} /> Remove
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    )}
                                 </div>
                             </div>
 
-                            {/* FORMATTED MODE: 50/50 SPLIT PANELS */}
-                            {rawTextTab === 'FORMATTED' && (
-                                <div
-                                    ref={splitContainerRef}
-                                    className="split-workspace-container flex-col md:flex-row"
-                                    style={{ fontSize: `${workspaceZoom}%` }}
-                                >
-                                    {/* Mobile View Switcher Tabs */}
-                                    <div className="flex md:hidden bg-slate-100 p-2 border-b border-slate-200 w-full">
+                            {/* DRAGGABLE DIVIDER (50/50 split resizer) */}
+                            <div
+                                onMouseDown={handleMouseDownDivider}
+                                className={`split-divider-handle hidden md:flex ${isDraggingDivider ? 'dragging' : ''}`}
+                                title="Drag to resize Question and Answer panels"
+                            >
+                                <div className="split-divider-line" />
+                            </div>
+
+                            {/* 4. ANSWER PAPER PANEL (50% RIGHT) */}
+                            <div
+                                className={`workspace-panel ${mobileActiveTab === 'AP' ? 'flex' : 'hidden md:flex'}`}
+                                style={{ width: window.innerWidth > 768 ? `${100 - leftPanelWidthPercent}%` : '100%' }}
+                            >
+                                <div className="workspace-panel-header">
+                                    <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                        📘 ANSWER PAPER
+                                    </span>
+                                    <div className="flex items-center gap-1 bg-slate-200 p-1 rounded-lg text-[11px] font-bold">
                                         <button
                                             type="button"
-                                            onClick={() => setMobileActiveTab('QP')}
-                                            className={`flex-1 py-2 text-xs font-bold rounded-lg ${mobileActiveTab === 'QP' ? 'bg-blue-600 text-white' : 'text-slate-700'}`}
+                                            onClick={() => setApViewMode('TEXT')}
+                                            className={`px-2 py-0.5 rounded ${apViewMode === 'TEXT' ? 'bg-emerald-600 text-white' : 'text-slate-700'}`}
                                         >
-                                            📄 QUESTION PAPER
+                                            [ Text View ]
                                         </button>
                                         <button
                                             type="button"
-                                            onClick={() => setMobileActiveTab('AP')}
-                                            className={`flex-1 py-2 text-xs font-bold rounded-lg ${mobileActiveTab === 'AP' ? 'bg-emerald-600 text-white' : 'text-slate-700'}`}
+                                            onClick={() => setApViewMode('PDF')}
+                                            className={`px-2 py-0.5 rounded ${apViewMode === 'PDF' ? 'bg-emerald-600 text-white' : 'text-slate-700'}`}
                                         >
-                                            📘 ANSWER PAPER
+                                            [ PDF View ]
                                         </button>
                                     </div>
-
-                                    {/* 3. QUESTION PAPER PANEL (50% LEFT) */}
-                                    <div
-                                        className={`workspace-panel ${mobileActiveTab === 'QP' ? 'flex' : 'hidden md:flex'}`}
-                                        style={{ width: window.innerWidth > 768 ? `${leftPanelWidthPercent}%` : '100%' }}
-                                    >
-                                        <div className="workspace-panel-header">
-                                            <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                                                📄 QUESTION PAPER
-                                            </span>
-                                            <div className="flex items-center gap-1 bg-slate-200 p-1 rounded-lg text-[11px] font-bold">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setQpViewMode('TEXT')}
-                                                    className={`px-2 py-0.5 rounded ${qpViewMode === 'TEXT' ? 'bg-blue-600 text-white' : 'text-slate-700'}`}
-                                                >
-                                                    [ Text View ]
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setQpViewMode('PDF')}
-                                                    className={`px-2 py-0.5 rounded ${qpViewMode === 'PDF' ? 'bg-blue-600 text-white' : 'text-slate-700'}`}
-                                                >
-                                                    [ PDF View ]
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div className="p-4 overflow-y-auto space-y-4 max-h-[600px] flex-1 bg-slate-50/50">
-                                            {qpViewMode === 'PDF' && pdfQuestionFile ? (
-                                                <iframe
-                                                    src={URL.createObjectURL(pdfQuestionFile)}
-                                                    className="w-full h-[550px] border-none rounded-xl"
-                                                    title="Question Paper PDF View"
-                                                />
-                                            ) : (
-                                                (extractedPdfData.questions || []).map((q: any, idx: number) => {
-                                                    const isSelected = selectedQIdx === idx;
-                                                    return (
-                                                        <div
-                                                            key={idx}
-                                                            id={`qp-card-${idx}`}
-                                                            draggable={true}
-                                                            onDragStart={e => {
-                                                                e.dataTransfer.setData('application/json', JSON.stringify({ type: 'QUESTION', question: q, index: idx }));
-                                                            }}
-                                                            onClick={() => setSelectedQIdx(idx)}
-                                                            className={`workspace-card space-y-3 ${isSelected ? 'active-question' : ''}`}
-                                                        >
-                                                            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                                                                <span className="px-2.5 py-1 bg-blue-600 text-white font-black text-xs rounded-lg shadow-sm">
-                                                                    Q.{q.q_no || idx + 1}
-                                                                </span>
-                                                                {q.marks && (
-                                                                    <span className="px-2 py-0.5 bg-amber-50 text-amber-700 font-bold text-xs rounded border border-amber-200">
-                                                                        {q.marks} Marks
-                                                                    </span>
-                                                                )}
-                                                            </div>
-
-                                                            <div className="text-slate-900 text-xs leading-relaxed select-text">
-                                                                {renderFormattedContent(q.question_text, q.table_data)}
-                                                            </div>
-
-                                                            {/* Display MCQ Options if available */}
-                                                            {q.options && q.options.length > 0 && (
-                                                                <div className="grid grid-cols-2 gap-2 pt-1">
-                                                                    {q.options.map((opt: any, oIdx: number) => (
-                                                                        <div key={oIdx} className="bg-slate-50 border border-slate-200 rounded p-2 text-xs">
-                                                                            <span className="font-bold text-blue-600 mr-1">{String.fromCharCode(65 + oIdx)}.</span>
-                                                                            <span>{typeof opt === 'string' ? opt : opt.text}</span>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-
-                                                            {/* Action Buttons */}
-                                                            <div className="flex items-center gap-2 pt-2 border-t border-slate-100 flex-wrap">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={e => {
-                                                                        e.stopPropagation();
-                                                                        let txt = q.question_text || '';
-                                                                        if (q.options?.length > 0) {
-                                                                            txt += '\n\n' + q.options.map((o: any, oIdx: number) => `${String.fromCharCode(65 + oIdx)}. ${typeof o === 'string' ? o : o.text}`).join('\n');
-                                                                        }
-                                                                        copyToClipboard(txt, '✓ Question copied');
-                                                                    }}
-                                                                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold flex items-center gap-1 transition-all"
-                                                                >
-                                                                    <Clipboard size={12} /> Copy Question
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={e => {
-                                                                        e.stopPropagation();
-                                                                        handleAddManually();
-                                                                    }}
-                                                                    className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded text-xs font-bold flex items-center gap-1 transition-all"
-                                                                >
-                                                                    ✏️ Add Manually
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={e => {
-                                                                        e.stopPropagation();
-                                                                        handleSelectQuestionFromPdf(q, idx);
-                                                                    }}
-                                                                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
-                                                                >
-                                                                    <Sparkles size={12} /> Use Question
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* DRAGGABLE DIVIDER (50/50 split resizer) */}
-                                    <div
-                                        onMouseDown={handleMouseDownDivider}
-                                        className={`split-divider-handle hidden md:flex ${isDraggingDivider ? 'dragging' : ''}`}
-                                        title="Drag to resize Question and Answer panels"
-                                    >
-                                        <div className="split-divider-line" />
-                                    </div>
-
-                                    {/* 4. ANSWER PAPER PANEL (50% RIGHT) */}
-                                    <div
-                                        className={`workspace-panel ${mobileActiveTab === 'AP' ? 'flex' : 'hidden md:flex'}`}
-                                        style={{ width: window.innerWidth > 768 ? `${100 - leftPanelWidthPercent}%` : '100%' }}
-                                    >
-                                        <div className="workspace-panel-header">
-                                            <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                                                📘 ANSWER PAPER
-                                            </span>
-                                            <div className="flex items-center gap-1 bg-slate-200 p-1 rounded-lg text-[11px] font-bold">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setApViewMode('TEXT')}
-                                                    className={`px-2 py-0.5 rounded ${apViewMode === 'TEXT' ? 'bg-emerald-600 text-white' : 'text-slate-700'}`}
-                                                >
-                                                    [ Text View ]
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setApViewMode('PDF')}
-                                                    className={`px-2 py-0.5 rounded ${apViewMode === 'PDF' ? 'bg-emerald-600 text-white' : 'text-slate-700'}`}
-                                                >
-                                                    [ PDF View ]
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div className="p-4 overflow-y-auto space-y-4 max-h-[600px] flex-1 bg-slate-50/50">
-                                            {apViewMode === 'PDF' && pdfAnswerFile ? (
-                                                <iframe
-                                                    src={URL.createObjectURL(pdfAnswerFile)}
-                                                    className="w-full h-[550px] border-none rounded-xl"
-                                                    title="Answer Paper PDF View"
-                                                />
-                                            ) : (
-                                                (extractedPdfData.questions || []).map((q: any, idx: number) => {
-                                                    const isSelected = selectedQIdx === idx;
-                                                    return (
-                                                        <div
-                                                            key={idx}
-                                                            id={`ap-card-${idx}`}
-                                                            draggable={true}
-                                                            onDragStart={e => {
-                                                                e.dataTransfer.setData('application/json', JSON.stringify({ type: 'ANSWER', answer: q.correct_answer, index: idx }));
-                                                            }}
-                                                            onClick={() => setSelectedQIdx(idx)}
-                                                            className={`workspace-card space-y-3 ${isSelected ? 'active-answer' : ''}`}
-                                                        >
-                                                            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                                                                <span className="px-2.5 py-1 bg-emerald-600 text-white font-black text-xs rounded-lg shadow-sm">
-                                                                    Answer {q.q_no || idx + 1}
-                                                                </span>
-                                                                <span className="text-[11px] font-bold text-slate-400">
-                                                                    Suggested Solution
-                                                                </span>
-                                                            </div>
-
-                                                            <div className="text-slate-900 text-xs leading-relaxed select-text font-mono">
-                                                                {renderFormattedContent(q.correct_answer || 'No solution text extracted for this question.', q.answer_table_data)}
-                                                            </div>
-
-                                                            {/* Action Buttons */}
-                                                            <div className="flex items-center gap-2 pt-2 border-t border-slate-100 flex-wrap">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={e => {
-                                                                        e.stopPropagation();
-                                                                        copyToClipboard(q.correct_answer || '', '✓ Answer copied');
-                                                                    }}
-                                                                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold flex items-center gap-1 transition-all"
-                                                                >
-                                                                    <Clipboard size={12} /> Copy Answer
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={e => {
-                                                                        e.stopPropagation();
-                                                                        if (q.correct_answer) {
-                                                                            setForm(prev => ({ ...prev, correct_answer: q.correct_answer }));
-                                                                            showToast('✓ Answer loaded into form');
-                                                                        }
-                                                                    }}
-                                                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
-                                                                >
-                                                                    <CheckSquare size={12} /> Use as Answer
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })
-                                            )}
-                                        </div>
-                                    </div>
                                 </div>
-                            )}
 
-                            {/* RAW TEXT TAB MODE */}
-                            {['QP', 'AP'].includes(rawTextTab) && (
-                                <div className="border-2 border-slate-200 rounded-2xl overflow-hidden bg-white shadow-md">
-                                    <div className="bg-slate-50 px-4 py-2.5 flex justify-between items-center border-b border-slate-200 text-xs text-slate-700 font-bold flex-wrap gap-2">
-                                        <span className="flex items-center gap-1.5 text-slate-800">
-                                            <FileText size={15} className="text-blue-600" />
-                                            {rawTextTab === 'QP' ? '📜 Raw Question Paper Text' : '💡 Raw Answer Paper Text'}
-                                        </span>
-                                        <span className="text-blue-600 font-bold bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100 text-[11px]">
-                                            💡 Select text with cursor & copy freely
-                                        </span>
-                                    </div>
+                                <div className="p-4 overflow-y-auto space-y-4 max-h-[600px] flex-1 bg-slate-50/50">
+                                    {apViewMode === 'PDF' && pdfAnswerFile ? (
+                                        <iframe
+                                            src={URL.createObjectURL(pdfAnswerFile)}
+                                            className="w-full h-[550px] border-none rounded-xl"
+                                            title="Answer Paper PDF View"
+                                        />
+                                    ) : (
+                                        (extractedPdfData.questions || []).map((q: any, idx: number) => {
+                                            const isSelected = selectedQIdx === idx;
+                                            return (
+                                                <div
+                                                    key={idx}
+                                                    id={`ap-card-${idx}`}
+                                                    draggable={true}
+                                                    onDragStart={e => {
+                                                        e.dataTransfer.setData('application/json', JSON.stringify({ type: 'ANSWER', answer: q.correct_answer, index: idx }));
+                                                    }}
+                                                    onClick={() => setSelectedQIdx(idx)}
+                                                    className={`workspace-card space-y-3 ${isSelected ? 'active-answer' : ''}`}
+                                                >
+                                                    <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                                                        <span className="px-2.5 py-1 bg-emerald-600 text-white font-black text-xs rounded-lg shadow-sm">
+                                                            Answer {q.q_no || idx + 1}
+                                                        </span>
+                                                        <span className="text-[11px] font-bold text-slate-400">
+                                                            Suggested Solution
+                                                        </span>
+                                                    </div>
 
-                                    <div className="p-6 overflow-y-auto bg-white text-slate-900 font-sans text-sm leading-relaxed select-text max-h-[480px]">
-                                        {renderFormattedContent(
-                                            rawTextTab === 'QP'
-                                                ? (extractedPdfData.raw_question_text || (extractedPdfData.questions || []).map((q: any) => `Q${q.q_no}: ${q.question_text}`).join('\n\n'))
-                                                : (extractedPdfData.raw_answer_text || (extractedPdfData.questions || []).map((q: any) => `Ans Q${q.q_no}: ${q.correct_answer}`).join('\n\n'))
-                                        )}
-                                    </div>
+                                                    <div className="text-slate-900 text-xs leading-relaxed select-text font-mono">
+                                                        {renderFormattedContent(q.correct_answer || 'No solution text extracted for this question.', q.answer_table_data)}
+                                                    </div>
+
+                                                    {/* Action Buttons */}
+                                                    <div className="flex items-center gap-2 pt-2 border-t border-slate-100 flex-wrap">
+                                                        <button
+                                                            type="button"
+                                                            onClick={e => {
+                                                                e.stopPropagation();
+                                                                copyToClipboard(q.correct_answer || '', '✓ Answer copied');
+                                                            }}
+                                                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold flex items-center gap-1 transition-all"
+                                                        >
+                                                            <Clipboard size={12} /> Copy Answer
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={e => {
+                                                                e.stopPropagation();
+                                                                if (q.correct_answer) {
+                                                                    setForm(prev => ({ ...prev, correct_answer: q.correct_answer }));
+                                                                    showToast('✓ Answer loaded into form');
+                                                                }
+                                                            }}
+                                                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
+                                                        >
+                                                            <CheckSquare size={12} /> Use as Answer
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    )}
                                 </div>
-                            )}
+                            </div>
                         </div>
                     )}
+
+                    {/* RAW TEXT TAB MODE (Hidden when minimized) */}
+                    {!isWorkspaceMinimized && ['QP', 'AP'].includes(rawTextTab) && (
+                        <div className="border-2 border-slate-200 rounded-2xl overflow-hidden bg-white shadow-md">
+                            <div className="bg-slate-50 px-4 py-2.5 flex justify-between items-center border-b border-slate-200 text-xs text-slate-700 font-bold flex-wrap gap-2">
+                                <span className="flex items-center gap-1.5 text-slate-800">
+                                    <FileText size={15} className="text-blue-600" />
+                                    {rawTextTab === 'QP' ? '📜 Raw Question Paper Text' : '💡 Raw Answer Paper Text'}
+                                </span>
+                                <span className="text-blue-600 font-bold bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100 text-[11px]">
+                                    💡 Select text with cursor & copy freely
+                                </span>
+                            </div>
+
+                            <div className="p-6 overflow-y-auto bg-white text-slate-900 font-sans text-sm leading-relaxed select-text max-h-[480px]">
+                                {renderFormattedContent(
+                                    rawTextTab === 'QP'
+                                        ? (extractedPdfData.raw_question_text || (extractedPdfData.questions || []).map((q: any) => `Q${q.q_no}: ${q.question_text}`).join('\n\n'))
+                                        : (extractedPdfData.raw_answer_text || (extractedPdfData.questions || []).map((q: any) => `Ans Q${q.q_no}: ${q.correct_answer}`).join('\n\n'))
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Single-Page Layout */}
             <div className="form-grid">
@@ -1661,27 +2125,96 @@ export default function AddQuestion() {
                     {/* Case Scenario Passage Card (If CASE_SCENARIO is chosen) */}
                     {form.question_type === 'CASE_SCENARIO' && (
                         <div className="form-card space-y-4 border-l-4 border-amber-500 bg-amber-50/20">
-                            <div className="flex justify-between items-center">
-                                <h2 className="form-card-title flex items-center gap-2 text-sm font-bold text-amber-800 uppercase tracking-wider">
-                                    <FileText size={16} className="text-amber-600" /> Case Scenario Passage / Context
-                                </h2>
+                            <div className="flex flex-wrap justify-between items-center gap-2">
+                                <div className="flex items-center gap-2">
+                                    <h2 className="form-card-title flex items-center gap-2 text-sm font-bold text-amber-800 uppercase tracking-wider">
+                                        <FileText size={16} className="text-amber-600" /> Case Scenario Passage / Context
+                                    </h2>
+                                    {form.case_scenario_passage.includes('[TABLE_1]') ? (
+                                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded text-[10px] font-bold">
+                                            ✓ [TABLE_1] In Position
+                                        </span>
+                                    ) : (form.table_data && form.table_data !== '[]') ? (
+                                        <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-bold animate-pulse">
+                                            ⚠️ Table Not Placed In Text
+                                        </span>
+                                    ) : null}
+                                </div>
+                                {/* View Mode Tabs */}
+                                <div className="flex bg-amber-100/70 p-0.5 rounded-lg border border-amber-200 text-xs font-bold">
+                                    <button
+                                        type="button"
+                                        onClick={() => setCaseScenarioView('editor')}
+                                        className={`px-3 py-1 rounded-md transition-all ${caseScenarioView === 'editor' ? 'bg-white text-amber-900 shadow-xs' : 'text-amber-700 hover:text-amber-900'}`}
+                                    >
+                                        Edit Text
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCaseScenarioView('split')}
+                                        className={`px-3 py-1 rounded-md transition-all ${caseScenarioView === 'split' ? 'bg-white text-amber-900 shadow-xs' : 'text-amber-700 hover:text-amber-900'}`}
+                                    >
+                                        Split View
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCaseScenarioView('preview')}
+                                        className={`px-3 py-1 rounded-md transition-all ${caseScenarioView === 'preview' ? 'bg-white text-amber-900 shadow-xs' : 'text-amber-700 hover:text-amber-900'}`}
+                                    >
+                                        Live Preview
+                                    </button>
+                                </div>
                             </div>
-                            <textarea
-                                id="case-scenario-passage-text"
-                                className="w-full min-h-[220px] p-4 border border-amber-200 focus:border-amber-400 focus:ring-2 focus:ring-amber-100 rounded-lg text-sm bg-white outline-none transition-all font-semibold text-slate-700"
-                                placeholder="Type or paste the main Case Scenario/Passage here. Students will read this text before answering the sub-questions below."
-                                value={form.case_scenario_passage}
-                                onChange={e => set('case_scenario_passage', e.target.value)}
-                            />
+
+                            {/* Passage Input & Live Visual Preview */}
+                            {caseScenarioView === 'split' ? (
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between items-center text-[10px] font-bold text-amber-800 uppercase px-1">
+                                            <span>Raw Passage Text</span>
+                                            <span className="text-amber-600 font-mono">{form.case_scenario_passage.length} chars</span>
+                                        </div>
+                                        <textarea
+                                            id="case-scenario-passage-text"
+                                            className="w-full min-h-[260px] p-4 border border-amber-200 focus:border-amber-400 focus:ring-2 focus:ring-amber-100 rounded-lg text-xs bg-white outline-none transition-all font-semibold text-slate-700 font-mono"
+                                            placeholder="Type or paste the main Case Scenario/Passage here. Use [TABLE_1] to position tables between paragraphs."
+                                            value={form.case_scenario_passage}
+                                            onChange={e => set('case_scenario_passage', e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between items-center text-[10px] font-bold text-amber-800 uppercase px-1">
+                                            <span>Live Formatted Preview (In-Position Tables)</span>
+                                            <span className="text-emerald-700 font-bold">● Active</span>
+                                        </div>
+                                        <RenderPassageWithInlineTables text={form.case_scenario_passage} tableJson={form.table_data} />
+                                    </div>
+                                </div>
+                            ) : caseScenarioView === 'preview' ? (
+                                <div className="space-y-1">
+                                    <div className="flex justify-between items-center text-[10px] font-bold text-amber-800 uppercase px-1">
+                                        <span>Live Formatted Preview (With Tables in Exact Position)</span>
+                                    </div>
+                                    <RenderPassageWithInlineTables text={form.case_scenario_passage} tableJson={form.table_data} />
+                                </div>
+                            ) : (
+                                <textarea
+                                    id="case-scenario-passage-text"
+                                    className="w-full min-h-[220px] p-4 border border-amber-200 focus:border-amber-400 focus:ring-2 focus:ring-amber-100 rounded-lg text-sm bg-white outline-none transition-all font-semibold text-slate-700"
+                                    placeholder="Type or paste the main Case Scenario/Passage here. Students will read this text before answering the sub-questions below."
+                                    value={form.case_scenario_passage}
+                                    onChange={e => set('case_scenario_passage', e.target.value)}
+                                />
+                            )}
 
                             {/* Case Scenario Toolbar Options */}
-                            <div className="flex gap-2.5 pb-2 flex-wrap">
+                            <div className="flex gap-2 pb-1 flex-wrap items-center">
                                 <button
                                     type="button"
                                     onClick={() => setShowQTable(!showQTable)}
-                                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${showQTable ? 'bg-red-50 text-red-600 border-red-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${showQTable ? 'bg-red-50 text-red-600 border-red-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}
                                 >
-                                    {showQTable ? '[-] Remove Table' : '[+] Add Table'}
+                                    {showQTable ? '[-] Hide Table Editor' : '[+] Open Table Editor'}
                                 </button>
                                 <button
                                     type="button"
@@ -1698,10 +2231,30 @@ export default function AddQuestion() {
                                         set('table_data', JSON.stringify([...currentTables, newTable]));
                                         insertTextAtCursor('case-scenario-passage-text', ` ${newTablePlaceholder} `, val => set('case_scenario_passage', val));
                                     }}
-                                    className="px-3.5 py-1.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-bold transition-all hover:bg-slate-200"
+                                    className="px-3 py-1.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-bold transition-all hover:bg-slate-200"
                                 >
                                     [+ Table @ Cursor]
                                 </button>
+
+                                {/* 1-Click Position Helper: Place Table after Paragraph 2 */}
+                                <button
+                                    type="button"
+                                    onClick={() => placeTableAfterParagraph(2)}
+                                    className="px-3 py-1.5 bg-amber-100 border border-amber-300 text-amber-900 rounded-lg text-xs font-bold transition-all hover:bg-amber-200 flex items-center gap-1 shadow-xs"
+                                    title="Position table directly between paragraph 2 and paragraph 3"
+                                >
+                                    📍 Position Table after Para 2
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => placeTableAfterParagraph(1)}
+                                    className="px-2.5 py-1.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-xs font-semibold transition-all hover:bg-amber-100"
+                                    title="Position table after paragraph 1"
+                                >
+                                    📍 After Para 1
+                                </button>
+
+                                <span className="w-[1px] h-6 bg-slate-200 self-center mx-0.5" />
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -1711,7 +2264,7 @@ export default function AddQuestion() {
                                             val => set('case_scenario_passage', val)
                                         );
                                     }}
-                                    className="px-3.5 py-1.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-bold transition-all hover:bg-slate-200"
+                                    className="px-2.5 py-1.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-bold transition-all hover:bg-slate-200"
                                 >
                                     [+ MCQ @ Cursor]
                                 </button>
@@ -1724,11 +2277,11 @@ export default function AddQuestion() {
                                             val => set('case_scenario_passage', val)
                                         );
                                     }}
-                                    className="px-3.5 py-1.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-bold transition-all hover:bg-slate-200"
+                                    className="px-2.5 py-1.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-bold transition-all hover:bg-slate-200"
                                 >
                                     [+ Sub-Q @ Cursor]
                                 </button>
-                                <span className="w-[1px] h-6 bg-slate-200 self-center mx-1" />
+                                <span className="w-[1px] h-6 bg-slate-200 self-center mx-0.5" />
                                 <button
                                     type="button"
                                     onClick={() => insertFormattedTextAtCursor('case-scenario-passage-text', 'B', val => set('case_scenario_passage', val))}
@@ -1753,7 +2306,7 @@ export default function AddQuestion() {
                                 >
                                     <AlignCenter size={14} />
                                 </button>
-                                <span className="w-[1px] h-6 bg-slate-200 self-center mx-1" />
+                                <span className="w-[1px] h-6 bg-slate-200 self-center mx-0.5" />
                                 <button
                                     type="button"
                                     onClick={addSubQuestion}
@@ -2278,10 +2831,59 @@ export default function AddQuestion() {
 
                     {/* Section 2: Suggested Answer Card (with sub-answers relocated inside) */}
                     <div className="form-card space-y-4">
-                        <div className="flex justify-between items-center">
+                        <div className="flex justify-between items-center gap-2 flex-wrap">
                             <h2 className="form-card-title flex items-center gap-2 text-sm font-bold text-slate-800 uppercase tracking-wider">
                                 <MessageSquare size={16} /> Suggested Answer Box
                             </h2>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {/* AI Provider Switcher */}
+                                <div className="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-300 text-xs font-bold">
+                                    <button
+                                        type="button"
+                                        onClick={() => setAiProvider('gemini')}
+                                        className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
+                                            aiProvider === 'gemini'
+                                                ? 'bg-white text-indigo-700 shadow-xs font-black'
+                                                : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                        title="Generate answers with Google Gemini AI"
+                                    >
+                                        <span>✨ Gemini</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setAiProvider('openai')}
+                                        className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
+                                            aiProvider === 'openai'
+                                                ? 'bg-white text-emerald-700 shadow-xs font-black'
+                                                : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                        title="Generate answers with OpenAI (GPT-4o)"
+                                    >
+                                        <span>⚡ OpenAI</span>
+                                    </button>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={handleAiGenerateAnswer}
+                                    disabled={isGeneratingAiAnswer || !form.question_text.trim()}
+                                    className={`px-3.5 py-1.5 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50 ${
+                                        aiProvider === 'openai'
+                                            ? 'bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800'
+                                            : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700'
+                                    }`}
+                                    title={`Use ${aiProvider === 'openai' ? 'OpenAI' : 'Google Gemini AI'} to auto-solve and write out the complete answer and working notes`}
+                                >
+                                    {isGeneratingAiAnswer ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} className="text-yellow-300" />}
+                                    <span>
+                                        {isGeneratingAiAnswer
+                                            ? `${aiProvider === 'openai' ? 'OpenAI' : 'Gemini'} Solving...`
+                                            : `Auto-Fill with ${aiProvider === 'openai' ? 'OpenAI' : 'Gemini AI'}`
+                                        }
+                                    </span>
+                                </button>
+                            </div>
                         </div>
 
                         <textarea
@@ -2533,17 +3135,6 @@ export default function AddQuestion() {
                     </div>
                 </div>
             </div>
-
-            {/* PDF Multi-Extractor Modal (Question Paper + Answer Paper) */}
-            <PDFUploadModal
-                open={isPdfModalOpen}
-                onClose={() => setIsPdfModalOpen(false)}
-                icaiTopicId={icai.topicId}
-                chapterId={icai.chapterId}
-                subjectId={form.subject}
-                onSelectQuestion={handleSelectQuestionFromPdf}
-                onUploaded={() => queryClient.invalidateQueries({ queryKey: ['admin-questions'] })}
-            />
         </div>
     );
 }
