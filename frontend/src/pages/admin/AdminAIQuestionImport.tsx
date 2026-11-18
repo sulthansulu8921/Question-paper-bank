@@ -646,7 +646,7 @@ export default function AdminAIQuestionImport() {
 
     // Metadata state
     const [caLevel, setCaLevel] = useState('CA Intermediate');
-    const [examSession, setExamSession] = useState('September 2026');
+    const [examSession, setExamSession] = useState('May');
     const [examYear, setExamYear] = useState('2026');
     const [source, setSource] = useState('Mock Test Paper – Series I');
     const [icaiFilter, setIcaiFilter] = useState<ICAISelection>({
@@ -2050,20 +2050,15 @@ export default function AdminAIQuestionImport() {
                         </div>
 
                         <div className="ai-form-group">
-                            <label className="ai-form-label">Exam Session & Year</label>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '0.5rem' }}>
-                                <select
-                                    className="ai-form-select"
+                            <label className="ai-form-label">Exam Month & Year</label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '0.5rem' }}>
+                                <input
+                                    type="text"
+                                    className="ai-form-input"
                                     value={examSession}
                                     onChange={(e) => setExamSession(e.target.value)}
-                                >
-                                    <option value="January 2026">January 2026</option>
-                                    <option value="May 2026">May 2026</option>
-                                    <option value="July 2026">July 2026</option>
-                                    <option value="September 2026">September 2026</option>
-                                    <option value="November 2025">November 2025</option>
-                                    <option value="May 2025">May 2025</option>
-                                </select>
+                                    placeholder="Month (e.g. May)"
+                                />
                                 <input
                                     type="number"
                                     className="ai-form-input"
