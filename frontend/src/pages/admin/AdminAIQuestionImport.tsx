@@ -877,10 +877,10 @@ export default function AdminAIQuestionImport() {
             formData.append('exam_session', examSession);
             formData.append('exam_year', examYear);
             formData.append('source', source);
-            if (icaiFilter.levelId) formData.append('level_id', icaiFilter.levelId);
-            if (icaiFilter.paperId) formData.append('paper_id', icaiFilter.paperId);
-            if (icaiFilter.chapterId) formData.append('chapter_id', icaiFilter.chapterId);
-            if (icaiFilter.topicId) formData.append('topic_id', icaiFilter.topicId);
+            if (icaiFilter.levelId && icaiFilter.levelId !== 'null' && icaiFilter.levelId !== 'undefined') formData.append('level_id', icaiFilter.levelId);
+            if (icaiFilter.paperId && icaiFilter.paperId !== 'null' && icaiFilter.paperId !== 'undefined') formData.append('paper_id', icaiFilter.paperId);
+            if (icaiFilter.chapterId && icaiFilter.chapterId !== 'null' && icaiFilter.chapterId !== 'undefined') formData.append('chapter_id', icaiFilter.chapterId);
+            if (icaiFilter.topicId && icaiFilter.topicId !== 'null' && icaiFilter.topicId !== 'undefined') formData.append('topic_id', icaiFilter.topicId);
             formData.append('target_question_type', targetQuestionType);
             formData.append('auto_process', 'true');
 
@@ -893,7 +893,13 @@ export default function AdminAIQuestionImport() {
             showToast('AI Pipeline started! Analyzing Question Paper and Answer Sheet with Gemini...');
         } catch (err: any) {
             console.error('Failed to start import job', err);
-            showToast(err.response?.data?.error || 'Failed to initialize AI import job.');
+            const errData = err.response?.data;
+            const errMsg = (errData && typeof errData === 'object'
+                ? (errData.error || errData.detail || errData.message || (Object.keys(errData).length > 0 ? `${Object.keys(errData)[0]}: ${Array.isArray(errData[Object.keys(errData)[0]]) ? errData[Object.keys(errData)[0]][0] : errData[Object.keys(errData)[0]]}` : null))
+                : (typeof errData === 'string' ? errData : null))
+                || err.message
+                || 'Failed to initialize AI import job.';
+            showToast(errMsg);
         } finally {
             setIsStarting(false);
         }

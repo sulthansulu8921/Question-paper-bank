@@ -29,7 +29,8 @@ class IsStaffOrReadOnly(permissions.BasePermission):
         user = request.user
         return bool(user and user.is_authenticated and (
             user.is_superuser or 
-            user.role in ['SUPER_ADMIN', 'QUESTION_ADMIN']
+            getattr(user, 'is_staff', False) or
+            user.role in ['SUPER_ADMIN', 'QUESTION_ADMIN', 'INSTITUTION_ADMIN']
         ))
 
 
@@ -38,7 +39,8 @@ class IsQuestionAdmin(permissions.BasePermission):
         user = request.user
         return bool(user and user.is_authenticated and (
             user.is_superuser or 
-            user.role in ['SUPER_ADMIN', 'QUESTION_ADMIN']
+            getattr(user, 'is_staff', False) or
+            user.role in ['SUPER_ADMIN', 'QUESTION_ADMIN', 'INSTITUTION_ADMIN']
         ))
 
 
@@ -3930,67 +3932,90 @@ class QuestionImportJobViewSet(viewsets.ModelViewSet):
         return QuestionImportJobDetailSerializer
 
     def create(self, request, *args, **kwargs):
-        qp_file = request.FILES.get('question_pdf')
-        ans_file = request.FILES.get('answer_pdf')
-
-        if not qp_file:
-            return Response({'error': 'Question Paper PDF is required.'}, status=400)
-
-        # Optional metadata overrides
-        ca_level = request.data.get('ca_level', 'CA Intermediate')
-        level_id = request.data.get('level_id')
-        paper_id = request.data.get('paper_id')
-        chapter_id = request.data.get('chapter_id')
-        topic_id = request.data.get('topic_id')
-        exam_session = request.data.get('exam_session', 'May')
-        exam_year_raw = request.data.get('exam_year', '2026')
-        source = request.data.get('source', 'Mock Test Paper – Series I')
-        auto_process = str(request.data.get('auto_process', 'true')).lower() in ('true', '1', 'yes')
-
         try:
-            exam_year = int(exam_year_raw) if exam_year_raw else 2026
-        except (ValueError, TypeError):
-            exam_year = 2026
+            qp_file = request.FILES.get('question_pdf')
+            ans_file = request.FILES.get('answer_pdf')
 
-        user = request.user if request.user.is_authenticated else None
-        user_inst = getattr(user, 'institution', None) if user else None
-        is_plat_wide = request.data.get('is_platform_wide')
-        if is_plat_wide is not None:
-            is_platform_wide = str(is_plat_wide).lower() in ('true', '1', 'yes')
-        else:
-            is_platform_wide = (user_inst is None)
+            if not qp_file:
+                return Response({'error': 'Question Paper PDF is required.'}, status=400)
 
-        target_question_type = str(request.data.get('target_question_type', 'ALL')).upper()
-        if target_question_type not in ('ALL', 'MCQ', 'DESCRIPTIVE', 'CASE_SCENARIO'):
-            target_question_type = 'ALL'
+            # Optional metadata overrides
+            ca_level = request.data.get('ca_level', 'CA Intermediate')
+            level_id = request.data.get('level_id')
+            paper_id = request.data.get('paper_id')
+            chapter_id = request.data.get('chapter_id')
+            topic_id = request.data.get('topic_id')
+            exam_session = request.data.get('exam_session', 'May')
+            exam_year_raw = request.data.get('exam_year', '2026')
+            source = request.data.get('source', 'Mock Test Paper – Series I')
+            auto_process = str(request.data.get('auto_process', 'true')).lower() in ('true', '1', 'yes')
 
-        job = QuestionImportJob.objects.create(
-            created_by=user,
-            institution=user_inst,
-            is_platform_wide=is_platform_wide,
-            question_pdf=qp_file,
-            answer_pdf=ans_file,
-            question_pdf_filename=qp_file.name,
-            answer_pdf_filename=ans_file.name if ans_file else '',
-            status='uploaded',
-            stage_label='Uploaded - Ready to process',
-            progress_percent=0,
-            ca_level=ca_level,
-            level_id=level_id if level_id else None,
-            paper_id=paper_id if paper_id else None,
-            chapter_id=chapter_id if chapter_id else None,
-            topic_id=topic_id if topic_id else None,
-            exam_session=exam_session,
-            exam_year=exam_year,
-            source=source,
-            extracted_metadata={'target_question_type': target_question_type}
-        )
+            try:
+                exam_year = int(exam_year_raw) if exam_year_raw else 2026
+            except (ValueError, TypeError):
+                exam_year = 2026
 
-        if auto_process:
-            start_import_job_async(job.id)
+            user = request.user if request.user.is_authenticated else None
+            user_inst = getattr(user, 'institution', None) if user else None
+            is_plat_wide = request.data.get('is_platform_wide')
+            if is_plat_wide is not None:
+                is_platform_wide = str(is_plat_wide).lower() in ('true', '1', 'yes')
+            else:
+                is_platform_wide = (user_inst is None)
 
-        serializer = QuestionImportJobDetailSerializer(job, context={'request': request})
-        return Response(serializer.data, status=201)
+            target_question_type = str(request.data.get('target_question_type', 'ALL')).upper()
+            if target_question_type not in ('ALL', 'MCQ', 'DESCRIPTIVE', 'CASE_SCENARIO'):
+                target_question_type = 'ALL'
+
+            from master_data.models import CALevel, ICAIPaper, ICAIChapter, ICAITopic
+
+            def safe_fk(val, model_cls):
+                if val is None:
+                    return None
+                val_str = str(val).strip()
+                if not val_str or val_str.lower() in ('null', 'undefined', 'none', ''):
+                    return None
+                try:
+                    int_val = int(val_str)
+                    return int_val if model_cls.objects.filter(id=int_val).exists() else None
+                except (ValueError, TypeError):
+                    return None
+
+            clean_level_id = safe_fk(level_id, CALevel)
+            clean_paper_id = safe_fk(paper_id, ICAIPaper)
+            clean_chapter_id = safe_fk(chapter_id, ICAIChapter)
+            clean_topic_id = safe_fk(topic_id, ICAITopic)
+
+            job = QuestionImportJob.objects.create(
+                created_by=user,
+                institution=user_inst,
+                is_platform_wide=is_platform_wide,
+                question_pdf=qp_file,
+                answer_pdf=ans_file,
+                question_pdf_filename=qp_file.name,
+                answer_pdf_filename=ans_file.name if ans_file else '',
+                status='uploaded',
+                stage_label='Uploaded - Ready to process',
+                progress_percent=0,
+                ca_level=ca_level,
+                level_id=clean_level_id,
+                paper_id=clean_paper_id,
+                chapter_id=clean_chapter_id,
+                topic_id=clean_topic_id,
+                exam_session=exam_session,
+                exam_year=exam_year,
+                source=source,
+                extracted_metadata={'target_question_type': target_question_type}
+            )
+
+            if auto_process:
+                start_import_job_async(job.id)
+
+            serializer = QuestionImportJobDetailSerializer(job, context={'request': request})
+            return Response(serializer.data, status=201)
+        except Exception as e:
+            logger.exception("Failed to initialize QuestionImportJob: %s", e)
+            return Response({'error': f"Failed to initialize import job: {str(e)}"}, status=500)
 
     @action(detail=True, methods=['get'])
     def status(self, request, pk=None):
@@ -4225,6 +4250,25 @@ class ImportBatchViewSet(viewsets.ModelViewSet):
         if target_question_type not in ('ALL', 'MCQ', 'DESCRIPTIVE', 'CASE_SCENARIO'):
             target_question_type = 'ALL'
 
+        from master_data.models import CALevel, ICAIPaper, ICAIChapter, ICAITopic
+
+        def safe_fk(val, model_cls):
+            if val is None:
+                return None
+            val_str = str(val).strip()
+            if not val_str or val_str.lower() in ('null', 'undefined', 'none', ''):
+                return None
+            try:
+                int_val = int(val_str)
+                return int_val if model_cls.objects.filter(id=int_val).exists() else None
+            except (ValueError, TypeError):
+                return None
+
+        clean_level_id = safe_fk(level_id, CALevel)
+        clean_paper_id = safe_fk(paper_id, ICAIPaper)
+        clean_chapter_id = safe_fk(chapter_id, ICAIChapter)
+        clean_topic_id = safe_fk(topic_id, ICAITopic)
+
         with transaction.atomic():
             batch = ImportBatch.objects.create(
                 created_by=user,
@@ -4232,10 +4276,10 @@ class ImportBatchViewSet(viewsets.ModelViewSet):
                 is_platform_wide=is_platform_wide,
                 name=name,
                 ca_level=ca_level,
-                level_id=level_id if level_id else None,
-                paper_id=paper_id if paper_id else None,
-                chapter_id=chapter_id if chapter_id else None,
-                topic_id=topic_id if topic_id else None,
+                level_id=clean_level_id,
+                paper_id=clean_paper_id,
+                chapter_id=clean_chapter_id,
+                topic_id=clean_topic_id,
                 exam_session=exam_session,
                 exam_year=exam_year,
                 source=source,
@@ -4320,10 +4364,10 @@ class ImportBatchViewSet(viewsets.ModelViewSet):
                     stage_label='Document pair linked to batch',
                     progress_percent=0,
                     ca_level=ca_level or qp_meta.get('course', 'CA Intermediate'),
-                    level_id=level_id if level_id else None,
-                    paper_id=job_paper_id if job_paper_id else None,
-                    chapter_id=chapter_id if chapter_id else None,
-                    topic_id=topic_id if topic_id else None,
+                    level_id=clean_level_id,
+                    paper_id=job_paper_id if job_paper_id else clean_paper_id,
+                    chapter_id=clean_chapter_id,
+                    topic_id=clean_topic_id,
                     exam_session=exam_session or qp_meta.get('exam_session', 'MAY'),
                     exam_year=exam_year or qp_meta.get('exam_year', 2026),
                     source=source or qp_meta.get('series_title', 'Mock Test Paper'),
