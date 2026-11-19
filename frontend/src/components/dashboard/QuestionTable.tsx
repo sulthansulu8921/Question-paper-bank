@@ -53,13 +53,56 @@ export default function QuestionTable({
     }, [globalSearch]);
 
     // Fetch Questions
-    const { data: questionsResponse, isLoading, error } = useQuery({
+    const { data: questionsResponse, isLoading, error } = useQuery<any>({
         queryKey: ['subjective-questions', routeSubjectId],
         queryFn: async () => {
-            const url = routeSubjectId
-                ? `/materials/subjective-questions/?paper_id=${routeSubjectId}`
-                : '/materials/subjective-questions/';
-            return (await api.get(url)).data;
+            let nextUrl: string | null = routeSubjectId
+                ? `/materials/subjective-questions/?paper_id=${routeSubjectId}&page_size=500`
+                : '/materials/subjective-questions/?page_size=500';
+
+            let allQuestions: any[] = [];
+            let totalCount = 0;
+            let lockedCount = 0;
+            let accessLimit = -1;
+            let hasFullAccess = true;
+
+            while (nextUrl) {
+                const res: any = await api.get(nextUrl);
+                const data = res.data;
+                const items = Array.isArray(data) ? data : (data?.results || []);
+                allQuestions = allQuestions.concat(items);
+
+                totalCount = (data as any)?.count ?? allQuestions.length;
+                lockedCount = (data as any)?.locked_count ?? lockedCount;
+                accessLimit = (data as any)?.access_limit ?? accessLimit;
+                hasFullAccess = (data as any)?.has_full_access ?? hasFullAccess;
+
+                const rawNext = (data as any)?.next || res?.data?.next;
+                if (rawNext) {
+                    try {
+                        const parsed = new URL(rawNext, window.location.origin);
+                        const cleanPath = parsed.pathname.startsWith('/api')
+                            ? parsed.pathname.replace(/^\/api/, '')
+                            : parsed.pathname;
+                        nextUrl = `${cleanPath}${parsed.search}`;
+                    } catch {
+                        nextUrl = rawNext;
+                    }
+                } else {
+                    nextUrl = null;
+                }
+            }
+
+            Object.defineProperties(allQuestions, {
+                count: { value: totalCount, writable: true, enumerable: false },
+                next: { value: null, writable: true, enumerable: false },
+                previous: { value: null, writable: true, enumerable: false },
+                locked_count: { value: lockedCount, writable: true, enumerable: false },
+                access_limit: { value: accessLimit, writable: true, enumerable: false },
+                has_full_access: { value: hasFullAccess, writable: true, enumerable: false }
+            });
+
+            return allQuestions;
         },
         refetchInterval: (query) => {
             const err = query.state.error;

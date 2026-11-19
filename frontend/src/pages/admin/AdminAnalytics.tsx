@@ -18,7 +18,7 @@ const AdminAnalytics = () => {
     const { data: questions = [] } = useQuery({
         queryKey: ['admin-questions'],
         queryFn: async () => {
-            const res = (await api.get('/materials/subjective-questions/?page_size=200')).data;
+            const res = (await api.get('/materials/subjective-questions/?page_size=1000')).data;
             return Array.isArray(res) ? res : (res.results ?? []);
         },
     });

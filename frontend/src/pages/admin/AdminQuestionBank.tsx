@@ -78,7 +78,7 @@ export default function AdminQuestionBank() {
         queryKey: ['admin-questions', icaiFilter],
         queryFn: async () => {
             const params = new URLSearchParams();
-            params.append('page_size', '200');
+            params.append('page_size', '1000');
             if (icaiFilter.levelId) params.append('level_id', icaiFilter.levelId);
             if (icaiFilter.paperId) params.append('paper_id', icaiFilter.paperId);
             if (icaiFilter.chapterId) params.append('chapter_id', icaiFilter.chapterId);

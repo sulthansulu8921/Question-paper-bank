@@ -45,10 +45,10 @@ class IsQuestionAdmin(permissions.BasePermission):
 
 
 class QuestionPagination(PageNumberPagination):
-    """50 questions per page. Supports ?page=N&page_size=N (max 200)."""
+    """50 questions per page. Supports ?page=N&page_size=N (max 1000)."""
     page_size = 50
     page_size_query_param = 'page_size'
-    max_page_size = 200
+    max_page_size = 1000
 
 
 class SubjectiveQuestionViewSet(viewsets.ModelViewSet):
