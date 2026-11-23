@@ -67,12 +67,55 @@ def get_gemini_config(explicit_key=None):
 # Helper: Compute File Hashes for Idempotency
 # ─────────────────────────────────────────────────────────────
 
-def compute_file_hash(file_path):
+def open_pdf_safely(file_input):
+    """
+    Safely opens a PDF document from:
+    - FieldFile / File object (local or remote S3/R2)
+    - Raw bytes
+    - File path string
+    Returns fitz.Document or None.
+    """
+    if not file_input:
+        return None
+    try:
+        if hasattr(file_input, 'read'):
+            if hasattr(file_input, 'seek'):
+                file_input.seek(0)
+            data = file_input.read()
+            return fitz.open(stream=data, filetype="pdf")
+        elif isinstance(file_input, (bytes, bytearray)):
+            return fitz.open(stream=file_input, filetype="pdf")
+        elif isinstance(file_input, str):
+            if os.path.exists(file_input):
+                return fitz.open(file_input)
+    except Exception as e:
+        logger.warning(f"Failed to open PDF safely: {e}")
+    return None
+
+
+def compute_file_hash(file_input):
     hasher = hashlib.sha256()
-    with open(file_path, 'rb') as f:
-        while chunk := f.read(65536):
-            hasher.update(chunk)
-    return hasher.hexdigest()
+    try:
+        if hasattr(file_input, 'read'):
+            pos = file_input.tell() if hasattr(file_input, 'tell') else None
+            if hasattr(file_input, 'seek'):
+                file_input.seek(0)
+            while chunk := file_input.read(65536):
+                hasher.update(chunk)
+            if pos is not None and hasattr(file_input, 'seek'):
+                file_input.seek(pos)
+            return hasher.hexdigest()
+        elif isinstance(file_input, (bytes, bytearray)):
+            hasher.update(file_input)
+            return hasher.hexdigest()
+        elif isinstance(file_input, str) and os.path.exists(file_input):
+            with open(file_input, 'rb') as f:
+                while chunk := f.read(65536):
+                    hasher.update(chunk)
+            return hasher.hexdigest()
+    except Exception as e:
+        logger.warning(f"Error computing file hash: {e}")
+    return ""
 
 
 # ─────────────────────────────────────────────────────────────
@@ -168,10 +211,12 @@ def extract_pdf_document_content(file_path, api_key=None, candidate_models=None)
     Embeds markdown table representations directly into page text for high-fidelity Gemini comprehension.
     If digital text is absent (< 100 characters total across pages), falls back to Gemini Vision OCR.
     """
-    if not file_path or not os.path.exists(file_path):
+    if not file_path:
         return {"pages": [], "full_text": "", "total_pages": 0, "tables": [], "is_scanned": False}
 
-    doc = fitz.open(file_path)
+    doc = open_pdf_safely(file_path)
+    if not doc:
+        return {"pages": [], "full_text": "", "total_pages": 0, "tables": [], "is_scanned": False}
     total_pages = len(doc)
     pages_data = []
     all_extracted_tables = []
@@ -260,18 +305,23 @@ Return strict JSON: {{"transcribed_text": "full text of this page with markdown 
     }
 
 
-def infer_document_type(file_path=None, raw_sample_text=None):
+def infer_document_type(file_path=None, raw_sample_text=None, file_input=None):
     """
     Infers whether a PDF is a QUESTION_PAPER, SUGGESTED_ANSWER, or COMBINED
     by scanning text on the initial pages or using provided sample text and filename.
     """
     try:
         sample_text = (raw_sample_text or "").lower()
-        fname = (os.path.basename(file_path) if file_path else "").lower()
+        actual_input = file_input or file_path
+        fname = ""
+        if isinstance(file_path, str):
+            fname = os.path.basename(file_path).lower()
+        elif hasattr(actual_input, 'name'):
+            fname = os.path.basename(str(actual_input.name)).lower()
 
-        if file_path and os.path.exists(file_path):
+        doc = open_pdf_safely(actual_input)
+        if doc:
             try:
-                doc = fitz.open(file_path)
                 for i in range(min(5, len(doc))):
                     sample_text += " " + doc[i].get_text("text").lower()
                 doc.close()
@@ -320,7 +370,7 @@ def infer_document_type(file_path=None, raw_sample_text=None):
         return 'UNKNOWN'
 
 
-def extract_document_metadata_fast(file_path=None, raw_sample_text=None):
+def extract_document_metadata_fast(file_path=None, raw_sample_text=None, file_input=None):
     """
     Extracts structured document metadata from PDF initial pages using deterministic pattern matching.
     Returns dictionary with course, group, paper_number, subject, series, exam_session, exam_year, exam_date, and max_marks.
@@ -328,14 +378,16 @@ def extract_document_metadata_fast(file_path=None, raw_sample_text=None):
     text = ""
     if raw_sample_text:
         text = raw_sample_text
-    elif file_path and os.path.exists(file_path):
-        try:
-            doc = fitz.open(file_path)
-            for i in range(min(3, len(doc))):
-                text += " " + doc[i].get_text("text")
-            doc.close()
-        except Exception as e:
-            logger.warning(f"Failed to read PDF for metadata extraction: {e}")
+    else:
+        actual_input = file_input or file_path
+        doc = open_pdf_safely(actual_input)
+        if doc:
+            try:
+                for i in range(min(3, len(doc))):
+                    text += " " + doc[i].get_text("text")
+                doc.close()
+            except Exception as e:
+                logger.warning(f"Failed to read PDF for metadata extraction: {e}")
 
     meta = {
         "title": "Question Paper",
@@ -455,8 +507,8 @@ def auto_pair_batch_documents(documents):
         d_id = str(_get(d, 'id', ''))
         meta = _get(d, 'extracted_metadata', {})
         if not meta or not meta.get('subject'):
-            f_path = getattr(getattr(d, 'file', None), 'path', None)
-            meta = extract_document_metadata_fast(file_path=f_path)
+            f_obj = getattr(d, 'file', None)
+            meta = extract_document_metadata_fast(file_input=f_obj)
             if hasattr(d, 'extracted_metadata'):
                 d.extracted_metadata = meta
                 try:
@@ -2142,8 +2194,8 @@ def run_import_job_pipeline(job):
         job.progress_percent = 15
         job.save()
 
-        qp_content = extract_pdf_document_content(job.question_pdf.path, api_key, models)
-        ans_content = extract_pdf_document_content(job.answer_pdf.path, api_key, models) if job.answer_pdf else {"pages": [], "full_text": "", "tables": [], "is_scanned": False}
+        qp_content = extract_pdf_document_content(job.question_pdf, api_key, models)
+        ans_content = extract_pdf_document_content(job.answer_pdf, api_key, models) if job.answer_pdf else {"pages": [], "full_text": "", "tables": [], "is_scanned": False}
 
         if not qp_content['full_text'].strip():
             job.status = 'failed'

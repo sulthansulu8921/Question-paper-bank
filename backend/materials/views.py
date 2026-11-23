@@ -4306,28 +4306,36 @@ class ImportBatchViewSet(viewsets.ModelViewSet):
                 )
 
                 try:
-                    f_hash = compute_file_hash(doc_record.file.path)
-                    doc_record.file_hash = f_hash
-                    
-                    import fitz
-                    pdoc = fitz.open(doc_record.file.path)
-                    doc_record.page_count = len(pdoc)
-                    pdoc.close()
+                    f_bytes = None
+                    if hasattr(f, 'seek'):
+                        f.seek(0)
+                        f_bytes = f.read()
+                    elif hasattr(doc_record.file, 'read'):
+                        f_bytes = doc_record.file.read()
 
-                    meta = extract_document_metadata_fast(doc_record.file.path)
-                    doc_record.extracted_metadata = meta
-                    doc_record.inferred_type = meta.get('inferred_type', 'UNKNOWN')
-                    if doc_record.file_type == 'UNKNOWN':
-                        doc_record.file_type = meta.get('inferred_type', 'UNKNOWN')
+                    if f_bytes:
+                        f_hash = hashlib.sha256(f_bytes).hexdigest()
+                        doc_record.file_hash = f_hash
+                        
+                        import fitz
+                        pdoc = fitz.open(stream=f_bytes, filetype="pdf")
+                        doc_record.page_count = len(pdoc)
+                        pdoc.close()
 
-                    if f_hash in seen_hashes_in_batch:
-                        doc_record.status = 'duplicate'
-                        meta['is_duplicate'] = True
-                        meta['duplicate_reason'] = 'Duplicate file uploaded in the same batch'
+                        meta = extract_document_metadata_fast(file_input=f_bytes)
                         doc_record.extracted_metadata = meta
+                        doc_record.inferred_type = meta.get('inferred_type', 'UNKNOWN')
+                        if doc_record.file_type == 'UNKNOWN':
+                            doc_record.file_type = meta.get('inferred_type', 'UNKNOWN')
 
-                    seen_hashes_in_batch.add(f_hash)
-                    doc_record.save()
+                        if f_hash in seen_hashes_in_batch:
+                            doc_record.status = 'duplicate'
+                            meta['is_duplicate'] = True
+                            meta['duplicate_reason'] = 'Duplicate file uploaded in the same batch'
+                            doc_record.extracted_metadata = meta
+
+                        seen_hashes_in_batch.add(f_hash)
+                        doc_record.save()
                 except Exception as e:
                     logger.warning(f"Error inspecting uploaded source doc: {e}")
 
