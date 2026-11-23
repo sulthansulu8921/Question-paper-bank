@@ -1,4 +1,5 @@
 import os
+import hashlib
 from django.conf import settings
 from rest_framework import viewsets, permissions
 from rest_framework.pagination import PageNumberPagination

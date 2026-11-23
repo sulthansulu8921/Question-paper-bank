@@ -45,16 +45,14 @@ def get_gemini_config(explicit_key=None):
         api_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
     primary_model = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash").strip()
-    fallback_model = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.8-flash").strip()
+    fallback_model = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite").strip()
 
     candidate_models = [
         primary_model,
+        "gemini-3.5-flash",
         "gemini-3.5-flash-lite",
-        "gemini-3.6-flash",
-        fallback_model,
-        "gemini-flash-latest",
-        "gemini-flash-lite-latest",
         "gemini-3.1-flash-lite",
+        fallback_model,
     ]
     # Remove duplicates preserving order
     seen = set()
@@ -782,26 +780,59 @@ def call_openai_api(prompt, api_key=None, candidate_models=None, temperature=0.1
 
 def call_unified_ai(prompt, api_key=None, candidate_models=None, temperature=0.1, timeout=120, inline_images=None, provider='auto'):
     """
-    Unified AI dispatcher that can route to OpenAI or Gemini with automatic fallback.
+    Unified AI dispatcher that routes between Gemini and OpenAI with automatic fallback and transparent errors.
     """
+    from materials.views import resolve_openai_api_key
+    openai_key = resolve_openai_api_key()
+    gem_key, gem_models = get_gemini_config(api_key)
+    effective_gem_models = candidate_models or gem_models
+
+    def _call_gemini():
+        if not gem_key:
+            return None, None, "No Gemini API Key provided."
+        return call_gemini_api(prompt, gem_key, effective_gem_models, temperature=temperature, timeout=timeout, inline_images=inline_images)
+
+    def _call_openai():
+        if not openai_key:
+            return None, None, "No OpenAI API Key provided."
+        return call_openai_api(prompt, api_key=openai_key, temperature=temperature, timeout=timeout)
+
     if provider == 'openai':
-        res, meta, err = call_openai_api(prompt, temperature=temperature, timeout=timeout)
+        res, meta, err = _call_openai()
         if res:
             return res, meta, None
-        gem_key, gem_models = get_gemini_config()
-        return call_gemini_api(prompt, gem_key, gem_models, temperature=temperature, timeout=timeout, inline_images=inline_images)
+        if gem_key:
+            logger.info("OpenAI failed, attempting Gemini fallback...")
+            res_g, meta_g, err_g = _call_gemini()
+            if res_g:
+                return res_g, meta_g, None
+            return None, None, f"OpenAI error: {err}; Gemini fallback error: {err_g}"
+        return None, None, err
+
     elif provider == 'gemini':
-        gem_key, gem_models = get_gemini_config(api_key)
-        res, meta, err = call_gemini_api(prompt, gem_key, candidate_models or gem_models, temperature=temperature, timeout=timeout, inline_images=inline_images)
+        res, meta, err = _call_gemini()
         if res:
             return res, meta, None
-        return call_openai_api(prompt, temperature=temperature, timeout=timeout)
-    else:
-        res, meta, err = call_openai_api(prompt, temperature=temperature, timeout=timeout)
-        if res:
-            return res, meta, None
-        gem_key, gem_models = get_gemini_config(api_key)
-        return call_gemini_api(prompt, gem_key, candidate_models or gem_models, temperature=temperature, timeout=timeout, inline_images=inline_images)
+        if openai_key:
+            logger.warning(f"Gemini call failed ({err}), falling back to OpenAI...")
+            res_o, meta_o, err_o = _call_openai()
+            if res_o:
+                return res_o, meta_o, None
+            return None, None, f"Gemini error: {err}; OpenAI fallback error: {err_o}"
+        return None, None, f"Gemini error: {err}"
+
+    else:  # auto
+        if gem_key:
+            res, meta, err = _call_gemini()
+            if res:
+                return res, meta, None
+            logger.warning(f"Gemini auto call failed ({err}), trying OpenAI...")
+        if openai_key:
+            res_o, meta_o, err_o = _call_openai()
+            if res_o:
+                return res_o, meta_o, None
+            return None, None, f"OpenAI error: {err_o}"
+        return None, None, "No active AI API key found (neither Gemini nor OpenAI)."
 
 
 # ─────────────────────────────────────────────────────────────
@@ -2180,10 +2211,12 @@ def run_import_job_pipeline(job):
     """
     start_time = time.time()
     api_key, models = get_gemini_config()
+    from materials.views import resolve_openai_api_key
+    openai_key = resolve_openai_api_key()
 
-    if not api_key:
+    if not api_key and not openai_key:
         job.status = 'failed'
-        job.error_message = 'No Gemini API Key found. Configure GEMINI_API_KEY in backend/.env or Admin Settings.'
+        job.error_message = 'No AI API Key found. Configure GEMINI_API_KEY or OPENAI_API_KEY in backend/.env or Admin Settings.'
         job.save()
         return False, job.error_message
 
@@ -2422,8 +2455,19 @@ def run_import_batch_pipeline(batch):
         batch.stage_label = f"Processed {idx+1}/{len(jobs)} document pairs..."
         batch.save()
 
-    batch.status = 'needs_review'
-    batch.stage_label = f"Batch extraction complete! {total_questions} questions across {len(jobs)} papers ready for review."
+    if total_questions == 0:
+        first_err = None
+        for j in jobs:
+            if j.error_message:
+                first_err = j.error_message
+                break
+        batch.status = 'failed'
+        batch.error_message = first_err or 'No questions could be extracted from the uploaded document(s).'
+        batch.stage_label = f"Processing failed: {batch.error_message}"
+    else:
+        batch.status = 'needs_review'
+        batch.stage_label = f"Batch extraction complete! {total_questions} questions across {len(jobs)} papers ready for review."
+
     batch.progress_percent = 100
     batch.total_questions_detected = total_questions
     batch.matched_answers_count = matched_answers
@@ -2444,7 +2488,7 @@ def run_import_batch_pipeline(batch):
         "missing_answers": missing_answers
     }
     batch.save()
-    return True, None
+    return total_questions > 0, batch.error_message
 
 
 # ─────────────────────────────────────────────────────────────

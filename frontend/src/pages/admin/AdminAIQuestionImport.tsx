@@ -644,6 +644,9 @@ export default function AdminAIQuestionImport() {
     const [isDraggingQp, setIsDraggingQp] = useState(false);
     const [isDraggingAns, setIsDraggingAns] = useState(false);
 
+    const activeDoc = activeBatch?.documents?.find((d: any) => d.id === selectedDocId) || activeBatch?.documents?.[0];
+    const currentPdfFile = (activeDoc ? batchFiles.find(bf => (bf.file && bf.file.name === activeDoc.filename) || bf.name === activeDoc.filename)?.file : null) || qpFile;
+
     // Metadata state
     const [caLevel, setCaLevel] = useState('CA Intermediate');
     const [examSession, setExamSession] = useState('May');
@@ -830,13 +833,16 @@ export default function AdminAIQuestionImport() {
 
     // Handle initial client-side PDF extraction for quick local preview
     useEffect(() => {
-        if (!qpFile) {
+        if (!currentPdfFile) {
+            if (activeDoc?.page_count) {
+                setQpNumPages(activeDoc.page_count);
+            }
             setQpPagesText([]);
             return;
         }
         let cancelled = false;
         setLoadingPdf(true);
-        extractAllTextFromPdf(qpFile)
+        extractAllTextFromPdf(currentPdfFile)
             .then(res => {
                 if (!cancelled) {
                     setQpNumPages(res.numPages);
@@ -850,15 +856,15 @@ export default function AdminAIQuestionImport() {
             });
 
         return () => { cancelled = true; };
-    }, [qpFile]);
+    }, [currentPdfFile, activeDoc?.page_count]);
 
     // Render current PDF page to canvas
     useEffect(() => {
-        if (!qpFile || !pdfCanvasRef.current || qpPagesText.length === 0) return;
-        renderPdfPageToCanvas(qpFile, qpCurrentPage, pdfCanvasRef.current, 1.2).catch(e => {
+        if (!currentPdfFile || !pdfCanvasRef.current) return;
+        renderPdfPageToCanvas(currentPdfFile, qpCurrentPage, pdfCanvasRef.current, 1.2).catch(e => {
             console.warn("Could not render page canvas", e);
         });
-    }, [qpFile, qpCurrentPage, qpPagesText.length, leftMinimized]);
+    }, [currentPdfFile, qpCurrentPage, qpPagesText.length, leftMinimized]);
 
     // Submit Job
     const handleStartImport = async () => {
@@ -2518,8 +2524,7 @@ export default function AdminAIQuestionImport() {
                                     {/* Canvas viewer or Text fallback */}
                                     <div style={{ flex: 1, overflowY: 'auto', background: '#e2e8f0', borderRadius: '8px', padding: '0.5rem', display: 'flex', justifyContent: 'center' }}>
                                         {(() => {
-                                            const activeDoc = activeBatch?.documents?.find((d: any) => d.id === selectedDocId) || activeBatch?.documents?.[0];
-                                            const docFile = batchFiles.find(bf => bf.name === activeDoc?.filename)?.file || qpFile;
+                                            const docFile = currentPdfFile;
                                             const docUrl = activeDoc?.file_url || activeJob.question_pdf_url;
 
                                             if (docFile) {
