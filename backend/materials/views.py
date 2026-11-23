@@ -807,8 +807,10 @@ class ImportQuestionsExcelView(APIView):
 # ─────────────────────────────────────────────────────────────
 # PDF Question Extraction: POST /api/materials/questions/extract-from-pdf/
 # Accepts a PDF file, extracts text (or renders pages for scanned PDFs),
-# sends to Gemini 1.5 Flash, returns structured question JSON for review.
-import fitz  # PyMuPDF
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
 import base64
 import json
 import re

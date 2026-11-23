@@ -12,7 +12,10 @@ import time
 import hashlib
 import base64
 import logging
-import fitz  # PyMuPDF
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
 import requests as http_requests
 from django.conf import settings
 from django.db import transaction
