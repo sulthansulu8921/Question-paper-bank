@@ -1041,6 +1041,16 @@ def hierarchicalize_and_reconcile_questions(sections, qp_text=None):
         if not raw_questions or not isinstance(raw_questions, list):
             continue
 
+        # Flatten any questions that accidentally contain nested sections
+        flattened_raw = []
+        for q_item in raw_questions:
+            if isinstance(q_item, dict) and 'sections' in q_item and isinstance(q_item['sections'], list):
+                for nested_sec in q_item['sections']:
+                    flattened_raw.extend(nested_sec.get('questions', []))
+            elif isinstance(q_item, dict):
+                flattened_raw.append(q_item)
+        raw_questions = flattened_raw
+
         reconciled_questions = []
         i = 0
         scenario_counter = 1
@@ -2194,6 +2204,85 @@ def classify_and_enrich_questions(sections, paper, job=None):
     }
 
 
+def unwrap_sections(qp_parsed):
+    """
+    Robustly unwraps sections from any structure returned by LLM JSON:
+    - dict with 'sections'
+    - list where elements have 'sections' (e.g. [{'sections': [...]}])
+    - dict with nested 'paper'/'examination_paper' containing 'sections'
+    - list of section dicts (each having 'questions' or 'section_id')
+    - dict with 'questions' directly
+    - list of questions directly
+    """
+    if not qp_parsed:
+        return []
+
+    if isinstance(qp_parsed, list):
+        if len(qp_parsed) == 1 and isinstance(qp_parsed[0], dict):
+            first = qp_parsed[0]
+            if 'sections' in first and isinstance(first['sections'], list):
+                return unwrap_sections(first['sections'])
+            if 'questions' in first and isinstance(first['questions'], list):
+                return [{'section_id': first.get('section_id', 'PART_I'), 'title': first.get('title', 'Examination Questions'), 'questions': first['questions']}]
+
+        extracted = []
+        is_sections = False
+        for item in qp_parsed:
+            if isinstance(item, dict):
+                if 'sections' in item and isinstance(item['sections'], list):
+                    extracted.extend(unwrap_sections(item['sections']))
+                    is_sections = True
+                elif 'questions' in item or 'section_id' in item:
+                    extracted.append(item)
+                    is_sections = True
+        if is_sections and extracted:
+            return extracted
+
+        return [{'section_id': 'PART_I', 'title': 'Examination Questions', 'questions': qp_parsed}]
+
+    if isinstance(qp_parsed, dict):
+        if 'sections' in qp_parsed and isinstance(qp_parsed['sections'], list):
+            flat_sections = []
+            for s in qp_parsed['sections']:
+                if isinstance(s, dict) and 'sections' in s and isinstance(s['sections'], list):
+                    flat_sections.extend(unwrap_sections(s['sections']))
+                else:
+                    flat_sections.append(s)
+            return flat_sections
+        for nested_key in ('paper', 'examination_paper', 'question_paper', 'data'):
+            if nested_key in qp_parsed and isinstance(qp_parsed[nested_key], dict):
+                sub = qp_parsed[nested_key]
+                if 'sections' in sub and isinstance(sub['sections'], list):
+                    return unwrap_sections(sub['sections'])
+        if 'questions' in qp_parsed and isinstance(qp_parsed['questions'], list):
+            return [{'section_id': 'PART_I', 'title': 'Examination Questions', 'questions': qp_parsed['questions']}]
+
+    return []
+
+
+def unwrap_answers(ans_parsed):
+    """
+    Robustly unwraps answer items from any LLM JSON output.
+    """
+    if not ans_parsed:
+        return []
+    if isinstance(ans_parsed, list):
+        if len(ans_parsed) == 1 and isinstance(ans_parsed[0], dict):
+            first = ans_parsed[0]
+            if 'answers' in first or 'solutions' in first:
+                return first.get('answers') or first.get('solutions') or []
+        return ans_parsed
+    if isinstance(ans_parsed, dict):
+        if 'answers' in ans_parsed:
+            return ans_parsed['answers'] or []
+        if 'solutions' in ans_parsed:
+            return ans_parsed['solutions'] or []
+        for k in ('paper', 'official_solutions', 'suggested_answers'):
+            if k in ans_parsed and isinstance(ans_parsed[k], dict):
+                return unwrap_answers(ans_parsed[k])
+    return []
+
+
 # ─────────────────────────────────────────────────────────────
 # Step 8: Main Pipeline Orchestrator for Import Job
 # ─────────────────────────────────────────────────────────────
@@ -2270,18 +2359,7 @@ def run_import_job_pipeline(job):
             target_question_type=target_question_type
         )
 
-        sections = []
-        if isinstance(qp_parsed, dict):
-            raw_sec = qp_parsed.get('sections')
-            if raw_sec and isinstance(raw_sec, list):
-                sections = raw_sec
-            elif 'questions' in qp_parsed:
-                sections = [{'section_id': 'PART_I', 'title': 'Examination Questions', 'questions': qp_parsed['questions']}]
-        elif isinstance(qp_parsed, list):
-            if qp_parsed and any('questions' in s for s in qp_parsed if isinstance(s, dict)):
-                sections = qp_parsed
-            else:
-                sections = [{'section_id': 'PART_I', 'title': 'Examination Questions', 'questions': qp_parsed}]
+        sections = unwrap_sections(qp_parsed)
 
         if not sections:
             job.status = 'failed'
@@ -2313,10 +2391,7 @@ def run_import_job_pipeline(job):
                 api_key,
                 models
             )
-            if isinstance(ans_parsed, dict):
-                answers_list = ans_parsed.get('answers') or ans_parsed.get('solutions') or []
-            elif isinstance(ans_parsed, list):
-                answers_list = ans_parsed
+            answers_list = unwrap_answers(ans_parsed)
 
         # Step 5: Multi-Signal Matching & Validation
         job.status = 'matching'

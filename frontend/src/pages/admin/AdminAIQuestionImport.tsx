@@ -606,6 +606,7 @@ interface ImportBatchItem {
     jobs?: any[];
     active_job?: any;
     extracted_payload?: any;
+    batch_payload?: any;
     total_input_tokens?: number;
     total_output_tokens?: number;
     estimated_cost_usd?: number;
@@ -1026,73 +1027,50 @@ export default function AdminAIQuestionImport() {
 
     // Flatten all questions across sections
     const allQuestions = useMemo(() => {
-        if (!activeJob?.extracted_payload?.sections) return [];
+        const payload = activeJob?.extracted_payload || activeBatch?.extracted_payload || activeBatch?.batch_payload;
+        if (!payload?.sections || !Array.isArray(payload.sections)) return [];
         const list: any[] = [];
-        activeJob.extracted_payload.sections.forEach((sec: any) => {
-            (sec.questions || []).forEach((q: any) => {
-                let tableObj = q.structured_table || q.table_data || null;
-                if (typeof tableObj === 'string') {
-                    try { tableObj = JSON.parse(tableObj); } catch { tableObj = null; }
-                }
 
-                const ans = q.matched_answer || q.official_answer || {};
-                let ansTableObj = ans.structured_table || ans.answer_table_data || ans.solution_table || null;
-                if (typeof ansTableObj === 'string') {
-                    try { ansTableObj = JSON.parse(ansTableObj); } catch { ansTableObj = null; }
-                }
-
-                const rawSubqs = q.subquestions || q.sub_questions || [];
-                const subqs = rawSubqs.map((sq: any, sIdx: number) => {
-                    let sqTable = sq.structured_table || sq.table_data || null;
-                    if (typeof sqTable === 'string') {
-                        try { sqTable = JSON.parse(sqTable); } catch { sqTable = null; }
-                    }
-                    const sqAns = sq.matched_answer || sq.official_answer || {};
-                    let sqAnsTable = sqAns.structured_table || sqAns.answer_table_data || null;
-                    if (typeof sqAnsTable === 'string') {
-                        try { sqAnsTable = JSON.parse(sqAnsTable); } catch { sqAnsTable = null; }
-                    }
-                    const sqOpts = (sq.options || []).map((opt: any, oIdx: number) => {
-                        const label = opt.label || opt.option_key || String.fromCharCode(65 + oIdx);
-                        const optText = opt.text ?? opt.option_text ?? '';
-                        return {
-                            ...opt,
-                            label,
-                            option_key: label,
-                            text: optText,
-                            option_text: optText,
-                            is_correct: !!opt.is_correct,
-                            order: opt.order ?? oIdx
-                        };
+        const processSingleQ = (q: any, defaultSecName: string) => {
+            if (!q || typeof q !== 'object') return;
+            // Check if question itself mistakenly wraps sections
+            if (q.sections && Array.isArray(q.sections)) {
+                q.sections.forEach((innerSec: any) => {
+                    (innerSec.questions || []).forEach((innerQ: any) => {
+                        processSingleQ(innerQ, innerSec.section_name || innerSec.title || defaultSecName);
                     });
-                    const sqStatus = sq.matching_status || (sqAns.solution_text || sqAns.answer_text ? 'matched' : 'needs_review');
-                    const letterCode = String.fromCharCode(97 + sIdx);
-                    const defaultId = `${q.question_number}(${letterCode})`;
-                    return {
-                        ...sq,
-                        identifier: sq.identifier || defaultId,
-                        original_question_number: sq.original_question_number || sq.identifier || defaultId,
-                        sub_question_number: sq.sub_question_number || sq.identifier || defaultId,
-                        structured_table: sqTable,
-                        table_data: sqTable,
-                        options: sqOpts,
-                        is_approved: sq.is_approved !== undefined ? !!sq.is_approved : (sqStatus === 'matched'),
-                        matching_status: sqStatus,
-                        matched_answer: {
-                            ...sqAns,
-                            answer_text: sqAns.answer_text || sq.correct_answer || '',
-                            solution_text: sqAns.solution_text || sqAns.answer_text || sq.correct_answer || '',
-                            working_notes: sqAns.working_notes || '',
-                            structured_table: sqAnsTable,
-                            answer_table_data: sqAnsTable,
-                            confidence_score: sqAns.confidence_score ?? (sqStatus === 'matched' ? 0.95 : 0.0),
-                            matching_status: sqStatus
-                        }
-                    };
                 });
+                return;
+            }
 
-                // Normalize options to support both 'text' and 'option_text'
-                const normalizedOpts = (q.options || []).map((opt: any, oIdx: number) => {
+            // Skip empty placeholder question
+            if (!q.question_text && (!q.subquestions || q.subquestions.length === 0) && !q.case_scenario_passage && !q.question_number) {
+                return;
+            }
+
+            let tableObj = q.structured_table || q.table_data || null;
+            if (typeof tableObj === 'string') {
+                try { tableObj = JSON.parse(tableObj); } catch { tableObj = null; }
+            }
+
+            const ans = q.matched_answer || q.official_answer || {};
+            let ansTableObj = ans.structured_table || ans.answer_table_data || ans.solution_table || null;
+            if (typeof ansTableObj === 'string') {
+                try { ansTableObj = JSON.parse(ansTableObj); } catch { ansTableObj = null; }
+            }
+
+            const rawSubqs = q.subquestions || q.sub_questions || [];
+            const subqs = rawSubqs.map((sq: any, sIdx: number) => {
+                let sqTable = sq.structured_table || sq.table_data || null;
+                if (typeof sqTable === 'string') {
+                    try { sqTable = JSON.parse(sqTable); } catch { sqTable = null; }
+                }
+                const sqAns = sq.matched_answer || sq.official_answer || {};
+                let sqAnsTable = sqAns.structured_table || sqAns.answer_table_data || null;
+                if (typeof sqAnsTable === 'string') {
+                    try { sqAnsTable = JSON.parse(sqAnsTable); } catch { sqAnsTable = null; }
+                }
+                const sqOpts = (sq.options || []).map((opt: any, oIdx: number) => {
                     const label = opt.label || opt.option_key || String.fromCharCode(65 + oIdx);
                     const optText = opt.text ?? opt.option_text ?? '';
                     return {
@@ -1105,25 +1083,70 @@ export default function AdminAIQuestionImport() {
                         order: opt.order ?? oIdx
                     };
                 });
-
-                list.push({
-                    ...q,
-                    section_name: sec.section_name,
-                    case_scenario_passage: q.case_scenario_passage || '',
-                    options: normalizedOpts,
-                    structured_table: tableObj,
-                    table_data: tableObj,
-                    subquestions: subqs,
+                const sqStatus = sq.matching_status || (sqAns.solution_text || sqAns.answer_text ? 'matched' : 'needs_review');
+                const letterCode = String.fromCharCode(97 + sIdx);
+                const defaultId = `${q.question_number || '1'}(${letterCode})`;
+                return {
+                    ...sq,
+                    identifier: sq.identifier || defaultId,
+                    original_question_number: sq.original_question_number || sq.identifier || defaultId,
+                    sub_question_number: sq.sub_question_number || sq.identifier || defaultId,
+                    structured_table: sqTable,
+                    table_data: sqTable,
+                    options: sqOpts,
+                    is_approved: sq.is_approved !== undefined ? !!sq.is_approved : (sqStatus === 'matched'),
+                    matching_status: sqStatus,
                     matched_answer: {
-                        ...ans,
-                        structured_table: ansTableObj,
-                        answer_table_data: ansTableObj
+                        ...sqAns,
+                        answer_text: sqAns.answer_text || sq.correct_answer || '',
+                        solution_text: sqAns.solution_text || sqAns.answer_text || sq.correct_answer || '',
+                        working_notes: sqAns.working_notes || '',
+                        structured_table: sqAnsTable,
+                        answer_table_data: sqAnsTable,
+                        confidence_score: sqAns.confidence_score ?? (sqStatus === 'matched' ? 0.95 : 0.0),
+                        matching_status: sqStatus
                     }
-                });
+                };
+            });
+
+            // Normalize options to support both 'text' and 'option_text'
+            const normalizedOpts = (q.options || []).map((opt: any, oIdx: number) => {
+                const label = opt.label || opt.option_key || String.fromCharCode(65 + oIdx);
+                const optText = opt.text ?? opt.option_text ?? '';
+                return {
+                    ...opt,
+                    label,
+                    option_key: label,
+                    text: optText,
+                    option_text: optText,
+                    is_correct: !!opt.is_correct,
+                    order: opt.order ?? oIdx
+                };
+            });
+
+            list.push({
+                ...q,
+                section_name: q.section_name || defaultSecName,
+                case_scenario_passage: q.case_scenario_passage || '',
+                options: normalizedOpts,
+                structured_table: tableObj,
+                table_data: tableObj,
+                subquestions: subqs,
+                matched_answer: {
+                    ...ans,
+                    structured_table: ansTableObj,
+                    answer_table_data: ansTableObj
+                }
+            });
+        };
+
+        payload.sections.forEach((sec: any) => {
+            (sec.questions || []).forEach((q: any) => {
+                processSingleQ(q, sec.section_name || sec.title || 'Section');
             });
         });
         return list;
-    }, [activeJob?.extracted_payload, activeBatch?.extracted_payload]);
+    }, [activeJob?.extracted_payload, activeBatch?.extracted_payload, activeBatch?.batch_payload]);
 
     // Format analysis metrics and filter helpers
     const mcqCount = useMemo(() => {
