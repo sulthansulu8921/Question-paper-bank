@@ -2547,7 +2547,7 @@ def run_import_batch_pipeline(batch):
                 break
         batch.status = 'failed'
         batch.error_message = first_err or 'No questions could be extracted from the uploaded document(s).'
-        batch.stage_label = f"Processing failed: {batch.error_message}"
+        batch.stage_label = f"Processing failed: {batch.error_message}"[:149]
     else:
         batch.status = 'needs_review'
         batch.stage_label = f"Batch extraction complete! {total_questions} questions across {len(jobs)} papers ready for review."

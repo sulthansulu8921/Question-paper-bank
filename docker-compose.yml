@@ -23,6 +23,7 @@ services:
     depends_on:
       - db
     volumes:
+      - ./backend:/app
       - ./backend/media:/app/media
       - ./backend/static:/app/static
     ports:
