@@ -10,8 +10,9 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '@/api/axios';
+import { useQuery } from '@tanstack/react-query';
 import { extractAllTextFromPdf, renderPdfPageToCanvas, type ExtractedPageText } from '@/utils/pdfExtractor';
-import ICAICascadeSelector, { type ICAISelection } from '@/components/admin/ICAICascadeSelector';
+import { type ICAISelection } from '@/components/admin/ICAICascadeSelector';
 import '@/styles/admin/AIQuestionImport.css';
 
 interface QuestionImportJob {
@@ -622,7 +623,6 @@ export default function AdminAIQuestionImport() {
 
     // Upload mode: 'batch' (multi-pdf) | 'single' (dual dropzones)
     const [uploadMode, setUploadMode] = useState<'batch' | 'single'>('batch');
-    const [batchName, setBatchName] = useState('CA Inter Advanced Accounting - Sep 2026 MTP Batch');
     const [batchFiles, setBatchFiles] = useState<{
         file: File;
         id: string;
@@ -649,6 +649,7 @@ export default function AdminAIQuestionImport() {
     const currentPdfFile = (activeDoc ? batchFiles.find(bf => (bf.file && bf.file.name === activeDoc.filename) || bf.name === activeDoc.filename)?.file : null) || qpFile;
 
     // Metadata state
+    const [selectedQualification, setSelectedQualification] = useState('CA');
     const [caLevel, setCaLevel] = useState('CA Intermediate');
     const [examSession, setExamSession] = useState('May');
     const [examYear, setExamYear] = useState('2026');
@@ -660,6 +661,119 @@ export default function AdminAIQuestionImport() {
         topicId: '',
     });
     const [targetQuestionType, setTargetQuestionType] = useState<'ALL' | 'MCQ' | 'DESCRIPTIVE' | 'CASE_SCENARIO'>('ALL');
+
+    // Master Database queries for Qualification -> Level -> Paper cascade
+    const { data: levels = [], isLoading: levelsLoading } = useQuery({
+        queryKey: ['icai-levels'],
+        queryFn: async () => {
+            const res = await api.get('/master/levels/?page_size=200');
+            return Array.isArray(res.data) ? res.data : (res.data.results || []);
+        },
+    });
+
+    // Extract unique qualifications from levels
+    const qualifications = useMemo(() => {
+        const set = new Set<string>();
+        (levels || []).forEach((l: any) => {
+            if (l.qualification?.trim()) {
+                set.add(l.qualification.trim());
+            }
+        });
+        if (set.size === 0) return ['CA', 'CMA', 'CS'];
+        return Array.from(set);
+    }, [levels]);
+
+    // Filter levels for the selected qualification
+    const filteredLevels = useMemo(() => {
+        if (!levels || levels.length === 0) return [];
+        return levels.filter((l: any) =>
+            (l.qualification || 'CA').toUpperCase() === (selectedQualification || 'CA').toUpperCase()
+        );
+    }, [levels, selectedQualification]);
+
+    // Auto-select initial level when levels load or qualification changes
+    useEffect(() => {
+        if (filteredLevels.length > 0) {
+            const currentMatch = filteredLevels.find((l: any) => String(l.id) === String(icaiFilter.levelId));
+            if (!currentMatch) {
+                const defaultLvl = filteredLevels.find((l: any) => /intermediate/i.test(l.name)) || filteredLevels[0];
+                setIcaiFilter(prev => ({
+                    ...prev,
+                    levelId: String(defaultLvl.id),
+                    paperId: '',
+                    chapterId: '',
+                    topicId: ''
+                }));
+                setCaLevel(defaultLvl.name);
+            }
+        }
+    }, [filteredLevels, icaiFilter.levelId]);
+
+    // Query papers for the selected level
+    const { data: papers = [], isLoading: papersLoading } = useQuery({
+        queryKey: ['icai-papers', icaiFilter.levelId],
+        queryFn: async () => {
+            if (!icaiFilter.levelId) return [];
+            const res = await api.get(`/master/papers/?level_id=${icaiFilter.levelId}&page_size=100`);
+            return Array.isArray(res.data) ? res.data : (res.data.results || []);
+        },
+        enabled: !!icaiFilter.levelId,
+    });
+
+    // Query chapters for the selected paper (optional)
+    const { data: chapters = [] } = useQuery({
+        queryKey: ['icai-chapters', icaiFilter.paperId],
+        queryFn: async () => {
+            if (!icaiFilter.paperId) return [];
+            const res = await api.get(`/master/chapters/?paper_id=${icaiFilter.paperId}&page_size=200`);
+            return Array.isArray(res.data) ? res.data : (res.data.results || []);
+        },
+        enabled: !!icaiFilter.paperId,
+    });
+
+    const handleQualificationChange = (qual: string) => {
+        setSelectedQualification(qual);
+        const matching = (levels || []).filter((l: any) => (l.qualification || 'CA').toUpperCase() === qual.toUpperCase());
+        if (matching.length > 0) {
+            const first = matching[0];
+            setCaLevel(first.name);
+            setIcaiFilter({
+                levelId: String(first.id),
+                paperId: '',
+                chapterId: '',
+                topicId: ''
+            });
+        } else {
+            setCaLevel('');
+            setIcaiFilter({
+                levelId: '',
+                paperId: '',
+                chapterId: '',
+                topicId: ''
+            });
+        }
+    };
+
+    const handleLevelChange = (lvlId: string) => {
+        const lvl = filteredLevels.find((l: any) => String(l.id) === lvlId);
+        setCaLevel(lvl ? lvl.name : '');
+        setIcaiFilter(prev => ({
+            ...prev,
+            levelId: lvlId,
+            paperId: '',
+            chapterId: '',
+            topicId: ''
+        }));
+    };
+
+    const handlePaperChange = (pId: string) => {
+        setIcaiFilter(prev => ({
+            ...prev,
+            paperId: pId,
+            chapterId: '',
+            topicId: ''
+        }));
+    };
 
     // Active Job
     const [activeJob, setActiveJob] = useState<QuestionImportJob | null>(null);
@@ -929,7 +1043,10 @@ export default function AdminAIQuestionImport() {
                 typeMap[bf.file.name] = bf.docType;
             });
             formData.append('file_types', JSON.stringify(typeMap));
-            formData.append('name', batchName || `Batch ${source} - ${caLevel}`);
+            const selectedPaper = papers.find((p: any) => String(p.id) === icaiFilter.paperId);
+            const paperNameStr = selectedPaper ? selectedPaper.name : '';
+            const autoBatchName = [selectedQualification, caLevel, paperNameStr, `${examSession} ${examYear}`, source].filter(Boolean).join(' - ');
+            formData.append('name', autoBatchName || `Batch ${source} - ${caLevel}`);
             formData.append('ca_level', caLevel);
             formData.append('exam_session', examSession);
             formData.append('exam_year', examYear);
@@ -1852,17 +1969,6 @@ export default function AdminAIQuestionImport() {
                         {/* MODE 1: MULTI-PDF BATCH UPLOAD */}
                         {uploadMode === 'batch' ? (
                             <div>
-                                <div className="ai-form-group" style={{ marginBottom: '1rem' }}>
-                                    <label className="ai-form-label">Batch Name / Description</label>
-                                    <input
-                                        type="text"
-                                        className="ai-form-input"
-                                        value={batchName}
-                                        onChange={(e) => setBatchName(e.target.value)}
-                                        placeholder="e.g. CA Inter Advanced Accounting - Sep 2026 MTP Batch"
-                                    />
-                                </div>
-
                                 <div
                                     className={`ai-dropzone ${isDraggingBatch ? 'dragging' : ''} ${batchFiles.length > 0 ? 'has-file' : ''}`}
                                     onDragOver={(e) => { e.preventDefault(); setIsDraggingBatch(true); }}
@@ -2076,18 +2182,71 @@ export default function AdminAIQuestionImport() {
                             <span>Exam Classification & Target</span>
                         </h2>
 
+                        {/* QUALIFICATION NAME */}
                         <div className="ai-form-group">
-                            <label className="ai-form-label">CA Course Level</label>
+                            <label className="ai-form-label">QUALIFICATION NAME</label>
                             <select
                                 className="ai-form-select"
-                                value={caLevel}
-                                onChange={(e) => setCaLevel(e.target.value)}
+                                value={selectedQualification}
+                                onChange={(e) => handleQualificationChange(e.target.value)}
                             >
-                                <option value="CA Foundation">CA Foundation</option>
-                                <option value="CA Intermediate">CA Intermediate</option>
-                                <option value="CA Final">CA Final</option>
+                                <option value="">Select Qualification...</option>
+                                {qualifications.map(q => (
+                                    <option key={q} value={q}>{q}</option>
+                                ))}
                             </select>
                         </div>
+
+                        {/* COURSE LEVEL */}
+                        <div className="ai-form-group">
+                            <label className="ai-form-label">COURSE LEVEL</label>
+                            <select
+                                className="ai-form-select"
+                                value={icaiFilter.levelId || ''}
+                                onChange={(e) => handleLevelChange(e.target.value)}
+                                disabled={filteredLevels.length === 0}
+                            >
+                                <option value="">{levelsLoading ? 'Loading course levels...' : 'Select Course Level...'}</option>
+                                {filteredLevels.map((l: any) => (
+                                    <option key={l.id} value={String(l.id)}>{l.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* PAPER */}
+                        <div className="ai-form-group">
+                            <label className="ai-form-label">PAPER</label>
+                            <select
+                                className="ai-form-select"
+                                value={icaiFilter.paperId || ''}
+                                onChange={(e) => handlePaperChange(e.target.value)}
+                                disabled={!icaiFilter.levelId || papersLoading}
+                            >
+                                <option value="">{papersLoading ? 'Loading papers...' : 'Select Paper...'}</option>
+                                {papers.map((p: any) => (
+                                    <option key={p.id} value={String(p.id)}>
+                                        {p.code ? `${p.code} - ${p.name}` : p.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* CHAPTER (OPTIONAL) */}
+                        {icaiFilter.paperId && chapters.length > 0 && (
+                            <div className="ai-form-group">
+                                <label className="ai-form-label">CHAPTER (OPTIONAL)</label>
+                                <select
+                                    className="ai-form-select"
+                                    value={icaiFilter.chapterId || ''}
+                                    onChange={(e) => setIcaiFilter(prev => ({ ...prev, chapterId: e.target.value }))}
+                                >
+                                    <option value="">All Chapters / General (Optional)</option>
+                                    {chapters.map((ch: any) => (
+                                        <option key={ch.id} value={String(ch.id)}>{ch.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
 
                         <div className="ai-form-group">
                             <label className="ai-form-label">Exam Month & Year</label>
@@ -2190,18 +2349,6 @@ export default function AdminAIQuestionImport() {
                                     📝 Descriptive
                                 </button>
                             </div>
-                        </div>
-
-                        {/* ICAI Cascade (Level, Paper, Chapter - Topic Removed) */}
-                        <div style={{ marginTop: '0.25rem' }}>
-                            <label className="ai-form-label" style={{ marginBottom: '0.4rem', display: 'block' }}>Map to ICAI Syllabus (Optional)</label>
-                            <ICAICascadeSelector
-                                value={icaiFilter}
-                                onChange={setIcaiFilter}
-                                required={false}
-                                compact={true}
-                                hideTopic={true}
-                            />
                         </div>
 
                         {uploadMode === 'batch' ? (
