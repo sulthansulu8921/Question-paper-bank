@@ -963,8 +963,13 @@ export default function AdminAIQuestionImport() {
             showToast('🚀 Batch created! Gemini AI pipeline started processing all documents in parallel...');
         } catch (err: any) {
             console.error('Failed to create import batch', err);
-            const msg = err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed to initialize import batch.';
-            showToast(msg);
+            const errData = err.response?.data;
+            const errMsg = (errData && typeof errData === 'object'
+                ? (errData.error || errData.detail || errData.message || (Object.keys(errData).length > 0 ? `${Object.keys(errData)[0]}: ${Array.isArray(errData[Object.keys(errData)[0]]) ? errData[Object.keys(errData)[0]][0] : errData[Object.keys(errData)[0]]}` : null))
+                : (typeof errData === 'string' ? errData : null))
+                || err.message
+                || 'Failed to initialize import batch.';
+            showToast(errMsg);
         } finally {
             setIsStarting(false);
         }
