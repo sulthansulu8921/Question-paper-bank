@@ -47,11 +47,16 @@ def get_gemini_config(explicit_key=None):
     if not api_key:
         api_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
-    primary_model = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash").strip()
-    fallback_model = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite").strip()
+    primary_model = os.environ.get("GEMINI_MODEL", "gemini-3-flash-preview").strip()
+    fallback_model = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.8-flash").strip()
 
     candidate_models = [
+        "gemini-3-flash-preview",
         primary_model,
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-flash-latest",
+        "gemini-flash-lite-latest",
         "gemini-3.5-flash",
         "gemini-3.5-flash-lite",
         "gemini-3.1-flash-lite",
@@ -717,6 +722,7 @@ def call_gemini_api(prompt, api_key, candidate_models, temperature=0.1, timeout=
                             "tokens_out": total_tokens_out
                         }, None
                 elif resp.status_code in (429, 503):
+                    last_error = f"Model {model} HTTP {resp.status_code}: {resp.text[:200]}"
                     time.sleep(1.5 * (attempt + 1))
                     continue
                 else:

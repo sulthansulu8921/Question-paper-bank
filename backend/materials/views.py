@@ -842,7 +842,7 @@ def test_gemini_api_key(api_key):
     """Tests if a Gemini API Key is valid and active."""
     if not api_key:
         return False, None, "No API key provided."
-    models = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"]
+    models = ["gemini-3-flash-preview", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
     last_err = "Unknown error"
     for m in models:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={api_key}"
@@ -1333,7 +1333,7 @@ ANSWER PAPER / SUGGESTED ANSWERS CONTENT:
 CRITICAL: Match each extracted question above with its corresponding suggested answer from this Answer Paper content!
 """
 
-    models_to_try = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"]
+    models_to_try = ["gemini-3-flash-preview", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
     last_err = None
 
     for model in models_to_try:
@@ -1547,7 +1547,7 @@ Respond in STRICT JSON with this schema:
   "correct_mcq_option": null or "A" / "B" / "C" / "D" (if MCQ)
 }
 """
-    models = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"]
+    models = ["gemini-3-flash-preview", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
     last_err = None
     for model in models:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
@@ -3706,7 +3706,7 @@ Daily study goal: {study_hours} hours.
 Please generate a highly customized 7-day study plan matching the schema.
 """
             
-            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
+            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent"
             headers = {
                 "x-goog-api-key": gemini_api_key
             }

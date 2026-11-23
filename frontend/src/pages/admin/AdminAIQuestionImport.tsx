@@ -908,7 +908,7 @@ export default function AdminAIQuestionImport() {
                             question_pdf_filename: fullBatch.documents?.[0]?.filename || 'Batch Documents',
                             question_pdf_url: fullBatch.documents?.[0]?.file_url,
                             ai_provider: 'Google Gemini',
-                            model_used: fullBatch.model_used || 'Gemini 3.5 Flash',
+                            model_used: fullBatch.model_used || 'Gemini 3.0 Flash',
                             total_input_tokens: fullBatch.total_input_tokens || 0,
                             total_output_tokens: fullBatch.total_output_tokens || 0,
                             estimated_cost_usd: fullBatch.estimated_cost_usd || 0,
@@ -1077,7 +1077,7 @@ export default function AdminAIQuestionImport() {
                 question_pdf_filename: newBatch.documents?.[0]?.filename || newBatch.name,
                 question_pdf_url: newBatch.documents?.[0]?.file_url,
                 ai_provider: 'Google Gemini',
-                model_used: 'Gemini 3.5 Flash',
+                model_used: 'Gemini 3.0 Flash',
                 created_at: newBatch.created_at
             });
             if (newBatch.documents && newBatch.documents.length > 0) {
@@ -1897,7 +1897,7 @@ export default function AdminAIQuestionImport() {
                 <div className="ai-header-actions">
                     <div className="ai-model-pill" title="Configured via GEMINI_MODEL and GEMINI_FALLBACK_MODEL environment variables">
                         <div className="ai-pill-dot" />
-                        <span>Gemini 3.5 Flash (Fallback: 3.8 Flash)</span>
+                        <span>Gemini 3.0 Flash (Fallback: 3.8 Flash)</span>
                     </div>
 
                     {viewMode !== 'upload' && (
