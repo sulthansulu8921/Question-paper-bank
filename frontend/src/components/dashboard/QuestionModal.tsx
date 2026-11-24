@@ -425,17 +425,6 @@ export default function QuestionModal({
                                     ))}
                                 </div>
                             )}
-
-                            {/* Question Paper Model & Session Badge in Header */}
-                            {question.source && (
-                                <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-amber-400/10 border border-amber-400/20 rounded-xl">
-                                    <span className="text-[9px] font-black uppercase tracking-wider text-amber-500">Paper Model:</span>
-                                    <span className="text-xs font-black text-amber-600 dark:text-amber-400">{question.source}</span>
-                                    {(question.attempt || question.month || question.year) && (
-                                        <span className="text-[11px] font-bold text-text-muted">({[question.attempt || question.month, question.year].filter(Boolean).join(' ')})</span>
-                                    )}
-                                </div>
-                            )}
                         </div>
 
                         {/* Professional Header Icons */}
