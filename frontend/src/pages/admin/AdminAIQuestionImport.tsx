@@ -8,7 +8,7 @@ import {
     ArrowUp, ArrowDown, FolderPlus, History, Files, X, ExternalLink,
     ChevronUp, ChevronDown
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import api from '@/api/axios';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ICAISelection } from '@/components/admin/ICAICascadeSelector';
@@ -663,6 +663,8 @@ interface ImportBatchItem {
 
 export default function AdminAIQuestionImport() {
     const navigate = useNavigate();
+    const location = useLocation();
+    const [searchParams] = useSearchParams();
 
     // View mode: 'upload' | 'processing' | 'workspace' | 'history'
     const [viewMode, setViewMode] = useState<'upload' | 'processing' | 'workspace' | 'history'>('upload');
@@ -877,6 +879,76 @@ export default function AdminAIQuestionImport() {
         setToastMessage(msg);
         setTimeout(() => setToastMessage(null), 4000);
     };
+
+    // Automatically restore workspace when returning from manual question editor or via URL params
+    useEffect(() => {
+        const locState = (location.state as any) || {};
+        const targetBatchId = locState.batchId || searchParams.get('batchId') || sessionStorage.getItem('ai_import_active_batch_id');
+        const targetJobId = locState.jobId || searchParams.get('jobId') || sessionStorage.getItem('ai_import_active_job_id');
+        const selectedQId = locState.selectedQuestionId || searchParams.get('questionId');
+        const justSaved = locState.justSavedFromManual;
+        const savedQNum = locState.savedQuestionNumber;
+
+        if (viewMode === 'upload' && (targetBatchId || targetJobId)) {
+            const restoreWorkspace = async () => {
+                try {
+                    if (targetBatchId) {
+                        const [res, payloadRes] = await Promise.all([
+                            api.get(`/materials/import-batches/${targetBatchId}/`),
+                            api.get(`/materials/import-batches/${targetBatchId}/payload/`).catch(() => ({ data: {} }))
+                        ]);
+                        const fullBatch = res.data;
+                        const payload = payloadRes.data?.payload || fullBatch.batch_payload || fullBatch.extracted_payload || {};
+                        fullBatch.batch_payload = payload;
+                        fullBatch.extracted_payload = payload;
+                        setActiveBatch(fullBatch);
+                        setActiveJob({
+                            id: fullBatch.id,
+                            status: fullBatch.status,
+                            stage_label: fullBatch.stage_label,
+                            progress_percent: fullBatch.progress_percent,
+                            ca_level: fullBatch.ca_level,
+                            exam_session: fullBatch.exam_session,
+                            exam_year: fullBatch.exam_year,
+                            source: fullBatch.source,
+                            question_pdf_filename: fullBatch.documents?.[0]?.filename || 'Batch Documents',
+                            question_pdf_url: fullBatch.documents?.[0]?.file_url,
+                            ai_provider: 'Google Gemini',
+                            model_used: fullBatch.model_used || 'Gemini 3.0 Flash',
+                            total_input_tokens: fullBatch.total_input_tokens || 0,
+                            total_output_tokens: fullBatch.total_output_tokens || 0,
+                            estimated_cost_usd: fullBatch.estimated_cost_usd || 0,
+                            processing_time_seconds: fullBatch.processing_time_seconds || 0,
+                            extracted_payload: payload,
+                            published_question_count: fullBatch.published_questions_count || 0,
+                            created_at: fullBatch.created_at
+                        });
+                        setViewMode('workspace');
+                        if (selectedQId) {
+                            setSelectedQuestionId(selectedQId);
+                        }
+                        if (justSaved) {
+                            showToast(`✓ Question ${savedQNum ? `Q${savedQNum}` : ''} saved & updated in AI batch! Ready to continue.`);
+                        }
+                    } else if (targetJobId) {
+                        const res = await api.get(`/materials/import-jobs/${targetJobId}/`);
+                        const job = res.data;
+                        setActiveJob(job);
+                        setViewMode('workspace');
+                        if (selectedQId) {
+                            setSelectedQuestionId(selectedQId);
+                        }
+                        if (justSaved) {
+                            showToast(`✓ Question ${savedQNum ? `Q${savedQNum}` : ''} saved & updated in AI batch! Ready to continue.`);
+                        }
+                    }
+                } catch (err) {
+                    console.error("Failed to restore batch workspace:", err);
+                }
+            };
+            restoreWorkspace();
+        }
+    }, [location.state, searchParams]);
 
     // Load past import jobs and batches on history view
     const loadHistory = async () => {
@@ -2793,6 +2865,53 @@ export default function AdminAIQuestionImport() {
                                 );
                             })
                         )}
+
+                        {/* Add Question Manually to Batch Button */}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (activeBatch?.id) sessionStorage.setItem('ai_import_active_batch_id', activeBatch.id);
+                                if (activeJob?.id) sessionStorage.setItem('ai_import_active_job_id', activeJob.id);
+                                const nextQNum = String(allQuestions.length + 1);
+                                navigate('/admin/questions/new', {
+                                    state: {
+                                        isFromAiImport: true,
+                                        isNewForBatch: true,
+                                        batchId: activeBatch?.id,
+                                        jobId: activeJob?.id,
+                                        prefillQuestion: {
+                                            question_id: `manual_q_${Date.now()}`,
+                                            question_number: nextQNum,
+                                            source: activeJob?.source || activeBatch?.source || 'Mock Test Paper',
+                                            year: activeJob?.exam_year || activeBatch?.exam_year || 2026,
+                                            attempt: activeJob?.exam_session || activeBatch?.exam_session || 'MAY',
+                                            paper_id: effectivePaperId,
+                                            level_id: effectiveLevelId,
+                                        }
+                                    }
+                                });
+                            }}
+                            style={{
+                                padding: '0.4rem 0.85rem',
+                                borderRadius: '9999px',
+                                border: '1.5px dashed #6366f1',
+                                background: '#f5f3ff',
+                                color: '#4f46e5',
+                                fontSize: '0.78rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                whiteSpace: 'nowrap',
+                                transition: 'all 0.2s ease',
+                                flexShrink: 0
+                            }}
+                            title="Add a new question manually to this batch and continue reviewing"
+                        >
+                            <Plus size={14} />
+                            <span>+ Add Question Manually</span>
+                        </button>
                     </div>
 
                     {/* 2-Panel Main Layout: Question Editor & Matched Solution */}
@@ -2840,14 +2959,23 @@ export default function AdminAIQuestionImport() {
                                                 display: 'flex', alignItems: 'center', gap: '0.35rem'
                                             }}
                                             onClick={() => {
+                                                if (activeBatch?.id) sessionStorage.setItem('ai_import_active_batch_id', activeBatch.id);
+                                                if (activeJob?.id) sessionStorage.setItem('ai_import_active_job_id', activeJob.id);
+
                                                 navigate('/admin/questions/new', {
                                                     state: {
+                                                        isFromAiImport: true,
+                                                        isNewForBatch: false,
+                                                        batchId: activeBatch?.id,
+                                                        jobId: activeJob?.id,
+                                                        questionId: currentQuestion.question_id,
                                                         prefillQuestion: {
                                                             ...currentQuestion,
                                                             source: activeJob?.source || activeBatch?.source || 'Mock Test Paper',
                                                             year: activeJob?.exam_year || activeBatch?.exam_year || 2026,
                                                             attempt: activeJob?.exam_session || activeBatch?.exam_session || 'MAY',
-                                                            paper_id: (activeJob as any)?.paper || (activeBatch as any)?.paper || (activeJob as any)?.paper_id || (activeBatch as any)?.paper_id,
+                                                            paper_id: effectivePaperId,
+                                                            level_id: effectiveLevelId,
                                                             suggested_chapter_id: currentQuestion.suggested_chapter_id,
                                                             suggested_topic_id: currentQuestion.suggested_topic_id,
                                                         }

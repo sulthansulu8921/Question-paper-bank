@@ -7,7 +7,8 @@ import PdfLiveWorkspace from '@/components/admin/PdfLiveWorkspace';
 import {
     Loader2, Upload, Star, FileText, Zap, Plus, Trash2,
     HelpCircle, CheckSquare, MessageSquare, Clipboard, X,
-    Bold, Underline, AlignCenter, Sparkles, Minimize2, Maximize2
+    Bold, Underline, AlignCenter, Sparkles, Minimize2, Maximize2,
+    Save, ArrowLeft
 } from 'lucide-react';
 import '@/styles/admin/AddQuestion.css';
 
@@ -597,10 +598,47 @@ export default function AddQuestion() {
     const [uploading, setUploading] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
 
+    // AI Import Batch Context
+    const isFromAiImport = Boolean(
+        (location.state as any)?.isFromAiImport ||
+        (location.state as any)?.batchId ||
+        (location.state as any)?.jobId ||
+        sessionStorage.getItem('ai_import_active_batch_id')
+    );
+    const batchId = (location.state as any)?.batchId || sessionStorage.getItem('ai_import_active_batch_id') || '';
+    const jobId = (location.state as any)?.jobId || sessionStorage.getItem('ai_import_active_job_id') || '';
+    const editingQuestionId = (location.state as any)?.questionId || (location.state as any)?.prefillQuestion?.question_id || '';
+    const isNewForBatch = Boolean((location.state as any)?.isNewForBatch);
+    const [isSavingToBatch, setIsSavingToBatch] = useState(false);
+
     // Auto-populate from AI Question Importer if navigated via "Edit in Manual Form"
     useEffect(() => {
         const prefill = (location.state as any)?.prefillQuestion;
         if (prefill) {
+            const rawTable = prefill.structured_table || prefill.table_data;
+            let formattedTableData = '';
+            if (rawTable) {
+                if (typeof rawTable === 'string') {
+                    formattedTableData = rawTable;
+                } else if (Array.isArray(rawTable)) {
+                    formattedTableData = JSON.stringify(rawTable);
+                } else if (rawTable.headers && rawTable.rows) {
+                    formattedTableData = JSON.stringify([{ ...rawTable, type: 'cursor' }]);
+                }
+            }
+            if (formattedTableData) {
+                setShowQTable(true);
+            }
+
+            let initialQText = prefill.question_text || '';
+            if (prefill.post_table_text && !initialQText.includes(prefill.post_table_text)) {
+                if (formattedTableData && !initialQText.includes('[TABLE')) {
+                    initialQText = `${initialQText}\n\n[TABLE_1]\n\n${prefill.post_table_text}`;
+                } else {
+                    initialQText = `${initialQText}\n\n${prefill.post_table_text}`;
+                }
+            }
+
             setForm(prev => ({
                 ...prev,
                 question_type: prefill.question_type || 'NORMAL',
@@ -611,10 +649,10 @@ export default function AddQuestion() {
                 attempt: prefill.attempt || 'MAY',
                 difficulty: prefill.difficulty || 'MEDIUM',
                 tags: prefill.tags || '',
-                question_text: prefill.question_text || '',
+                question_text: initialQText,
                 case_scenario_passage: prefill.case_scenario_passage || '',
                 correct_answer: prefill.official_answer?.answer_text || prefill.matched_answer?.answer_text || prefill.correct_answer || '',
-                table_data: prefill.table_data ? (typeof prefill.table_data === 'string' ? prefill.table_data : JSON.stringify(prefill.table_data)) : '',
+                table_data: formattedTableData,
                 answer_table_data: (prefill.official_answer?.answer_table_data || prefill.matched_answer?.answer_table_data || prefill.answer_table_data) ? (typeof (prefill.official_answer?.answer_table_data || prefill.matched_answer?.answer_table_data || prefill.answer_table_data) === 'string' ? (prefill.official_answer?.answer_table_data || prefill.matched_answer?.answer_table_data || prefill.answer_table_data) : JSON.stringify(prefill.official_answer?.answer_table_data || prefill.matched_answer?.answer_table_data || prefill.answer_table_data)) : '',
             }));
 
@@ -657,8 +695,195 @@ export default function AddQuestion() {
         }
     }, [location.state]);
 
+    const handleReturnToAiImport = () => {
+        navigate('/admin/questions/import', {
+            state: {
+                batchId,
+                jobId,
+                selectedQuestionId: editingQuestionId
+            }
+        });
+    };
+
+    const handleSaveToAiBatch = async () => {
+        if (!batchId && !jobId) {
+            showToast('No active AI import batch or job found to save to.');
+            return;
+        }
+
+        if (!form.question_text.trim() && !form.case_scenario_passage.trim()) {
+            showToast('Please enter question text or case scenario passage before saving.');
+            return;
+        }
+
+        setIsSavingToBatch(true);
+        try {
+            // Parse tables safely
+            const parsedQTables = parseTablesHelper(form.table_data);
+            const primaryQTable = parsedQTables.length > 0 ? {
+                title: parsedQTables[0].title || 'Accounting Table',
+                headers: parsedQTables[0].headers || [],
+                rows: parsedQTables[0].rows || []
+            } : null;
+
+            const parsedATables = parseTablesHelper(form.answer_table_data);
+            const primaryATable = parsedATables.length > 0 ? {
+                title: parsedATables[0].title || 'Solution Table',
+                headers: parsedATables[0].headers || [],
+                rows: parsedATables[0].rows || []
+            } : null;
+
+            const targetQId = editingQuestionId || `manual_q_${Date.now()}`;
+            const questionToSave: any = {
+                question_id: targetQId,
+                question_number: form.q_no || '1',
+                question_type: form.question_type || 'NORMAL',
+                marks: parseFloat(form.marks) || 1,
+                difficulty: form.difficulty || 'MEDIUM',
+                tags: form.tags || '',
+                question_text: form.question_text,
+                case_scenario_passage: form.case_scenario_passage || '',
+                table_data: primaryQTable,
+                structured_table: primaryQTable,
+                options: (options || []).map((opt, idx) => ({
+                    label: String.fromCharCode(65 + idx),
+                    option_key: String.fromCharCode(65 + idx),
+                    text: opt.text,
+                    option_text: opt.text,
+                    is_correct: Boolean(opt.is_correct),
+                    order: idx
+                })),
+                subquestions: (subQuestions || []).map((sq, sqIdx) => {
+                    const sqAns = subAnswers.find(sa => sa.identifier === sq.identifier) || subAnswers[sqIdx];
+                    const sqParsedTables = parseTablesHelper(sq.table_data);
+                    const sqTable = sqParsedTables.length > 0 ? {
+                        title: sqParsedTables[0].title || '',
+                        headers: sqParsedTables[0].headers || [],
+                        rows: sqParsedTables[0].rows || []
+                    } : null;
+
+                    const sqAnsParsedTables = parseTablesHelper(sqAns?.answer_table_data || '');
+                    const sqAnsTable = sqAnsParsedTables.length > 0 ? {
+                        title: sqAnsParsedTables[0].title || '',
+                        headers: sqAnsParsedTables[0].headers || [],
+                        rows: sqAnsParsedTables[0].rows || []
+                    } : null;
+
+                    return {
+                        identifier: sq.identifier || `${form.q_no || '1'}(${String.fromCharCode(97 + sqIdx)})`,
+                        sub_question_number: sq.identifier || `${form.q_no || '1'}(${String.fromCharCode(97 + sqIdx)})`,
+                        question_text: sq.question_text,
+                        question_type: sq.question_type || 'NORMAL',
+                        marks: sq.marks || 1,
+                        table_data: sqTable,
+                        structured_table: sqTable,
+                        options: (sq.options || []).map((o, oIdx) => ({
+                            label: String.fromCharCode(65 + oIdx),
+                            option_key: String.fromCharCode(65 + oIdx),
+                            text: o.text,
+                            option_text: o.text,
+                            is_correct: Boolean(o.is_correct),
+                            order: oIdx
+                        })),
+                        is_approved: true,
+                        matching_status: 'matched',
+                        matched_answer: {
+                            answer_text: sqAns?.correct_answer || '',
+                            solution_text: sqAns?.correct_answer || '',
+                            working_notes: '',
+                            answer_table_data: sqAnsTable,
+                            structured_table: sqAnsTable,
+                            confidence_score: 1.0,
+                            matching_status: 'matched'
+                        }
+                    };
+                }),
+                suggested_chapter_id: icai.chapterId ? parseInt(icai.chapterId) : null,
+                suggested_topic_id: icai.topicId ? parseInt(icai.topicId) : null,
+                is_approved: true,
+                matching_status: 'matched',
+                matched_answer: {
+                    answer_text: form.correct_answer || '',
+                    solution_text: form.correct_answer || '',
+                    working_notes: '',
+                    answer_table_data: primaryATable,
+                    structured_table: primaryATable,
+                    confidence_score: 1.0,
+                    matching_status: 'matched'
+                }
+            };
+
+            // Fetch current batch payload from backend
+            let payload: any = null;
+            if (batchId) {
+                const resp = await api.get(`/materials/import-batches/${batchId}/payload/`);
+                payload = resp.data?.payload || resp.data || {};
+            } else if (jobId) {
+                const resp = await api.get(`/materials/import-jobs/${jobId}/payload/`);
+                payload = resp.data?.payload || resp.data || {};
+            }
+
+            if (!payload || !Array.isArray(payload.sections) || payload.sections.length === 0) {
+                payload = {
+                    sections: [
+                        {
+                            section_name: 'Section A',
+                            questions: []
+                        }
+                    ]
+                };
+            }
+
+            // Search for existing question or append
+            let replaced = false;
+            for (const sec of payload.sections) {
+                for (let i = 0; i < (sec.questions || []).length; i++) {
+                    if (sec.questions[i].question_id === targetQId || sec.questions[i].question_number === questionToSave.question_number) {
+                        sec.questions[i] = {
+                            ...sec.questions[i],
+                            ...questionToSave
+                        };
+                        replaced = true;
+                        break;
+                    }
+                }
+                if (replaced) break;
+            }
+
+            if (!replaced) {
+                payload.sections[0].questions.push(questionToSave);
+            }
+
+            // Save updated payload to backend
+            if (batchId) {
+                await api.put(`/materials/import-batches/${batchId}/payload/`, { payload });
+            }
+            if (jobId) {
+                try {
+                    await api.put(`/materials/import-jobs/${jobId}/payload/`, { payload });
+                } catch {}
+            }
+
+            // Navigate back to AI Question Import page with state
+            navigate('/admin/questions/import', {
+                state: {
+                    batchId,
+                    jobId,
+                    selectedQuestionId: targetQId,
+                    justSavedFromManual: true,
+                    savedQuestionNumber: questionToSave.question_number
+                }
+            });
+        } catch (err: any) {
+            console.error('Error saving question to AI import batch:', err);
+            showToast(err.response?.data?.error || 'Failed to update question in AI import batch.');
+        } finally {
+            setIsSavingToBatch(false);
+        }
+    };
+
     // Embedded PDF Two-Panel Question + Answer Workspace panel states
-    const [showPdfPanel, setShowPdfPanel] = useState(true);
+    const [showPdfPanel, setShowPdfPanel] = useState(!isFromAiImport);
     const [pdfQuestionFile, setPdfQuestionFile] = useState<File | null>(null);
     const [pdfAnswerFile, setPdfAnswerFile] = useState<File | null>(null);
     const [isExtractingPdf, setIsExtractingPdf] = useState(false);
@@ -1505,36 +1730,103 @@ export default function AddQuestion() {
                     </div>
                     <div>
                         <h1 className="text-xl font-bold text-slate-800">
-                            {isEdit ? `Edit Question #${id}` : 'Add New Question'}
+                            {isFromAiImport
+                                ? (isNewForBatch ? 'Add New Question to AI Batch' : `Edit Extracted Question Q${form.q_no || ''}`)
+                                : (isEdit ? `Edit Question #${id}` : 'Add New Question')}
                         </h1>
-                        <p className="text-xs text-slate-400 mt-0.5">Define metadata, question parameters, options, suggested solutions, and dynamic tables on a single page.</p>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                            {isFromAiImport
+                                ? 'Edit question details in the manual form. Click Save & Return to AI Import to resume reviewing your batch.'
+                                : 'Define metadata, question parameters, options, suggested solutions, and dynamic tables on a single page.'}
+                        </p>
                     </div>
                 </div>
                 <div className="flex gap-3">
-                    <Link
-                        to="/admin/questions/import"
-                        className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg font-semibold text-sm flex items-center gap-2 shadow-sm transition-all"
-                    >
-                        <Sparkles size={18} />
-                        <span>AI PDF Question Importer</span>
-                    </Link>
-                    <button
-                        type="button"
-                        onClick={() => setShowPdfPanel(!showPdfPanel)}
-                        className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-semibold text-sm flex items-center gap-2 shadow-sm transition-all"
-                    >
-                        <Sparkles size={18} />
-                        <span>{showPdfPanel ? 'Hide PDF Text Model' : 'Upload & Scan PDF (QP + AP)'}</span>
-                    </button>
-                    <button className="px-4 py-2 border border-slate-200 rounded-lg text-slate-600 bg-white font-semibold text-sm hover:bg-slate-50" onClick={() => navigate('/admin/questions')}>
-                        Cancel
-                    </button>
-                    <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-sm flex items-center gap-2" onClick={() => handleSave('PUBLISHED')} disabled={saveMutation.isPending}>
-                        {saveMutation.isPending ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} />}
-                        <span>{isEdit ? 'Save Changes' : 'Publish Question'}</span>
-                    </button>
+                    {isFromAiImport ? (
+                        <>
+                            <button
+                                type="button"
+                                className="px-4 py-2 border border-slate-200 rounded-lg text-slate-700 bg-white font-semibold text-sm hover:bg-slate-50 flex items-center gap-1.5"
+                                onClick={handleReturnToAiImport}
+                            >
+                                <ArrowLeft size={16} />
+                                <span>Back to AI Import</span>
+                            </button>
+                            <button
+                                type="button"
+                                className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg font-bold text-sm flex items-center gap-2 shadow-sm transition-all"
+                                onClick={handleSaveToAiBatch}
+                                disabled={isSavingToBatch}
+                            >
+                                {isSavingToBatch ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                                <span>{isNewForBatch ? 'Add to AI Batch & Return' : 'Save & Return to AI Import'}</span>
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <Link
+                                to="/admin/questions/import"
+                                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg font-semibold text-sm flex items-center gap-2 shadow-sm transition-all"
+                            >
+                                <Sparkles size={18} />
+                                <span>AI PDF Question Importer</span>
+                            </Link>
+                            <button
+                                type="button"
+                                onClick={() => setShowPdfPanel(!showPdfPanel)}
+                                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-semibold text-sm flex items-center gap-2 shadow-sm transition-all"
+                            >
+                                <Sparkles size={18} />
+                                <span>{showPdfPanel ? 'Hide PDF Text Model' : 'Upload & Scan PDF (QP + AP)'}</span>
+                            </button>
+                            <button className="px-4 py-2 border border-slate-200 rounded-lg text-slate-600 bg-white font-semibold text-sm hover:bg-slate-50" onClick={() => navigate('/admin/questions')}>
+                                Cancel
+                            </button>
+                            <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-sm flex items-center gap-2" onClick={() => handleSave('PUBLISHED')} disabled={saveMutation.isPending}>
+                                {saveMutation.isPending ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} />}
+                                <span>{isEdit ? 'Save Changes' : 'Publish Question'}</span>
+                            </button>
+                        </>
+                    )}
                 </div>
             </div>
+
+            {/* AI Import Return Banner */}
+            {isFromAiImport && (
+                <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-emerald-50 border border-purple-200 rounded-xl p-3.5 my-3 flex items-center justify-between shadow-sm">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold shadow-sm">
+                            <Sparkles size={20} />
+                        </div>
+                        <div>
+                            <h4 className="text-sm font-bold text-purple-950">
+                                {isNewForBatch ? 'Adding New Question to AI Import Batch' : `Editing Question Q${form.q_no || ''} for AI Import Batch`}
+                            </h4>
+                            <p className="text-xs text-purple-700 mt-0.5">
+                                Customize parameters, tables, or MCQ options below. When finished, click <strong className="text-emerald-700 font-bold">"{isNewForBatch ? 'Add to AI Batch & Return' : 'Save & Return to AI Import'}"</strong> to save back to the batch. After all questions are ready, publish all together in one click!
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={handleReturnToAiImport}
+                            className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg shadow-sm"
+                        >
+                            Cancel & Return
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleSaveToAiBatch}
+                            disabled={isSavingToBatch}
+                            className="px-4 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-lg shadow-sm flex items-center gap-1.5 transition-all"
+                        >
+                            {isSavingToBatch ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                            <span>{isNewForBatch ? 'Add to AI Batch & Return' : 'Save & Return to AI Import'}</span>
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Toast Notification */}
             {toastMessage && (
@@ -3119,6 +3411,35 @@ export default function AddQuestion() {
                             <span>{showPdfPanel ? 'Hide PDF Text Model' : 'Upload & Scan (QP + AP PDF)'}</span>
                         </button>
 
+                        {isFromAiImport ? (
+                            <div className="flex flex-col gap-2 p-3 bg-purple-50 border border-purple-200 rounded-xl my-1">
+                                <div className="flex items-center gap-1.5 text-purple-900 font-bold text-xs">
+                                    <Sparkles size={14} className="text-purple-600" />
+                                    <span>AI Import Batch Mode</span>
+                                </div>
+                                <p className="text-[11px] text-purple-700 leading-tight">
+                                    Save this question back to the AI batch to continue reviewing. Once all questions are in the batch, publish all in one click!
+                                </p>
+                                <button
+                                    type="button"
+                                    className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-xs"
+                                    onClick={handleSaveToAiBatch}
+                                    disabled={isSavingToBatch}
+                                >
+                                    {isSavingToBatch ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                                    <span>{isNewForBatch ? '➕ Add to AI Batch & Return' : '💾 Save & Return to AI Import'}</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="w-full py-2 bg-white border border-purple-200 text-purple-700 hover:bg-purple-100 font-semibold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all"
+                                    onClick={handleReturnToAiImport}
+                                >
+                                    <ArrowLeft size={13} />
+                                    <span>Cancel & Return to Batch</span>
+                                </button>
+                            </div>
+                        ) : null}
+
                         <button
                             type="button"
                             className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-xs"
@@ -3126,7 +3447,7 @@ export default function AddQuestion() {
                             disabled={saveMutation.isPending}
                         >
                             {saveMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
-                            <span>{isEdit ? 'Save Changes' : 'Publish Question'}</span>
+                            <span>{isEdit ? 'Save Changes' : (isFromAiImport ? 'Publish Standalone' : 'Publish Question')}</span>
                         </button>
 
                         <button className="secondary-btn w-full" onClick={() => handleSave('DRAFT')}>
