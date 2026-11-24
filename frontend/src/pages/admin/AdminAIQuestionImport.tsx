@@ -1376,7 +1376,10 @@ export default function AdminAIQuestionImport() {
                 'descriptive questions', 'descriptive question', 'part ii - descriptive questions',
                 'part ii – descriptive questions', 'part ii', 'subjective questions', 'accounting problem'
             ];
-            if ((!cleanQText || genericHeadings.includes(cleanQText.toLowerCase())) && subqs.length > 0) {
+            const isGenericHeading = !cleanQText ||
+                genericHeadings.some(h => cleanQText.toLowerCase().startsWith(h)) ||
+                /^(descriptive questions?(\s*\d+)?|part\s*ii(\s*[-–]\s*descriptive questions?)?|subjective questions?)\b/i.test(cleanQText);
+            if (isGenericHeading && subqs.length > 0) {
                 const subSummaries = subqs
                     .map((sq: any) => {
                         const sqId = sq.identifier || sq.sub_question_number || '';

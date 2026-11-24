@@ -2015,7 +2015,7 @@ def match_questions_and_answers(sections, answers_list):
 
                 # Clean up generic placeholder question_text like "Descriptive Questions"
                 cur_q_text = (q.get("question_text") or "").strip()
-                if cur_q_text.lower() in ["descriptive questions", "descriptive question", "part ii - descriptive questions", "part ii", "subjective questions", "accounting problem", ""]:
+                if not cur_q_text or re.match(r'^(descriptive questions?(\s*\d+)?|part\s*ii(\s*[-–]\s*descriptive questions?)?|subjective questions?|accounting problem)\b', cur_q_text, re.I):
                     sub_summaries = []
                     for sq in subqs_list:
                         s_id = sq.get("identifier") or sq.get("sub_question_number") or ""
