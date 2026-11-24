@@ -9,7 +9,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from authentication.models import User, OTP
 from authentication.serializers import UserSerializer
-from authentication.permissions import IsSuperUser
+from authentication.permissions import IsSuperUser, IsSuperAdmin
 from rest_framework.pagination import PageNumberPagination
 
 # ── Custom throttle classes ────────────────────────────────────────────────
@@ -288,15 +288,38 @@ class UserListView(generics.ListAPIView):
     """Admin endpoint to list all users with pagination (50 per page)."""
     queryset = User.objects.all().order_by('-date_joined')
     serializer_class = UserSerializer
-    permission_classes = [IsSuperUser]
+    permission_classes = [IsSuperAdmin]
     pagination_class = UserListPagination
 
 
 class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """Admin endpoint to view/update/delete individual user (e.g., toggle is_staff)."""
+    """Admin endpoint to view/update/delete individual user (e.g., toggle is_staff, change role)."""
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [IsSuperUser]
+    permission_classes = [IsSuperAdmin]
+
+    def perform_update(self, serializer):
+        # Auto-sync role when is_staff is explicitly modified
+        if 'is_staff' in serializer.validated_data:
+            new_is_staff = serializer.validated_data['is_staff']
+            if not new_is_staff:
+                serializer.validated_data['role'] = 'STUDENT'
+                serializer.validated_data['is_superuser'] = False
+            elif serializer.instance.role == 'STUDENT' and 'role' not in serializer.validated_data:
+                serializer.validated_data['role'] = 'SUPER_ADMIN'
+                serializer.validated_data['is_superuser'] = True
+
+        if 'role' in serializer.validated_data:
+            new_role = serializer.validated_data['role']
+            if new_role in ['SUPER_ADMIN', 'INSTITUTION_ADMIN', 'INSTRUCTOR', 'QUESTION_ADMIN', 'COURSE_ADMIN']:
+                serializer.validated_data['is_staff'] = True
+                if new_role == 'SUPER_ADMIN':
+                    serializer.validated_data['is_superuser'] = True
+            elif new_role == 'STUDENT':
+                serializer.validated_data['is_staff'] = False
+                serializer.validated_data['is_superuser'] = False
+
+        serializer.save()
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -309,33 +332,33 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 class UserSuspendView(APIView):
-    permission_classes = [IsSuperUser]
+    permission_classes = [IsSuperAdmin]
 
     def post(self, request, pk):
         try:
             user = User.objects.get(pk=pk)
             user.is_active = False
-            user.save()
+            user.save(update_fields=['is_active'])
             return Response({'status': 'suspended', 'message': f'User {user.email} suspended successfully.'})
         except User.DoesNotExist:
             return Response({'error': 'User not found.'}, status=404)
 
 
 class UserActivateView(APIView):
-    permission_classes = [IsSuperUser]
+    permission_classes = [IsSuperAdmin]
 
     def post(self, request, pk):
         try:
             user = User.objects.get(pk=pk)
             user.is_active = True
-            user.save()
+            user.save(update_fields=['is_active'])
             return Response({'status': 'activated', 'message': f'User {user.email} activated successfully.'})
         except User.DoesNotExist:
             return Response({'error': 'User not found.'}, status=404)
 
 
 class UserResetPasswordView(APIView):
-    permission_classes = [IsSuperUser]
+    permission_classes = [IsSuperAdmin]
 
     def post(self, request, pk):
         new_password = request.data.get('password')
@@ -352,7 +375,7 @@ class UserResetPasswordView(APIView):
 
 class GrantAdminView(APIView):
     """Admin endpoint to grant admin privileges to a user by email."""
-    permission_classes = [IsSuperUser]
+    permission_classes = [IsSuperAdmin]
 
     def post(self, request):
         email = request.data.get('email', '').strip().lower()
@@ -368,6 +391,8 @@ class GrantAdminView(APIView):
             user = User.objects.get(email=email)
             user.is_staff = True
             user.role = role
+            if role == 'SUPER_ADMIN':
+                user.is_superuser = True
             user.save()
             return Response({
                 'message': f"Admin privileges granted to {email} with role {role} successfully.",

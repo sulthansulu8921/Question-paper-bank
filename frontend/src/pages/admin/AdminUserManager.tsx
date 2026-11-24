@@ -15,6 +15,7 @@ const ROLE_EXPLANATIONS: Record<string, string> = {
     COURSE_ADMIN: 'Access to qualifications, global levels, course progression, subjects, chapters, and topics.',
     INSTITUTION_ADMIN: 'Access to local institution portal, batch assignments, and regional student profiles.',
     INSTRUCTOR: 'Limited administrative access. Can manage classroom discussions, live lectures, and basic classroom helper tools.',
+    STUDENT: 'Standard student account with regular dashboard and study subscription access.',
 };
 
 const AdminUserManager = () => {
@@ -212,7 +213,8 @@ const AdminUserManager = () => {
 
     const handleToggleUserActive = async (user: any) => {
         setIsActionPending(true);
-        const action = user.is_active ? 'suspend' : 'activate';
+        const isActive = user.is_active !== false;
+        const action = isActive ? 'suspend' : 'activate';
         try {
             await api.post(`/auth/users/${user.id}/${action}/`);
             queryClient.invalidateQueries({ queryKey: ['admin-users'] });
@@ -604,42 +606,65 @@ const AdminUserManager = () => {
                                             </td>
                                             <td className="p-4 text-sm font-semibold text-slate-500">{u.mobile_number || '—'}</td>
                                             <td className="p-4">
-                                                {u.is_staff ? (
-                                                    u.role === 'SUPER_ADMIN' ? (
-                                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 uppercase">
-                                                            <Shield size={12} /> Full Admin
-                                                        </span>
-                                                    ) : u.role === 'QUESTION_ADMIN' ? (
-                                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-100 uppercase">
-                                                            <Shield size={12} /> Question Admin
-                                                        </span>
-                                                    ) : u.role === 'COURSE_ADMIN' ? (
-                                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase">
-                                                            <Shield size={12} /> Course Admin
-                                                        </span>
-                                                    ) : u.role === 'INSTITUTION_ADMIN' ? (
-                                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100 uppercase">
-                                                            <Shield size={12} /> Inst Admin
-                                                        </span>
-                                                    ) : u.role === 'INSTRUCTOR' ? (
-                                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-100 uppercase">
-                                                            <Shield size={12} /> Instructor
-                                                        </span>
-                                                    ) : (
+                                                {(() => {
+                                                    const role = u.role || (u.is_staff ? 'SUPER_ADMIN' : 'STUDENT');
+                                                    const isStaffOrAdmin = Boolean(u.is_staff || u.is_superuser || (u.role && u.role !== 'STUDENT'));
+                                                    
+                                                    if (!isStaffOrAdmin || role === 'STUDENT') {
+                                                        return (
+                                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-50 text-slate-500 border border-slate-100 uppercase">
+                                                                <User size={12} /> Student
+                                                            </span>
+                                                        );
+                                                    }
+                                                    if (role === 'SUPER_ADMIN') {
+                                                        return (
+                                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 uppercase">
+                                                                <Shield size={12} /> Full Admin
+                                                            </span>
+                                                        );
+                                                    }
+                                                    if (role === 'QUESTION_ADMIN') {
+                                                        return (
+                                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-100 uppercase">
+                                                                <Shield size={12} /> Question Admin
+                                                            </span>
+                                                        );
+                                                    }
+                                                    if (role === 'COURSE_ADMIN') {
+                                                        return (
+                                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase">
+                                                                <Shield size={12} /> Course Admin
+                                                            </span>
+                                                        );
+                                                    }
+                                                    if (role === 'INSTITUTION_ADMIN') {
+                                                        return (
+                                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100 uppercase">
+                                                                <Shield size={12} /> Inst Admin
+                                                            </span>
+                                                        );
+                                                    }
+                                                    if (role === 'INSTRUCTOR') {
+                                                        return (
+                                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-100 uppercase">
+                                                                <Shield size={12} /> Instructor
+                                                            </span>
+                                                        );
+                                                    }
+                                                    return (
                                                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 uppercase">
                                                             <Shield size={12} /> Admin
                                                         </span>
-                                                    )
-                                                ) : (
-                                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-50 text-slate-500 border border-slate-100 uppercase">
-                                                        <User size={12} /> Student
-                                                    </span>
-                                                )}
+                                                    );
+                                                })()}
                                             </td>
                                             <td className="p-4 text-sm">
                                                 <div className="flex items-center gap-2">
-                                                    <span className={`w-2.5 h-2.5 rounded-full ${u.is_active ? 'bg-green-500' : 'bg-red-500'}`} />
-                                                    <span className="font-bold text-slate-700">{u.is_active ? 'Active' : 'Inactive'}</span>
+                                                    <span className={`w-2.5 h-2.5 rounded-full ${u.is_active !== false ? 'bg-green-500' : 'bg-red-500'}`} />
+                                                    <span className={`font-bold ${u.is_active !== false ? 'text-slate-700' : 'text-red-500'}`}>
+                                                        {u.is_active !== false ? 'Active' : 'Inactive'}
+                                                    </span>
                                                 </div>
                                             </td>
                                             <td className="p-4 text-right">
@@ -660,40 +685,43 @@ const AdminUserManager = () => {
                                                     </button>
                                                     <button 
                                                         onClick={() => handleToggleUserActive(u)}
-                                                        className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold hover:bg-slate-50 ${u.is_active ? 'border-amber-200 text-amber-600' : 'border-emerald-200 text-emerald-600'}`}
-                                                        title={u.is_active ? 'Suspend User' : 'Activate User'}
+                                                        className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold hover:bg-slate-50 ${u.is_active !== false ? 'border-amber-200 text-amber-600' : 'border-emerald-200 text-emerald-600'}`}
+                                                        title={u.is_active !== false ? 'Suspend User' : 'Activate User'}
                                                     >
-                                                        {u.is_active ? 'Suspend' : 'Activate'}
+                                                        {u.is_active !== false ? 'Suspend' : 'Activate'}
                                                     </button>
-                                                    {u.is_staff && (
-                                                        <button
-                                                            onClick={() => {
-                                                                setEditRoleUser(u);
-                                                                setSelectedRole(u.role || 'SUPER_ADMIN');
-                                                            }}
-                                                            className="px-2.5 py-1.5 rounded-lg border border-purple-200 text-purple-600 text-xs font-bold hover:bg-purple-50"
-                                                            title="Change Admin Role"
-                                                        >
-                                                            Edit Role
-                                                        </button>
-                                                    )}
                                                     <button
-                                                        className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-all ${u.is_staff ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-blue-200 text-blue-600 hover:bg-blue-50'}`}
-                                                        title={u.is_staff ? 'Remove Admin privileges' : 'Grant Admin privileges'}
-                                                        onClick={() => setConfirmPrivilege({
-                                                            open: true,
-                                                            title: u.is_staff ? 'Remove Admin Privileges' : 'Grant Admin Privileges',
-                                                            message: u.is_staff
-                                                                ? `Remove admin privileges from ${u.email}? They will no longer be able to access the admin panel.`
-                                                                : `Grant admin privileges to ${u.email}? They will have full access to the admin panel.`,
-                                                            onConfirm: () => {
-                                                                toggleStaffMutation.mutate({ id: u.id, is_staff: !u.is_staff });
-                                                                setConfirmPrivilege(prev => ({ ...prev, open: false }));
-                                                            }
-                                                        })}
+                                                        onClick={() => {
+                                                            setEditRoleUser(u);
+                                                            setSelectedRole(u.role || (u.is_staff ? 'SUPER_ADMIN' : 'STUDENT'));
+                                                        }}
+                                                        className="px-2.5 py-1.5 rounded-lg border border-purple-200 text-purple-600 text-xs font-bold hover:bg-purple-50"
+                                                        title="Change User / Admin Role"
                                                     >
-                                                        {u.is_staff ? 'Demote' : 'Admin'}
+                                                        Edit Role
                                                     </button>
+                                                    {(() => {
+                                                        const isAnyAdmin = Boolean(u.is_staff || u.is_superuser || (u.role && u.role !== 'STUDENT'));
+                                                        return (
+                                                            <button
+                                                                className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-all ${isAnyAdmin ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-blue-200 text-blue-600 hover:bg-blue-50'}`}
+                                                                title={isAnyAdmin ? 'Demote Admin privileges' : 'Grant Admin privileges'}
+                                                                onClick={() => setConfirmPrivilege({
+                                                                    open: true,
+                                                                    title: isAnyAdmin ? 'Remove Admin Privileges' : 'Grant Admin Privileges',
+                                                                    message: isAnyAdmin
+                                                                        ? `Remove admin privileges from ${u.email}? They will be demoted to regular Student and lose access to admin features.`
+                                                                        : `Grant admin privileges to ${u.email}? They will be promoted to Super Admin with administrative access.`,
+                                                                    onConfirm: () => {
+                                                                        toggleStaffMutation.mutate({ id: u.id, is_staff: !isAnyAdmin });
+                                                                        setConfirmPrivilege(prev => ({ ...prev, open: false }));
+                                                                    }
+                                                                })}
+                                                            >
+                                                                {isAnyAdmin ? 'Demote' : 'Admin'}
+                                                            </button>
+                                                        );
+                                                    })()}
                                                     <button
                                                         className="p-1.5 border border-red-200 rounded text-red-500 hover:text-red-700 hover:bg-red-50"
                                                         title="Delete User"
@@ -1048,15 +1076,15 @@ const AdminUserManager = () => {
                                 </div>
                                 <div className="text-xs space-y-1">
                                     <p className="text-slate-500 font-semibold">
-                                        Role: <span className="font-bold text-slate-700">{historyUser.is_staff ? 'Admin' : 'Student'}</span>
+                                        Role: <span className="font-bold text-slate-700">{historyUser.role?.replace('_', ' ') || (historyUser.is_staff ? 'Admin' : 'Student')}</span>
                                     </p>
-                                    {!historyUser.is_staff && (
+                                    {(!historyUser.is_staff && historyUser.role === 'STUDENT') && (
                                         <p className="text-slate-500 font-semibold">
                                             Selected Course: <span className="font-bold text-blue-600">{historyUser.selected_course_name || 'None Selected'}</span>
                                         </p>
                                     )}
                                     <p className="text-slate-500 font-semibold">
-                                        Status: <span className={`font-bold ${historyUser.is_active ? 'text-green-600' : 'text-red-500'}`}>{historyUser.is_active ? 'Active' : 'Inactive'}</span>
+                                        Status: <span className={`font-bold ${historyUser.is_active !== false ? 'text-green-600' : 'text-red-500'}`}>{historyUser.is_active !== false ? 'Active' : 'Inactive'}</span>
                                     </p>
                                     <p className="text-slate-500 font-semibold">
                                         Joined: <span className="font-bold text-slate-700">{formatDate(historyUser.date_joined)}</span>
@@ -1419,6 +1447,7 @@ const AdminUserManager = () => {
                                 value={selectedRole}
                                 onChange={(e) => setSelectedRole(e.target.value)}
                             >
+                                <option value="STUDENT">Student (Standard User)</option>
                                 <option value="SUPER_ADMIN">Full Administrator (Super Admin)</option>
                                 <option value="QUESTION_ADMIN">Question Paper Admin</option>
                                 <option value="COURSE_ADMIN">Course & Subject Admin</option>

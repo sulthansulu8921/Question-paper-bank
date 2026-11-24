@@ -64,7 +64,7 @@ const Topbar = ({ onMenuToggle }: TopbarProps) => {
                 >
                     <div className="admin-info">
                         <span className="admin-name">{fullName}</span>
-                        <span className="admin-role">{user?.is_staff ? 'Super Admin' : 'Staff'}</span>
+                        <span className="admin-role">{user?.role ? user.role.replace('_', ' ') : (user?.is_staff ? 'Super Admin' : 'Staff')}</span>
                     </div>
                     <img
                         src={`https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=0D8ABC&color=fff`}

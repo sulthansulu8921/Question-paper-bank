@@ -32,7 +32,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'email', 'mobile_number', 'first_name', 'last_name', 'full_name', 
-            'password', 'settings', 'is_staff', 'is_superuser', 'subscription_tier', 
+            'password', 'settings', 'is_active', 'is_staff', 'is_superuser', 'subscription_tier', 
             'date_joined', 'last_login', 'selected_course', 'selected_course_name',
             'selected_course_category', 'role', 'institution', 'institution_name',
             'ai_credits'

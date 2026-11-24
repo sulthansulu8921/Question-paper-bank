@@ -53,7 +53,7 @@ export default function Sidebar() {
                     );
                 })}
 
-                {user?.is_staff && (
+                {(user?.is_staff || user?.is_superuser || (user?.role && user?.role !== 'STUDENT')) && (
                     <div className="mt-6 pt-6 border-t border-border flex flex-col gap-1.5">
                         <p className="text-[10px] font-black text-text-muted uppercase tracking-[0.2em] mb-4 ml-4">Administration</p>
                         {adminItems.map((item) => {

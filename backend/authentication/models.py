@@ -42,6 +42,15 @@ class User(AbstractUser):
     def __str__(self):
         return self.email
 
+    def save(self, *args, **kwargs):
+        if self.role in ['SUPER_ADMIN', 'INSTITUTION_ADMIN', 'INSTRUCTOR', 'QUESTION_ADMIN', 'COURSE_ADMIN']:
+            self.is_staff = True
+            if self.role == 'SUPER_ADMIN':
+                self.is_superuser = True
+        elif self.role == 'STUDENT' and not self.is_superuser:
+            self.is_staff = False
+        super().save(*args, **kwargs)
+
 
 class Batch(models.Model):
     name = models.CharField(max_length=150)

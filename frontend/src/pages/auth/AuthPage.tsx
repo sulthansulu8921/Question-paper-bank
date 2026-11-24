@@ -17,7 +17,8 @@ export default function AuthPage() {
 
     useEffect(() => {
         if (token) {
-            if (user?.is_staff) {
+            const isAdmin = Boolean(user?.is_staff || user?.is_superuser || (user?.role && user?.role !== 'STUDENT'));
+            if (isAdmin) {
                 navigate('/admin');
             } else if (user?.selected_course) {
                 navigate(`/dashboard/courses/${user.selected_course}`);
@@ -119,7 +120,8 @@ export default function AuthPage() {
         try {
             await googleLogin(response.credential, selectedCourseId);
             const loggedUser = useAuthStore.getState().user;
-            if (loggedUser?.is_staff) {
+            const isAdmin = Boolean(loggedUser?.is_staff || loggedUser?.is_superuser || (loggedUser?.role && loggedUser?.role !== 'STUDENT'));
+            if (isAdmin) {
                 navigate('/admin');
                 return;
             }
@@ -318,7 +320,8 @@ export default function AuthPage() {
         try {
             await login(formData.email, formData.password);
             const user = useAuthStore.getState().user;
-            if (user?.is_staff) {
+            const isAdmin = Boolean(user?.is_staff || user?.is_superuser || (user?.role && user?.role !== 'STUDENT'));
+            if (isAdmin) {
                 navigate('/admin');
             } else {
                 let targetCourseId = user?.selected_course;
