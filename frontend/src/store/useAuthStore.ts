@@ -19,23 +19,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     user: null,
     token: localStorage.getItem('token'),
     isHydrating: true,
-    setAuth: (user, token) => {
+    setAuth: (user, token, refreshToken?: string) => {
         localStorage.setItem('token', token);
+        if (refreshToken) localStorage.setItem('refresh_token', refreshToken);
         set({ user, token, isHydrating: false });
     },
     logout: () => {
         localStorage.removeItem('token');
+        localStorage.removeItem('refresh_token');
         set({ user: null, token: null, isHydrating: false });
     },
     login: async (email, password) => {
         const cleanEmail = email.trim().toLowerCase();
         const response = await api.post('/auth/login/', { email: cleanEmail, username: cleanEmail, password });
-        const { access } = response.data;
+        const { access, refresh } = response.data;
 
         // Fetch full profile info including settings
         const profileResponse = await api.get('/auth/profile/', { headers: { Authorization: `Bearer ${access}` } });
 
         localStorage.setItem('token', access);
+        if (refresh) localStorage.setItem('refresh_token', refresh);
         set({ user: profileResponse.data, token: access, isHydrating: false });
     },
     googleLogin: async (credential: string, selectedCourseId?: string) => {
@@ -43,12 +46,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             token: credential,
             selected_course: selectedCourseId ? parseInt(selectedCourseId) : undefined
         });
-        const { access } = response.data;
+        const { access, refresh } = response.data;
 
         // Fetch full profile info including settings
         const profileResponse = await api.get('/auth/profile/', { headers: { Authorization: `Bearer ${access}` } });
 
         localStorage.setItem('token', access);
+        if (refresh) localStorage.setItem('refresh_token', refresh);
         set({ user: profileResponse.data, token: access, isHydrating: false });
     },
     register: async (full_name, mobile, email, password, otp, selectedCourseId) => {
@@ -64,12 +68,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             otp,
             selected_course: selectedCourseId ? parseInt(selectedCourseId) : undefined
         });
-        const { access } = response.data;
+        const { access, refresh } = response.data;
 
         // Fetch full profile info including settings
         const profileResponse = await api.get('/auth/profile/', { headers: { Authorization: `Bearer ${access}` } });
 
         localStorage.setItem('token', access);
+        if (refresh) localStorage.setItem('refresh_token', refresh);
         set({ user: profileResponse.data, token: access, isHydrating: false });
     },
     updateProfile: async (data: any) => {

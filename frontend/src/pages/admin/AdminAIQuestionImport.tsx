@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
     Upload, FileText, Sparkles, CheckCircle2, AlertTriangle,
     RefreshCw, Eye, Trash2, Check,
@@ -868,6 +868,7 @@ export default function AdminAIQuestionImport() {
 
     // Workspace state
     const [selectedQuestionId, setSelectedQuestionId] = useState<string>('');
+    const stripRef = useRef<HTMLDivElement>(null);
     const [qTypeFilter, setQTypeFilter] = useState<'ALL' | 'MCQ' | 'SCENARIO' | 'DESCRIPTIVE'>('ALL');
     const [rightMinimized, setRightMinimized] = useState(false);
     const [solutionTab, setSolutionTab] = useState<'OFFICIAL' | 'WORKING_NOTES' | 'AI_EXPLANATION'>('OFFICIAL');
@@ -879,6 +880,15 @@ export default function AdminAIQuestionImport() {
         setToastMessage(msg);
         setTimeout(() => setToastMessage(null), 4000);
     };
+
+    // Auto-scroll the active question button in the strip into view
+    useEffect(() => {
+        if (!selectedQuestionId || !stripRef.current) return;
+        const activeBtn = stripRef.current.querySelector('.ai-q-pill-btn.active') as HTMLElement;
+        if (activeBtn) {
+            activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+        }
+    }, [selectedQuestionId]);
 
     // Automatically restore workspace when returning from manual question editor or via URL params
     useEffect(() => {
@@ -1360,16 +1370,58 @@ export default function AdminAIQuestionImport() {
                 };
             });
 
+            // Clean up placeholder question_text if generic
+            let cleanQText = (q.question_text || '').trim();
+            const genericHeadings = [
+                'descriptive questions', 'descriptive question', 'part ii - descriptive questions',
+                'part ii – descriptive questions', 'part ii', 'subjective questions', 'accounting problem'
+            ];
+            if ((!cleanQText || genericHeadings.includes(cleanQText.toLowerCase())) && subqs.length > 0) {
+                const subSummaries = subqs
+                    .map((sq: any) => {
+                        const sqId = sq.identifier || sq.sub_question_number || '';
+                        const sqT = (sq.question_text || '').trim().replace(/\s+/g, ' ');
+                        return sqT ? `(${sqId}) ${sqT.slice(0, 75)}...` : '';
+                    })
+                    .filter(Boolean);
+                if (subSummaries.length > 0) {
+                    cleanQText = `Question ${q.question_number || '1'}: ` + subSummaries.join(' | ');
+                }
+            }
+
+            // Consolidate subquestion solutions into parent solution if empty or generic
+            let parentSolText = ans.solution_text || ans.answer_text || '';
+            if ((!parentSolText || parentSolText.includes('See individual sub-question answers below')) && subqs.length > 0) {
+                const parts = subqs
+                    .map((sq: any) => {
+                        const sqId = sq.identifier || sq.sub_question_number || '';
+                        const sqAns = sq.matched_answer?.solution_text || sq.matched_answer?.answer_text || '';
+                        const sqWn = sq.matched_answer?.working_notes || '';
+                        if (!sqAns) return null;
+                        let pStr = `【 Solution Part ${sqId} 】\n${sqAns}`;
+                        if (sqWn) pStr += `\n\nWorking Notes (${sqId}):\n${sqWn}`;
+                        return pStr;
+                    })
+                    .filter(Boolean);
+                if (parts.length > 0) {
+                    parentSolText = parts.join('\n\n' + ('─'.repeat(45)) + '\n\n');
+                }
+            }
+
             list.push({
                 ...q,
+                question_text: cleanQText || q.question_text || '',
                 section_name: q.section_name || defaultSecName,
                 case_scenario_passage: q.case_scenario_passage || '',
                 options: normalizedOpts,
                 structured_table: tableObj,
                 table_data: tableObj,
                 subquestions: subqs,
+                sub_questions: subqs,
                 matched_answer: {
                     ...ans,
+                    solution_text: parentSolText || ans.solution_text || '',
+                    answer_text: parentSolText || ans.answer_text || '',
                     structured_table: ansTableObj,
                     answer_table_data: ansTableObj
                 }
@@ -2829,7 +2881,7 @@ export default function AdminAIQuestionImport() {
                     </div>
 
                     {/* Question Selector Strip */}
-                    <div className="ai-q-selector-strip">
+                    <div className="ai-q-selector-strip" ref={stripRef}>
                         {filteredQuestions.length === 0 ? (
                             <div style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 <span>No questions match this format filter.</span>
@@ -3467,13 +3519,15 @@ export default function AdminAIQuestionImport() {
                                         {(currentQuestion.subquestions || []).length > 0 ? (
                                             <div className="ai-subquestions-section">
                                                 <div className="ai-subquestions-header">
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                                                         <ListChecks size={18} color="#4f46e5" />
                                                         <strong style={{ fontSize: '0.95rem', color: '#1e293b' }}>
                                                             Linked Sub-Questions ({(currentQuestion.subquestions || []).length})
                                                         </strong>
                                                         <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                                                            (Scenario extracted once at parent top; sub-questions displayed below with individual suggested answers)
+                                                            {currentQuestion.question_type === 'CASE_SCENARIO' || !!(currentQuestion.case_scenario_passage && currentQuestion.case_scenario_passage.trim())
+                                                                ? '(Scenario extracted at parent top; sub-questions displayed below with individual suggested answers)'
+                                                                : '(Descriptive sub-questions displayed below with individual problem statements, tables, and answers)'}
                                                         </span>
                                                     </div>
                                                     <button
@@ -3487,6 +3541,37 @@ export default function AdminAIQuestionImport() {
                                                     </button>
                                                 </div>
 
+                                                {/* Quick Jump Bar across Sub-Questions */}
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', padding: '0.45rem 0.65rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', margin: '0.5rem 0 0.75rem' }}>
+                                                    <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase' }}>Sub-Parts:</span>
+                                                    {(currentQuestion.subquestions || []).map((sq: any, sIdx: number) => {
+                                                        const sqId = sq.identifier || sq.sub_question_number || `${currentQuestion.question_number}(${String.fromCharCode(97 + sIdx)})`;
+                                                        return (
+                                                            <button
+                                                                key={sIdx}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const el = document.getElementById(`subq_card_${sIdx}`);
+                                                                    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                                }}
+                                                                style={{
+                                                                    padding: '0.2rem 0.55rem',
+                                                                    borderRadius: '4px',
+                                                                    border: '1px solid #c7d2fe',
+                                                                    background: '#eef2ff',
+                                                                    color: '#4338ca',
+                                                                    fontSize: '0.75rem',
+                                                                    fontWeight: 700,
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                            >
+                                                                <span>{sqId}</span>
+                                                                <span style={{ fontSize: '0.68rem', opacity: 0.8, marginLeft: '0.2rem' }}>({sq.marks || 0}M)</span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+
                                                 {(currentQuestion.subquestions || []).map((sq: any, sqIdx: number) => {
                                                     const sqIdentifier = sq.identifier || sq.sub_question_number || sq.sub_number || `${currentQuestion.question_number}(${String.fromCharCode(97 + sqIdx)})`;
                                                     const isMcq = (sq.question_type === 'MCQ') || ((sq.options || []).length > 0);
@@ -3495,7 +3580,7 @@ export default function AdminAIQuestionImport() {
                                                     const isApproved = !!sq.is_approved;
 
                                                     return (
-                                                        <div key={sqIdx} className="ai-subquestion-card">
+                                                        <div key={sqIdx} id={`subq_card_${sqIdx}`} className="ai-subquestion-card">
                                                             {/* Sub-Question Header */}
                                                             <div className="ai-subq-card-header">
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -4023,6 +4108,72 @@ export default function AdminAIQuestionImport() {
                                                     }}
                                                     label="Official Solution Accounting Table"
                                                 />
+
+                                                {/* Sub-Question Solutions Breakdown in Panel 3 */}
+                                                {(currentQuestion.subquestions || []).length > 0 && (
+                                                    <div style={{ marginTop: '1rem', borderTop: '2px dashed #cbd5e1', paddingTop: '1rem' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                                                <CheckCircle2 size={16} color="#15803d" />
+                                                                <strong style={{ fontSize: '0.85rem', color: '#166534' }}>
+                                                                    Sub-Question Suggested Solutions ({(currentQuestion.subquestions || []).length} Parts)
+                                                                </strong>
+                                                            </div>
+                                                            <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                                                Editable per sub-part
+                                                            </span>
+                                                        </div>
+
+                                                        {(currentQuestion.subquestions || []).map((sq: any, sqIdx: number) => {
+                                                            const sqId = sq.identifier || sq.sub_question_number || `${currentQuestion.question_number}(${String.fromCharCode(97 + sqIdx)})`;
+                                                            const sqAns = sq.matched_answer || {};
+                                                            return (
+                                                                <div
+                                                                    key={sqIdx}
+                                                                    style={{
+                                                                        background: '#f8fafc',
+                                                                        border: '1px solid #e2e8f0',
+                                                                        borderRadius: '8px',
+                                                                        padding: '0.75rem',
+                                                                        marginBottom: '0.75rem'
+                                                                    }}
+                                                                >
+                                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                                                                        <span style={{ fontWeight: 800, fontSize: '0.8rem', color: '#1e293b' }}>
+                                                                            Part {sqId} Solution ({sq.marks || 0} Marks)
+                                                                        </span>
+                                                                        {sqAns.confidence_score !== undefined && (
+                                                                            <span className="ai-confidence-pill ai-confidence-high" style={{ fontSize: '0.68rem', padding: '0.1rem 0.35rem' }}>
+                                                                                {Math.round((sqAns.confidence_score || 0) * 100)}% Match
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    {sq.question_text && (
+                                                                        <p style={{ margin: '0 0 0.4rem', fontSize: '0.75rem', color: '#475569', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sq.question_text}>
+                                                                            Q: {sq.question_text}
+                                                                        </p>
+                                                                    )}
+                                                                    <textarea
+                                                                        rows={4}
+                                                                        value={sqAns.solution_text || sqAns.answer_text || ''}
+                                                                        onChange={(e) => updateSubQuestionAnswerField(sqIdx, 'solution_text', e.target.value)}
+                                                                        placeholder={`Solution for Part ${sqId}...`}
+                                                                        style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', lineHeight: '1.4', outline: 'none' }}
+                                                                    />
+                                                                    {(sqAns.structured_table || sqAns.answer_table_data) && (
+                                                                        <div style={{ marginTop: '0.5rem' }}>
+                                                                            <AccountingTableEditor
+                                                                                table={sqAns.structured_table || sqAns.answer_table_data}
+                                                                                onChange={(t) => updateSubQuestionAnswerField(sqIdx, 'answer_table_data', t)}
+                                                                                label={`Part ${sqId} Accounting Table`}
+                                                                            />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
 

@@ -639,9 +639,14 @@ export default function AddQuestion() {
                 }
             }
 
+            const rawType = String(prefill.question_type || 'NORMAL').toUpperCase();
+            const mappedType = ['ACCOUNTING_PROBLEM', 'THEORY', 'NORMAL'].includes(rawType)
+                ? 'NORMAL'
+                : (rawType === 'MCQ' ? 'MCQ' : (rawType === 'CASE_SCENARIO' ? 'CASE_SCENARIO' : 'NORMAL'));
+
             setForm(prev => ({
                 ...prev,
-                question_type: prefill.question_type || 'NORMAL',
+                question_type: mappedType,
                 marks: String(prefill.marks || ''),
                 source: prefill.source || 'MTP-01',
                 year: String(prefill.year || '2026'),
@@ -836,9 +841,10 @@ export default function AddQuestion() {
 
             // Search for existing question or append
             let replaced = false;
+            // 1. First priority: Match by exact question_id
             for (const sec of payload.sections) {
                 for (let i = 0; i < (sec.questions || []).length; i++) {
-                    if (sec.questions[i].question_id === targetQId || sec.questions[i].question_number === questionToSave.question_number) {
+                    if (sec.questions[i].question_id && sec.questions[i].question_id === targetQId) {
                         sec.questions[i] = {
                             ...sec.questions[i],
                             ...questionToSave
@@ -850,8 +856,32 @@ export default function AddQuestion() {
                 if (replaced) break;
             }
 
+            // 2. Second priority: If not replaced and not a newly generated ID, match within same section/type by question_number
+            if (!replaced && !isNewForBatch) {
+                for (const sec of payload.sections) {
+                    for (let i = 0; i < (sec.questions || []).length; i++) {
+                        const curQ = sec.questions[i];
+                        const sameNum = String(curQ.question_number).trim() === String(questionToSave.question_number).trim();
+                        const isCurScenario = curQ.question_type === 'CASE_SCENARIO' || !!(curQ.case_scenario_passage && curQ.case_scenario_passage.trim());
+                        const isTargetScenario = questionToSave.question_type === 'CASE_SCENARIO' || !!(questionToSave.case_scenario_passage && questionToSave.case_scenario_passage.trim());
+                        if (sameNum && isCurScenario === isTargetScenario) {
+                            sec.questions[i] = {
+                                ...sec.questions[i],
+                                ...questionToSave
+                            };
+                            replaced = true;
+                            break;
+                        }
+                    }
+                    if (replaced) break;
+                }
+            }
+
             if (!replaced) {
-                payload.sections[0].questions.push(questionToSave);
+                const targetSecIndex = (questionToSave.question_type === 'CASE_SCENARIO' || (questionToSave.case_scenario_passage && questionToSave.case_scenario_passage.trim()))
+                    ? 0
+                    : (payload.sections.length > 1 ? 1 : 0);
+                payload.sections[targetSecIndex].questions.push(questionToSave);
             }
 
             // Save updated payload to backend

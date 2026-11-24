@@ -37,14 +37,33 @@ api.interceptors.response.use(
         }
         return response;
     },
-    (error) => {
-        if (error.response && error.response.status === 401) {
-            const url = error.config?.url || '';
+    async (error) => {
+        const originalRequest = error.config;
+        if (error.response && error.response.status === 401 && !originalRequest._retry) {
+            const url = originalRequest?.url || '';
             const isAuthEndpoint = url.includes('/auth/login/') ||
                                    url.includes('/auth/google/') ||
                                    url.includes('/auth/register/') ||
                                    url.includes('/auth/forgot-password/');
-            if (!isAuthEndpoint) {
+            const refreshToken = localStorage.getItem('refresh_token');
+            if (!isAuthEndpoint && refreshToken) {
+                originalRequest._retry = true;
+                try {
+                    const refreshResp = await axios.post(
+                        `${api.defaults.baseURL || ''}/auth/login/refresh/`,
+                        { refresh: refreshToken }
+                    );
+                    const newAccess = refreshResp.data?.access;
+                    if (newAccess) {
+                        localStorage.setItem('token', newAccess);
+                        originalRequest.headers = originalRequest.headers || {};
+                        originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+                        return api(originalRequest);
+                    }
+                } catch (refreshErr) {
+                    console.warn("Token refresh attempt failed:", refreshErr);
+                }
+            } else if (!isAuthEndpoint) {
                 console.warn("Unauthorized request detected (401). Auto-logout is disabled per configuration to prevent losing unsaved work.");
             }
         }

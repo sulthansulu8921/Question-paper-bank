@@ -1463,6 +1463,7 @@ CRITICAL HIERARCHICAL CASE SCENARIO & SUB-QUESTION RULES:
          }}
        ]
    - Descriptive Questions with Sub-Questions (e.g. Question 1 has (a), (b), (c)):
+     * CRITICAL: Do NOT set "question_text" to a generic title like "Descriptive Questions" or "Part II". Provide the opening problem statement or an overview of the problem topics in "question_text" (e.g. "Question 1: Comprehensive practical problems covering Basic & Diluted EPS, Lease Accounting, and Defined Benefit Plans").
      * If Question 1 has an opening scenario or background narrative, extract it ONCE into Question 1's "case_scenario_passage" (or "question_text").
      * Place Sub-Question 1(a), Sub-Question 1(b), Sub-Question 1(c) inside "subquestions".
      * Never repeat the common scenario inside 1(a), 1(b), 1(c).
@@ -1990,6 +1991,39 @@ def match_questions_and_answers(sections, answers_list):
                     q["confidence"] = 0.50
                     q["is_approved"] = False
                     q["review_flags"] = parent_review_flags
+
+                # Consolidate child answers into parent answer text for descriptive questions
+                subqs_list = q.get("subquestions", [])
+                consolidated_parts = []
+                for sq in subqs_list:
+                    sq_id = sq.get("identifier") or sq.get("sub_question_number") or ""
+                    sq_ans_obj = sq.get("matched_answer") or sq.get("official_answer") or {}
+                    ans_str = (sq_ans_obj.get("solution_text") or sq_ans_obj.get("answer_text") or "").strip()
+                    wn_str = (sq_ans_obj.get("working_notes") or "").strip()
+                    if ans_str:
+                        entry = f"【 Solution for Part {sq_id} 】\n{ans_str}"
+                        if wn_str:
+                            entry += f"\n\nWorking Notes / Step Calculations ({sq_id}):\n{wn_str}"
+                        consolidated_parts.append(entry)
+
+                if consolidated_parts:
+                    consolidated_text = "\n\n" + ("=" * 45) + "\n\n".join([""] + consolidated_parts)
+                    q["official_answer"]["answer_text"] = consolidated_text.strip()
+                    q["official_answer"]["solution_text"] = consolidated_text.strip()
+                    q["matched_answer"]["answer_text"] = consolidated_text.strip()
+                    q["matched_answer"]["solution_text"] = consolidated_text.strip()
+
+                # Clean up generic placeholder question_text like "Descriptive Questions"
+                cur_q_text = (q.get("question_text") or "").strip()
+                if cur_q_text.lower() in ["descriptive questions", "descriptive question", "part ii - descriptive questions", "part ii", "subjective questions", "accounting problem", ""]:
+                    sub_summaries = []
+                    for sq in subqs_list:
+                        s_id = sq.get("identifier") or sq.get("sub_question_number") or ""
+                        s_txt = (sq.get("question_text") or "").strip().replace("\n", " ")
+                        if s_txt:
+                            sub_summaries.append(f"({s_id}) {s_txt[:75]}...")
+                    if sub_summaries:
+                        q["question_text"] = f"Question {q.get('question_number', '')}: " + " | ".join(sub_summaries)
 
             else:
                 # ── Standalone / Independent Question (without sub-questions) ──
