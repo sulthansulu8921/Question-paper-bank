@@ -425,6 +425,17 @@ export default function QuestionModal({
                                     ))}
                                 </div>
                             )}
+
+                            {/* Question Paper Model & Session Badge in Header */}
+                            {question.source && (
+                                <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-amber-400/10 border border-amber-400/20 rounded-xl">
+                                    <span className="text-[9px] font-black uppercase tracking-wider text-amber-500">Paper Model:</span>
+                                    <span className="text-xs font-black text-amber-600 dark:text-amber-400">{question.source}</span>
+                                    {(question.attempt || question.month || question.year) && (
+                                        <span className="text-[11px] font-bold text-text-muted">({[question.attempt || question.month, question.year].filter(Boolean).join(' ')})</span>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* Professional Header Icons */}
@@ -520,14 +531,84 @@ export default function QuestionModal({
                                 animate={{ opacity: 1, x: 0 }}
                                 className={isSplitView ? "h-full overflow-y-auto p-4 md:p-8 custom-scrollbar space-y-6" : "space-y-6"}
                             >
-                                <div className="space-y-2">
-                                    <div className={`inline-flex items-center gap-3 px-3 py-1 text-[9px] font-black rounded-full uppercase tracking-wider ${question.question_type === 'CASE_SCENARIO' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-primary/20 text-primary border border-primary/30'}`}>
-                                        {question.question_type === 'CASE_SCENARIO' ? 'MCQ Case Scenario' : `${question.question_type} Question`}
+                                {/* Question Paper Model & Exam Context Card */}
+                                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 md:p-5 shadow-lg border border-indigo-900/40 space-y-3">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                        {/* Model & Session badges */}
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            {/* Paper Model / Source */}
+                                            <div className="px-3 py-1 bg-amber-400 text-slate-950 rounded-lg shadow-sm flex items-center gap-1.5">
+                                                <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-800">MODEL:</span>
+                                                <span className="text-xs font-black uppercase tracking-wider">{question.source || 'MODEL PAPER'}</span>
+                                            </div>
+
+                                            {/* Exam Session (Attempt / Month & Year) */}
+                                            {(question.attempt || question.month || question.year) && (
+                                                <div className="px-3 py-1 bg-blue-500/20 text-blue-200 border border-blue-400/30 rounded-lg flex items-center gap-1.5">
+                                                    <span className="text-[9px] font-extrabold uppercase tracking-widest text-blue-300">SESSION:</span>
+                                                    <span className="text-xs font-black uppercase tracking-wider">{[question.attempt || question.month, question.year].filter(Boolean).join(' ')}</span>
+                                                </div>
+                                            )}
+
+                                            {/* Question Type */}
+                                            <span className={`px-2.5 py-1 text-[11px] font-black rounded-lg uppercase tracking-wider border ${
+                                                question.question_type === 'CASE_SCENARIO'
+                                                    ? 'bg-amber-500/20 text-amber-200 border-amber-400/30'
+                                                    : 'bg-white/10 text-slate-200 border-white/20'
+                                            }`}>
+                                                {question.question_type === 'CASE_SCENARIO' ? 'Case Scenario' : `${question.question_type || 'NORMAL'} Question`}
+                                            </span>
+                                        </div>
+
+                                        {/* Question Number & Marks */}
+                                        <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0">
+                                            <span className="text-xl font-black text-white tracking-tight">
+                                                Question {question.q_no || `ID #${question.id}`}
+                                            </span>
+                                            <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 rounded-lg text-xs font-black uppercase tracking-wider">
+                                                {question.marks || 1} Marks
+                                            </span>
+                                        </div>
                                     </div>
-                                    <h2 className="text-2xl font-black text-text-primary tracking-tight leading-tight">
-                                        Question {question.q_no || `ID #${question.id}`}
-                                        <span className="ml-3 text-lg text-text-muted font-bold">(Marks: {question.marks || '1'})</span>
-                                    </h2>
+
+                                    {/* Breadcrumb Hierarchy: Course Level > Paper / Subject > Chapter > Topic */}
+                                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-300 pt-1 border-t border-white/10">
+                                        {(question.icai_level_name || question.level_name) && (
+                                            <span className="text-indigo-300 font-black uppercase tracking-wider text-[11px]">
+                                                {question.icai_level_name || question.level_name}
+                                            </span>
+                                        )}
+                                        {(question.icai_level_name || question.level_name) && (question.icai_paper_name || question.paper_name || question.subject_name) && (
+                                            <span className="text-slate-500">•</span>
+                                        )}
+                                        {(question.icai_paper_name || question.paper_name || question.subject_name) && (
+                                            <span className="text-white font-bold">
+                                                {question.icai_paper_name || question.paper_name || question.subject_name}
+                                            </span>
+                                        )}
+                                        {(question.icai_chapter_name || question.chapter_name) && (
+                                            <>
+                                                <span className="text-slate-500">•</span>
+                                                <span className="text-slate-300">
+                                                    Chapter: {question.icai_chapter_name || question.chapter_name}
+                                                </span>
+                                            </>
+                                        )}
+                                        {(question.icai_topic_name || question.topic_name) && (
+                                            <>
+                                                <span className="text-slate-500">•</span>
+                                                <span className="text-slate-400">
+                                                    Topic: {question.icai_topic_name || question.topic_name}
+                                                </span>
+                                            </>
+                                        )}
+                                        {question.section && (
+                                            <>
+                                                <span className="text-slate-500">•</span>
+                                                <span className="text-amber-300 font-bold">Sec {question.section}</span>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Case Scenario Passage Context */}
@@ -737,6 +818,29 @@ export default function QuestionModal({
                                 animate={{ opacity: 1, x: 0 }}
                                 className={isSplitView ? "h-full overflow-y-auto p-4 md:p-8 md:pl-10 custom-scrollbar space-y-6" : "space-y-6 mt-12 pt-12 border-t-2 border-dashed border-border"}
                             >
+                                {tab === 'answer' && !isSplitView && (
+                                    <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 shadow-md border border-indigo-900/40 flex flex-wrap items-center justify-between gap-3">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="px-2.5 py-1 bg-amber-400 text-slate-950 text-xs font-black uppercase tracking-wider rounded-lg">
+                                                MODEL: {question.source || 'MODEL PAPER'}
+                                            </span>
+                                            {(question.attempt || question.month || question.year) && (
+                                                <span className="px-2.5 py-1 bg-blue-500/20 text-blue-200 border border-blue-400/30 text-xs font-black uppercase tracking-wider rounded-lg">
+                                                    SESSION: {[question.attempt || question.month, question.year].filter(Boolean).join(' ')}
+                                                </span>
+                                            )}
+                                            {(question.icai_paper_name || question.paper_name || question.subject_name) && (
+                                                <span className="text-xs text-slate-300 font-bold">
+                                                    {question.icai_paper_name || question.paper_name || question.subject_name}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2 text-sm font-black text-white">
+                                            <span>Question {question.q_no || `ID #${question.id}`}</span>
+                                            <span className="text-xs text-emerald-400 font-bold">({question.marks || 1} Marks)</span>
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="space-y-2">
                                     <div className="inline-flex items-center gap-3 px-3 py-1 bg-[#00BFA5] text-white text-[9px] font-black rounded-full uppercase tracking-wider shadow-sm">
                                         Proposed Solution

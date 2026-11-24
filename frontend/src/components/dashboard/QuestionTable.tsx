@@ -14,10 +14,19 @@ interface Question {
     sub_topic_name: string;
     source: string;
     year: string;
+    attempt?: string;
+    month?: string;
     q_no: string;
     marks: number;
     is_important: boolean;
     question_type?: string;
+    icai_topic_name?: string;
+    icai_chapter_name?: string;
+    icai_paper_name?: string;
+    icai_level_name?: string;
+    paper_name?: string;
+    chapter_name?: string;
+    level_name?: string;
 }
 
 export default function QuestionTable({
@@ -41,6 +50,7 @@ export default function QuestionTable({
     const [showSearch, setShowSearch] = useState(!!globalSearch);
     const [selectedSource, setSelectedSource] = useState<string>('all');
     const [selectedYear, setSelectedYear] = useState<string>('all');
+    const [selectedMonth, setSelectedMonth] = useState<string>('all');
     const [selectedMarks, setSelectedMarks] = useState<string>('all');
     const [showFilters, setShowFilters] = useState(false);
 
@@ -171,6 +181,16 @@ export default function QuestionTable({
         return Array.from(set).sort().reverse();
     }, [questionsResponse]);
 
+    const uniqueMonths = useMemo(() => {
+        const questionsList = Array.isArray(questionsResponse) ? questionsResponse : (questionsResponse?.results || []);
+        const set = new Set<string>();
+        questionsList.forEach((q: any) => {
+            const m = q.attempt || q.month;
+            if (m) set.add(m);
+        });
+        return Array.from(set).sort();
+    }, [questionsResponse]);
+
     const uniqueMarks = useMemo(() => {
         const questionsList = Array.isArray(questionsResponse) ? questionsResponse : (questionsResponse?.results || []);
         const set = new Set<number>();
@@ -207,6 +227,9 @@ export default function QuestionTable({
             if (selectedYear !== 'all' && q.year !== selectedYear) {
                 return false;
             }
+            if (selectedMonth !== 'all' && (q.attempt || q.month) !== selectedMonth) {
+                return false;
+            }
             if (selectedMarks !== 'all' && String(q.marks) !== selectedMarks) {
                 return false;
             }
@@ -225,10 +248,12 @@ export default function QuestionTable({
             const matchesSearch = (q.topic_name || '').toLowerCase().includes(searchStr) ||
                 (q.icai_topic_name || '').toLowerCase().includes(searchStr) ||
                 (q.source || '').toLowerCase().includes(searchStr) ||
+                (q.year || '').toLowerCase().includes(searchStr) ||
+                ((q.attempt || q.month) || '').toLowerCase().includes(searchStr) ||
                 (q.q_no || '').toLowerCase().includes(searchStr);
             return matchesType && matchesSearch;
         });
-    }, [questionsResponse, bookmarks, filter, searchQuery, routeSubjectId, user?.selected_course_name, selectedSource, selectedYear, selectedMarks]);
+    }, [questionsResponse, bookmarks, filter, searchQuery, routeSubjectId, user?.selected_course_name, selectedSource, selectedYear, selectedMonth, selectedMarks]);
 
     const handleRowClick = (q: Question) => {
         setActiveRowId(q.id);
@@ -363,6 +388,20 @@ export default function QuestionTable({
                         </select>
                     )}
 
+                    {/* Month Filter Selector */}
+                    {uniqueMonths.length > 0 && (
+                        <select
+                            value={selectedMonth}
+                            onChange={(e) => setSelectedMonth(e.target.value)}
+                            className="h-10 px-3 border border-border rounded-lg bg-card text-text-primary text-xs font-bold focus:ring-2 focus:ring-primary focus:border-transparent outline-none cursor-pointer w-full sm:w-auto"
+                        >
+                            <option value="all">All Months</option>
+                            {uniqueMonths.map(m => (
+                                <option key={m} value={m}>{m}</option>
+                            ))}
+                        </select>
+                    )}
+
                     {/* Marks Filter Selector */}
                     {uniqueMarks.length > 0 && (
                         <select
@@ -378,11 +417,12 @@ export default function QuestionTable({
                     )}
 
                     {/* Reset Button */}
-                    {(selectedSource !== 'all' || selectedYear !== 'all' || selectedMarks !== 'all') && (
+                    {(selectedSource !== 'all' || selectedYear !== 'all' || selectedMonth !== 'all' || selectedMarks !== 'all') && (
                         <button
                             onClick={() => {
                                 setSelectedSource('all');
                                 setSelectedYear('all');
+                                setSelectedMonth('all');
                                 setSelectedMarks('all');
                             }}
                             className="h-10 px-4 text-rose-500 hover:text-rose-600 bg-rose-500/10 hover:bg-rose-500/20 text-xs font-black uppercase tracking-wider rounded-lg transition-colors w-full sm:w-auto"
@@ -457,6 +497,7 @@ export default function QuestionTable({
                             <th className="px-6 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20">TOPIC</th>
                             <th className="px-6 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20">SOURCE</th>
                             <th className="px-6 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20">YEAR</th>
+                            <th className="px-6 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20">MONTH</th>
                             <th className="px-6 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20">Q NO</th>
                             <th className="px-8 py-4 text-[11px] font-black uppercase tracking-widest border-r border-white/20">MARKS</th>
                             <th className="px-8 py-4 text-[11px] font-black uppercase tracking-widest text-center">STATUS</th>
@@ -465,14 +506,14 @@ export default function QuestionTable({
                     <tbody className="divide-y divide-border">
                         {isLoading && (
                             <tr>
-                                <td colSpan={7} className="px-6 py-8 text-center text-text-muted font-bold text-xs uppercase tracking-widest">
+                                <td colSpan={8} className="px-6 py-8 text-center text-text-muted font-bold text-xs uppercase tracking-widest">
                                     Loading Questions...
                                 </td>
                             </tr>
                         )}
                         {isSubscriptionRequired && (
                             <tr>
-                                <td colSpan={7} className="px-6 py-16 text-center">
+                                <td colSpan={8} className="px-6 py-16 text-center">
                                     <div className="max-w-md mx-auto p-8 bg-card border border-amber-200 rounded-[2rem] shadow-xl space-y-6 relative overflow-hidden text-center">
                                         <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 to-orange-500" />
                                         <div className="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-2xl flex items-center justify-center mx-auto border border-amber-500/20">
@@ -497,7 +538,7 @@ export default function QuestionTable({
                         )}
                         {!isLoading && !isSubscriptionRequired && filteredQuestions.length === 0 && (
                             <tr>
-                                <td colSpan={7} className="px-6 py-8 text-center text-text-muted font-bold text-xs uppercase tracking-widest">
+                                <td colSpan={8} className="px-6 py-8 text-center text-text-muted font-bold text-xs uppercase tracking-widest">
                                     No questions found for this category.
                                 </td>
                             </tr>
@@ -514,9 +555,10 @@ export default function QuestionTable({
                                     className={`group cursor-pointer transition-colors ${isActive ? 'bg-[var(--table-header)] text-white' : 'hover:bg-[var(--table-hover)]'}`}
                                 >
                                     <td className={`px-4 py-5 text-xs font-bold text-center border-r border-border ${isActive ? 'border-white/10' : ''}`}>{idx + 1}</td>
-                                    <td className={`px-6 py-5 text-xs font-black border-r border-border ${isActive ? 'border-white/10' : ''}`}>{(q as any).topic_name || (q as any).icai_topic_name}</td>
+                                    <td className={`px-6 py-5 text-xs font-black border-r border-border ${isActive ? 'border-white/10' : ''}`}>{(q as any).topic_name || (q as any).icai_topic_name || (q as any).chapter_name || '-'}</td>
                                     <td className={`px-6 py-5 text-[11px] font-bold border-r border-border ${isActive ? 'border-white/10' : ''}`}>{q.source}</td>
                                     <td className={`px-6 py-5 text-[11px] font-bold border-r border-border ${isActive ? 'border-white/10' : ''}`}>{q.year}</td>
+                                    <td className={`px-6 py-5 text-[11px] font-bold border-r border-border ${isActive ? 'border-white/10' : ''}`}>{(q as any).attempt || (q as any).month || '-'}</td>
                                     <td className={`px-6 py-5 text-[11px] font-black border-r border-border ${isActive ? 'border-white/10' : ''}`}>{q.q_no}</td>
                                     <td className={`px-8 py-5 text-xs font-black border-r border-border ${isActive ? 'border-white/10' : ''}`}>{q.marks}</td>
                                     <td className="px-8 py-5 text-center flex items-center justify-center gap-3">
@@ -550,6 +592,9 @@ export default function QuestionTable({
                                 </td>
                                 <td className="px-6 py-5 text-[11px] font-bold border-r border-border text-text-muted blur-[2px] select-none">
                                     ••••••••
+                                </td>
+                                <td className="px-6 py-5 text-[11px] font-bold border-r border-border text-text-muted blur-[2px] select-none">
+                                    ••••
                                 </td>
                                 <td className="px-6 py-5 text-[11px] font-bold border-r border-border text-text-muted blur-[2px] select-none">
                                     ••••

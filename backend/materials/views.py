@@ -59,8 +59,10 @@ class SubjectiveQuestionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = SubjectiveQuestion.objects.select_related(
-            'subject', 'topic', 'sub_topic', 'icai_topic',
-            'icai_topic__chapter', 'icai_topic__chapter__paper',
+            'subject', 'subject__course', 'topic', 'sub_topic', 'chapter',
+            'chapter__paper', 'chapter__paper__level',
+            'icai_topic', 'icai_topic__chapter', 'icai_topic__chapter__paper',
+            'icai_topic__chapter__paper__level',
         ).prefetch_related(
             'parts',
             'parts__options',
@@ -118,11 +120,24 @@ class SubjectiveQuestionViewSet(viewsets.ModelViewSet):
 
         paper_id = params.get('paper_id')
         if paper_id:
-            queryset = queryset.filter(icai_topic__chapter__paper_id=paper_id)
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(icai_topic__chapter__paper_id=paper_id) |
+                Q(chapter__paper_id=paper_id) |
+                Q(subject_id=paper_id)
+            )
 
         level_id = params.get('level_id')
         if level_id:
-            queryset = queryset.filter(icai_topic__chapter__paper__level_id=level_id)
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(icai_topic__chapter__paper__level_id=level_id) |
+                Q(chapter__paper__level_id=level_id)
+            )
+
+        attempt = params.get('attempt') or params.get('month')
+        if attempt:
+            queryset = queryset.filter(attempt__iexact=attempt)
 
         status = params.get('status')
         if status:

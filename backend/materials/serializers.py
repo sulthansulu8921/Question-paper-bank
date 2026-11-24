@@ -174,6 +174,10 @@ class SubjectiveQuestionSerializer(serializers.ModelSerializer):
     icai_paper_id = serializers.IntegerField(source='icai_topic.chapter.paper.id', read_only=True, allow_null=True)
     icai_chapter_id = serializers.IntegerField(source='icai_topic.chapter.id', read_only=True, allow_null=True)
     icai_level_id = serializers.IntegerField(source='icai_topic.chapter.paper.level.id', read_only=True, allow_null=True)
+    paper_name = serializers.SerializerMethodField()
+    chapter_name = serializers.SerializerMethodField()
+    level_name = serializers.SerializerMethodField()
+    month = serializers.CharField(source='attempt', read_only=True)
     parts = SubQuestionSerializer(many=True, required=False)
     options = QuestionOptionSerializer(many=True, required=False)
     created_by_name = serializers.SerializerMethodField()
@@ -181,6 +185,31 @@ class SubjectiveQuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = SubjectiveQuestion
         fields = '__all__'
+
+    def get_paper_name(self, obj):
+        if obj.icai_topic and obj.icai_topic.chapter and obj.icai_topic.chapter.paper:
+            return obj.icai_topic.chapter.paper.name
+        if obj.chapter and obj.chapter.paper:
+            return obj.chapter.paper.name
+        if obj.subject:
+            return obj.subject.name
+        return None
+
+    def get_chapter_name(self, obj):
+        if obj.icai_topic and obj.icai_topic.chapter:
+            return obj.icai_topic.chapter.name
+        if obj.chapter:
+            return obj.chapter.name
+        return None
+
+    def get_level_name(self, obj):
+        if obj.icai_topic and obj.icai_topic.chapter and obj.icai_topic.chapter.paper and obj.icai_topic.chapter.paper.level:
+            return obj.icai_topic.chapter.paper.level.name
+        if obj.chapter and obj.chapter.paper and obj.chapter.paper.level:
+            return obj.chapter.paper.level.name
+        if obj.subject and obj.subject.course:
+            return obj.subject.course.name
+        return None
 
     def get_created_by_name(self, obj):
         if not obj.created_by:
