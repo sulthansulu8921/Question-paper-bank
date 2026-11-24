@@ -141,13 +141,13 @@ def normalize_currency_symbols(text):
     # 1. Backtick / quote before "in lakh", "in crore", "in thousand", etc.
     s = re.sub(r'\(`\s*in\b', '(₹ in', s, flags=re.I)
     s = re.sub(r'\(Rs\.?\s*in\b', '(₹ in', s, flags=re.I)
-    s = re.sub(r'(?<=[(\s]|^)[`\']\s*(?=in\s+(?:lakh|crore|thousand|hundred|rupee|mn|cr|rs))', '₹ ', s, flags=re.I)
+    s = re.sub(r'(^|[(\s])[`\']\s*(?=in\s+(?:lakh|crore|thousand|hundred|rupee|mn|cr|rs))', r'\g<1>₹ ', s, flags=re.I)
     s = re.sub(r'[`\']\s*lakh', '₹ lakh', s, flags=re.I)
     s = re.sub(r'[`\']\s*crore', '₹ crore', s, flags=re.I)
     s = re.sub(r'(?i)\bRs\.?\s*(?=in\s+(?:lakh|crore|thousand|hundred|rupee|mn|cr|rs))', '₹ ', s)
     
     # 2. Backtick / quote directly before digits: ` 24.00 or `24.00 -> ₹ 24.00
-    s = re.sub(r'(?<=[(\s]|^)[`\']\s*(?=\d)', '₹ ', s)
+    s = re.sub(r'(^|[(\s])[`\']\s*(?=\d)', r'\g<1>₹ ', s)
     
     # 3. Rs. / Rs before digits: Rs. 5000 -> ₹ 5000
     s = re.sub(r'(?i)\bRs\.?\s*(?=\d)', '₹ ', s)
