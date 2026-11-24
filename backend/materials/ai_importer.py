@@ -128,6 +128,34 @@ def compute_file_hash(file_input):
 # Step 1: PyMuPDF Text, Blocks, and Table Extraction
 # ─────────────────────────────────────────────────────────────
 
+def normalize_currency_symbols(text):
+    """
+    Normalizes Indian currency glyphs and malformed OCR / font extractions.
+    ICAI PDFs frequently map the Rupee symbol '₹' to backtick '`' (ASCII 96), single quotes,
+    or 'Rs.' / 'Rs'. Converts all instances such as '(` in lakh)' -> '(₹ in lakh)',
+    '` 24.00' -> '₹ 24.00', and 'Rs. 5,000' -> '₹ 5,000'.
+    """
+    if not text:
+        return ""
+    s = str(text)
+    # 1. Backtick / quote before "in lakh", "in crore", "in thousand", etc.
+    s = re.sub(r'\(`\s*in\b', '(₹ in', s, flags=re.I)
+    s = re.sub(r'\(Rs\.?\s*in\b', '(₹ in', s, flags=re.I)
+    s = re.sub(r'(?<=[(\s]|^)[`\']\s*(?=in\s+(?:lakh|crore|thousand|hundred|rupee|mn|cr|rs))', '₹ ', s, flags=re.I)
+    s = re.sub(r'[`\']\s*lakh', '₹ lakh', s, flags=re.I)
+    s = re.sub(r'[`\']\s*crore', '₹ crore', s, flags=re.I)
+    s = re.sub(r'(?i)\bRs\.?\s*(?=in\s+(?:lakh|crore|thousand|hundred|rupee|mn|cr|rs))', '₹ ', s)
+    
+    # 2. Backtick / quote directly before digits: ` 24.00 or `24.00 -> ₹ 24.00
+    s = re.sub(r'(?<=[(\s]|^)[`\']\s*(?=\d)', '₹ ', s)
+    
+    # 3. Rs. / Rs before digits: Rs. 5000 -> ₹ 5000
+    s = re.sub(r'(?i)\bRs\.?\s*(?=\d)', '₹ ', s)
+    s = re.sub(r'(?i)\bINR\s*(?=\d)', '₹ ', s)
+    
+    return s
+
+
 def clean_cell_text(val):
     """
     Cleans cell values by normalizing newlines and consecutive whitespace,
@@ -140,6 +168,8 @@ def clean_cell_text(val):
     s = re.sub(r'-\s*\n\s*', '-', s)
     # Normalize remaining internal newlines to spaces so 'Investments\n(Non-current)' -> 'Investments (Non-current)'
     s = re.sub(r'\s+', ' ', s)
+    # Normalize currency backticks and symbols
+    s = normalize_currency_symbols(s)
     return s.strip()
 
 
@@ -149,14 +179,14 @@ def table_to_markdown(table_dict):
     """
     if not table_dict or not table_dict.get("headers"):
         return ""
-    headers = [str(h) for h in table_dict["headers"]]
+    headers = [normalize_currency_symbols(str(h)) for h in table_dict["headers"]]
     rows = table_dict.get("rows", [])
     
     header_line = "| " + " | ".join(headers) + " |"
     separator_line = "| " + " | ".join(["---"] * len(headers)) + " |"
     row_lines = []
     for r in rows:
-        row_cells = [str(c) if c is not None else "" for c in r]
+        row_cells = [normalize_currency_symbols(str(c)) if c is not None else "" for c in r]
         # Pad row if fewer cells than headers
         if len(row_cells) < len(headers):
             row_cells.extend([""] * (len(headers) - len(row_cells)))
@@ -214,7 +244,8 @@ def convert_table_to_dict(table_data):
 def extract_pdf_document_content(file_path, api_key=None, candidate_models=None):
     """
     Extracts text, layout elements, and accounting tables from a PDF using PyMuPDF.
-    Embeds markdown table representations directly into page text for high-fidelity Gemini comprehension.
+    Embeds markdown table representations directly at their exact vertical (y0) position
+    within the page text so tables appear naturally between problem stems and requirements.
     If digital text is absent (< 100 characters total across pages), falls back to Gemini Vision OCR.
     """
     if not file_path:
@@ -236,30 +267,64 @@ def extract_pdf_document_content(file_path, api_key=None, candidate_models=None)
 
         # Extract structured accounting tables on this page
         page_tables = []
-        page_tables_markdown = []
+        table_bboxes = []
         try:
-            detected_tables = page.find_tables()
+            detected_tables = list(page.find_tables())
             for t_idx, t in enumerate(detected_tables):
                 t_dict = convert_table_to_dict(t.extract())
                 if t_dict:
                     t_dict["page_number"] = page_num
                     t_dict["table_id"] = f"p{page_num}_t{t_idx+1}"
+                    t_dict["bbox"] = list(t.bbox)
                     md_repr = table_to_markdown(t_dict)
                     t_dict["markdown"] = md_repr
                     page_tables.append(t_dict)
                     all_extracted_tables.append(t_dict)
-                    page_tables_markdown.append(f"\n[ACCOUNTING TABLE p{page_num}_t{t_idx+1} ({t_dict['columns_count']} Columns)]:\n{md_repr}\n")
+                    table_bboxes.append((t.bbox, t_dict, md_repr, f"p{page_num}_t{t_idx+1}"))
         except Exception:
             pass
 
-        # Synthesize page content including markdown tables
-        combined_page_text = page_text
-        if page_tables_markdown:
-            combined_page_text += "\n\n" + "\n".join(page_tables_markdown)
+        # Interleave text blocks and tables ordered by vertical position (y0)
+        # This preserves the exact in-line position of tables between questions/prompts and requirements!
+        items = []
+        try:
+            raw_blocks = page.get_text("blocks")
+            for b in raw_blocks:
+                bx0, by0, bx1, by1, btext = b[0], b[1], b[2], b[3], b[4].strip()
+                if not btext:
+                    continue
+                b_mid_y = (by0 + by1) / 2.0
+                # Check if this text block falls inside any detected table
+                inside_table = False
+                for tbbox, _, _, _ in table_bboxes:
+                    tx0, ty0, tx1, ty1 = tbbox
+                    if (ty0 - 2 <= b_mid_y <= ty1 + 2) and (tx0 - 5 <= bx0 and bx1 <= tx1 + 5):
+                        inside_table = True
+                        break
+                if not inside_table:
+                    items.append({
+                        "y0": by0,
+                        "type": "text",
+                        "content": normalize_currency_symbols(btext)
+                    })
+            for tbbox, t_dict, md_repr, t_id in table_bboxes:
+                items.append({
+                    "y0": tbbox[1],
+                    "type": "table",
+                    "content": f"\n[ACCOUNTING TABLE {t_id} ({t_dict['columns_count']} Columns)]:\n{md_repr}\n"
+                })
+            items.sort(key=lambda x: x["y0"])
+            combined_page_text = "\n\n".join(it["content"] for it in items)
+        except Exception:
+            # Fallback to standard text + tables
+            combined_page_text = normalize_currency_symbols(page_text)
+            if table_bboxes:
+                combined_page_text += "\n\n" + "\n".join([f"\n[ACCOUNTING TABLE {t_id} ({t_dict['columns_count']} Columns)]:\n{md_repr}\n" for _, t_dict, md_repr, t_id in table_bboxes])
 
+        page_text_clean = normalize_currency_symbols(page_text)
         pages_data.append({
             "page_number": page_num,
-            "text": page_text,
+            "text": page_text_clean,
             "combined_text": combined_page_text,
             "tables": page_tables
         })
@@ -1410,8 +1475,17 @@ CRITICAL HIERARCHICAL CASE SCENARIO & SUB-QUESTION RULES:
 4. ACCOUNTING & FINANCIAL PRACTICAL PROBLEMS:
    - Set "question_type": "ACCOUNTING_PROBLEM".
    - Extract full problem statement, marks, subquestions, and accounting tables.
-5. PRESERVE ACCOUNTING TABLES:
+5. PRESERVE ACCOUNTING TABLES & INLINE POSITIONING:
    - Extract 4-column Balance Sheets/Trial Balances, Schedule III, Journal Entries, and Ledgers into "table_data": {{"headers": [...], "rows": [[...], ...]}}.
+   - CRITICAL INLINE TABLE POSITIONING: If a question has an introductory stem (e.g. "Money Limited leased a machine to Hello Limited on the following terms:"), followed by a table, followed by requirements, discount rates, or calculations (e.g. "Discounted rates for 1st year to 5th year are 0.8696... Ascertain Unearned Finance Income."):
+     * Put the introductory stem in "question_text" (e.g. "Money Limited leased a machine to Hello Limited on the following terms:")
+     * Put the table in "table_data"
+     * Put any requirements, discount rates, calculations, or instructions that follow the table in "post_table_text" (e.g. "Discounted rates for 1st year to 5th year are 0.8696, 0.7561, 0.6575, 0.5718, and 0.4972 respectively.\\nAscertain Unearned Finance Income.")
+   - For Case Scenarios with tables:
+     * Keep the complete scenario narrative in "case_scenario_passage" and the scenario table in "table_data", preserving their sequential order before sub-questions appear.
+6. INDIAN RUPEE SYMBOL '₹' PRESERVATION (CRITICAL):
+   - Always preserve and output the Indian Rupee symbol '₹' for all currency amounts, monetary figures, and table headers.
+   - If the source PDF text contains backticks or 'Rs.' before amounts (such as '` in lakh', '` 24.00', 'Rs.', or 'Rs 24.00'), accurately transcribe and output them with '₹' (e.g. '(₹ in lakh)', '₹ 24.00').
 
 TABLES DETECTED IN DOCUMENT:
 {tables_summary}
@@ -1485,6 +1559,7 @@ Return STRICT JSON matching this schema:
           "question_number": "1",
           "question_type": "ACCOUNTING_PROBLEM",
           "question_text": "The following information relates to Vishnu Ltd as on 31st March 2026...",
+          "post_table_text": "You are required to prepare the Balance Sheet of Vishnu Ltd. as per Schedule III...",
           "case_scenario_passage": null,
           "marks": 20,
           "table_data": {{
@@ -1586,6 +1661,10 @@ If an answer contains financial tables (Balance Sheets, Profit & Loss, Journal e
 4. 4-Column Balance Sheet / Trial Balance:
    Headers: ["Particulars", "Amount (₹)", "Particulars", "Amount (₹)"]
 
+INDIAN RUPEE SYMBOL '₹' PRESERVATION (CRITICAL):
+- Always use and preserve the Indian Rupee symbol '₹' for all currency values, calculations, working notes, and table headers.
+- If the source PDF text contains malformed backticks or 'Rs.' before amounts (e.g. '` in lakh', '` 24.00', 'Rs. 24.00'), transcribe them accurately with '₹' (e.g. '(₹ in lakh)', '₹ 24.00').
+
 TABLES DETECTED IN ANSWER DOCUMENT:
 {tables_summary}
 
@@ -1603,7 +1682,7 @@ Return STRICT JSON matching this schema:
       "correct_option": "A",
       "answer_text": "The accounting treatment under Indian GAAP requires...",
       "working_notes": "Working Note 1: Valuation of Land on conversion...",
-      "calculations": "Rs. 5,00,000 * 10% = Rs. 50,000",
+      "calculations": "₹ 5,00,000 * 10% = ₹ 50,000",
       "answer_table_data": null,
       "accounting_standards": ["AS 10", "Ind AS 16"],
       "source_pages": [1]
@@ -2611,6 +2690,9 @@ def publish_approved_questions_to_database(job, approved_only=True):
 
                 q_num = str(q.get("question_number", "")).strip() or "1"
                 q_text = q.get("question_text", "").strip()
+                post_tbl = str(q.get("post_table_text", "")).strip()
+                if post_tbl and "[TABLE" not in q_text:
+                    q_text = f"{q_text}\n\n[TABLE]\n\n{post_tbl}"
                 case_scenario = q.get("case_scenario_passage", "").strip() if q.get("case_scenario_passage") else ""
                 q_type = q.get("question_type", "NORMAL").upper()
                 if q_type not in ['NORMAL', 'MCQ', 'THEORY', 'CASE_SCENARIO', 'MIXED']:

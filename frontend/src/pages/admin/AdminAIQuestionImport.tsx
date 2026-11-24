@@ -146,6 +146,32 @@ const TABLE_TEMPLATES: { label: string; model_type: string; table: AccountingTab
     }
 ];
 
+// Helper to parse question text into stem and post-table requirements
+const getQuestionStemAndPost = (q: any) => {
+    if (!q) return { stem: '', post: '' };
+    if (q.post_table_text !== undefined && q.post_table_text !== null && q.post_table_text !== '') {
+        return { stem: q.question_text || '', post: q.post_table_text };
+    }
+    const fullText = q.question_text || '';
+    if (fullText.includes('[TABLE')) {
+        const parts = fullText.split(/\[TABLE(?:_\d+)?\]/i);
+        return { stem: (parts[0] || '').trim(), post: (parts.slice(1).join('\n\n') || '').trim() };
+    }
+    // If question has an accounting table and text contains multiple paragraphs with follow-up instructions:
+    const hasTable = !!(q.structured_table || q.table_data);
+    if (hasTable && fullText.includes('\n')) {
+        const paragraphs = fullText.split(/\n\n+/);
+        if (paragraphs.length >= 2) {
+            const first = paragraphs[0].trim();
+            const rest = paragraphs.slice(1).join('\n\n').trim();
+            if (/(?:ascertain|calculate|prepare|compute|state|determine|discounted rates|required|you are required|find out|show the)/i.test(rest)) {
+                return { stem: first, post: rest };
+            }
+        }
+    }
+    return { stem: fullText, post: '' };
+};
+
 function AccountingTableEditor({
     table,
     onChange,
@@ -256,17 +282,31 @@ function AccountingTableEditor({
                     ? 'Schedule III Financial Statement'
                     : `${table.headers.length}-Column Table`;
 
+    // Helper to clean malformed currency glyphs (e.g. backticks from PDF fonts -> ₹)
+    const cleanCurrencyText = (str: string) => {
+        if (!str) return '';
+        return str
+            .replace(/\(`\s*in\b/gi, '(₹ in')
+            .replace(/\(Rs\.?\s*in\b/gi, '(₹ in')
+            .replace(/(?<=[(\s]|^)[`']\s*(?=in\s+(?:lakh|crore|thousand|hundred|rupee|mn|cr|rs))/gi, '₹ ')
+            .replace(/[`']\s*lakh/gi, '₹ lakh')
+            .replace(/[`']\s*crore/gi, '₹ crore')
+            .replace(/(?<=[(\s]|^)[`']\s*(?=\d)/g, '₹ ')
+            .replace(/\bRs\.?\s*(?=\d)/gi, '₹ ')
+            .replace(/\bINR\s*(?=\d)/gi, '₹ ');
+    };
+
     const handleHeaderChange = (colIdx: number, val: string) => {
         const updated = { ...table };
         updated.headers = [...updated.headers];
-        updated.headers[colIdx] = val;
+        updated.headers[colIdx] = cleanCurrencyText(val);
         onChange(updated);
     };
 
     const handleCellChange = (rowIdx: number, colIdx: number, val: string) => {
         const updated = { ...table };
         updated.rows = updated.rows.map((r, ri) => (ri === rowIdx ? [...r] : r));
-        updated.rows[rowIdx][colIdx] = val;
+        updated.rows[rowIdx][colIdx] = cleanCurrencyText(val);
         onChange(updated);
     };
 
@@ -324,14 +364,18 @@ function AccountingTableEditor({
     const isCellUncertain = (cellVal: string, colHeader: string, row: string[]) => {
         if (!cellVal || !cellVal.trim()) {
             const hasOtherData = row.some(c => (c || '').trim().length > 0);
-            return hasOtherData && /amount|₹|rs|particulars|debit|credit/i.test(colHeader || '');
+            return hasOtherData && /amount|₹|\brs\b|particulars|debit|credit/i.test(colHeader || '');
         }
         const trimmed = cellVal.trim();
         if (trimmed.includes('?') || trimmed.toLowerCase().includes('uncertain') || trimmed === '[?]') {
             return true;
         }
-        const isAmountCol = /amount|₹|rs|debit|credit|dr|cr|balance|total|cost|nominal|value/i.test(colHeader || '');
-        if (isAmountCol && /[^0-9,\.\(\)\s\-\/₹]/.test(trimmed)) {
+        // Do NOT flag textual particulars or descriptive columns
+        if (/particulars|description|account|item|detail|narration|head/i.test(colHeader || '')) {
+            return false;
+        }
+        const isAmountCol = !/particulars|description|account/i.test(colHeader || '') && /amount|₹|\brs\.?\b|\bdebit\b|\bcredit\b|\bdr\b|\bcr\b|balance|total|cost|nominal|value|\blakh\b|\bcrore\b/i.test(colHeader || '');
+        if (isAmountCol && /[^0-9,\.\(\)\s\-\/₹%]/.test(trimmed)) {
             return true;
         }
         return false;
@@ -465,13 +509,14 @@ function AccountingTableEditor({
                                 #
                             </th>
                             {table.headers.map((h: string, hi: number) => {
-                                const isAmount = /amount|₹|rs|debit|credit|dr|cr|balance|total|cost|nominal|value/i.test(h || '');
+                                const cleanH = cleanCurrencyText(h || '');
+                                const isAmount = !/particulars|description|account|item|detail|narration|head/i.test(cleanH) && /amount|₹|\brs\.?\b|\bdebit\b|\bcredit\b|\bdr\b|\bcr\b|balance|total|cost|nominal|value|\blakh\b|\bcrore\b/i.test(cleanH);
                                 return (
                                     <th key={hi} style={{ padding: '0.35rem 0.5rem', background: '#f1f5f9', border: '1px solid #cbd5e1' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                                             <input
                                                 type="text"
-                                                value={h}
+                                                value={cleanH}
                                                 onChange={(e) => handleHeaderChange(hi, e.target.value)}
                                                 style={{
                                                     fontWeight: 700,
@@ -507,9 +552,11 @@ function AccountingTableEditor({
                                     {ri + 1}
                                 </td>
                                 {table.headers.map((_, ci: number) => {
-                                    const cell = (row && row[ci]) !== undefined ? row[ci] : '';
-                                    const isAmountCol = /amount|₹|rs|debit|credit|dr|cr|balance|total|cost|nominal|value/i.test(table.headers[ci] || '');
-                                    const uncertain = isCellUncertain(cell, table.headers[ci], row);
+                                    const rawCell = (row && row[ci]) !== undefined ? row[ci] : '';
+                                    const cell = cleanCurrencyText(rawCell);
+                                    const colH = cleanCurrencyText(table.headers[ci] || '');
+                                    const isAmountCol = !/particulars|description|account|item|detail|narration|head/i.test(colH) && /amount|₹|\brs\.?\b|\bdebit\b|\bcredit\b|\bdr\b|\bcr\b|balance|total|cost|nominal|value|\blakh\b|\bcrore\b/i.test(colH);
+                                    const uncertain = isCellUncertain(cell, colH, row);
                                     return (
                                         <td key={ci} className={uncertain ? 'ai-table-cell-uncertain' : ''} style={{ padding: '0.2rem 0.4rem', border: '1px solid #cbd5e1', position: 'relative' }}>
                                             <input
@@ -1431,6 +1478,19 @@ export default function AdminAIQuestionImport() {
         if (activeBatch) {
             setActiveBatch({ ...activeBatch, extracted_payload: payload, batch_payload: payload });
         }
+    };
+
+    // Derived stem and post-table requirements for current active question
+    const { stem: stemText, post: postText } = useMemo(() => {
+        return getQuestionStemAndPost(currentQuestion);
+    }, [currentQuestion?.question_text, currentQuestion?.post_table_text, currentQuestion?.structured_table, currentQuestion?.table_data]);
+
+    const handleStemChange = (newStem: string) => {
+        updateQuestionField('question_text', newStem);
+    };
+
+    const handlePostChange = (newPost: string) => {
+        updateQuestionField('post_table_text', newPost);
     };
 
     // Update a field on a specific subquestion
@@ -3360,9 +3420,31 @@ export default function AdminAIQuestionImport() {
 
                                                             {/* Sub-Question Statement */}
                                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                                                                <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>
-                                                                    Sub-Question {sqIdentifier} Statement
-                                                                </label>
+                                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                                    <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>
+                                                                        Sub-Question {sqIdentifier} Statement
+                                                                    </label>
+                                                                    {!(sq.structured_table || sq.table_data) && (
+                                                                        <button
+                                                                            type="button"
+                                                                            className="ai-tool-btn"
+                                                                            style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem' }}
+                                                                            onClick={() => {
+                                                                                const newTable = {
+                                                                                    title: `Table for Sub-Question ${sqIdentifier}`,
+                                                                                    columns: ['Particulars', 'Amount (₹)'],
+                                                                                    rows: [['', '']],
+                                                                                    notes: []
+                                                                                };
+                                                                                updateSubQuestionField(sqIdx, 'structured_table', newTable);
+                                                                                updateSubQuestionField(sqIdx, 'table_data', newTable);
+                                                                            }}
+                                                                        >
+                                                                            <Plus size={11} />
+                                                                            <span>+ Insert Table In-line</span>
+                                                                        </button>
+                                                                    )}
+                                                                </div>
                                                                 <textarea
                                                                     className="ai-subq-textarea"
                                                                     rows={3}
@@ -3371,6 +3453,20 @@ export default function AdminAIQuestionImport() {
                                                                     placeholder={`Enter actual sub-question statement for ${sqIdentifier} (do not repeat scenario text here)...`}
                                                                 />
                                                             </div>
+
+                                                            {/* Sub-Question Accounting Table (In-line, directly downside sub-question statement) */}
+                                                            {(sq.structured_table || sq.table_data) && (
+                                                                <div style={{ margin: '0.5rem 0' }}>
+                                                                    <AccountingTableEditor
+                                                                        table={sq.structured_table || sq.table_data}
+                                                                        onChange={(t) => {
+                                                                            updateSubQuestionField(sqIdx, 'structured_table', t);
+                                                                            updateSubQuestionField(sqIdx, 'table_data', t);
+                                                                        }}
+                                                                        label={`Sub-Question ${sqIdentifier} Financial / Ledger Table`}
+                                                                    />
+                                                                </div>
+                                                            )}
 
                                                             {/* Sub-Question MCQ Options (if MCQ) */}
                                                             {isMcq && (
@@ -3445,18 +3541,6 @@ export default function AdminAIQuestionImport() {
                                                                 </div>
                                                             )}
 
-                                                            {/* Sub-Question Accounting Table (if present) */}
-                                                            {(sq.structured_table || sq.table_data) && (
-                                                                <AccountingTableEditor
-                                                                    table={sq.structured_table || sq.table_data}
-                                                                    onChange={(t) => {
-                                                                        updateSubQuestionField(sqIdx, 'structured_table', t);
-                                                                        updateSubQuestionField(sqIdx, 'table_data', t);
-                                                                    }}
-                                                                    label={`Sub-Question ${sqIdentifier} Financial / Ledger Table`}
-                                                                />
-                                                            )}
-
                                                             {/* Suggested Answer directly below each Sub-Question */}
                                                             <div className="ai-subq-answer-card">
                                                                 <div className="ai-subq-answer-header">
@@ -3509,10 +3593,17 @@ export default function AdminAIQuestionImport() {
                                         ) : (
                                             /* STANDALONE QUESTION (NO SUB-QUESTIONS) */
                                             <>
-                                                {/* Main Question Text */}
+                                                {/* Main Question Stem / Opening Statement */}
                                                 <div className="ai-form-group">
                                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                        <label className="ai-form-label">Question Text</label>
+                                                        <label className="ai-form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#1e293b' }}>
+                                                            <FileText size={14} color="#4f46e5" />
+                                                            <span>
+                                                                {(currentQuestion.structured_table || currentQuestion.table_data)
+                                                                    ? 'Question Stem / Introductory Statement (Above Table)'
+                                                                    : 'Question Text'}
+                                                            </span>
+                                                        </label>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                                             <button
                                                                 type="button"
@@ -3524,19 +3615,76 @@ export default function AdminAIQuestionImport() {
                                                                 <Plus size={11} />
                                                                 <span>Add Sub-Question</span>
                                                             </button>
+                                                            {!(currentQuestion.structured_table || currentQuestion.table_data) && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="ai-tool-btn primary"
+                                                                    style={{ fontSize: '0.725rem', padding: '0.15rem 0.45rem' }}
+                                                                    onClick={() => {
+                                                                        const newTable = {
+                                                                            headers: ['Particulars', '(₹ in lakh)'],
+                                                                            rows: [['', '']]
+                                                                        };
+                                                                        updateQuestionField('structured_table', newTable);
+                                                                        updateQuestionField('table_data', newTable);
+                                                                    }}
+                                                                    title="Add an accounting table directly below the question statement"
+                                                                >
+                                                                    <Plus size={11} />
+                                                                    <span>+ Insert Table In-line</span>
+                                                                </button>
+                                                            )}
                                                             <span style={{ fontSize: '0.725rem', color: '#64748b' }}>
-                                                                {(currentQuestion.question_text || '').length} characters
+                                                                {(stemText || '').length} characters
                                                             </span>
                                                         </div>
                                                     </div>
                                                     <textarea
-                                                        rows={4}
-                                                        value={currentQuestion.question_text || ''}
-                                                        onChange={(e) => updateQuestionField('question_text', e.target.value)}
-                                                        placeholder="Enter question statement..."
+                                                        rows={(currentQuestion.structured_table || currentQuestion.table_data) ? 3 : 5}
+                                                        value={stemText}
+                                                        onChange={(e) => handleStemChange(e.target.value)}
+                                                        placeholder="Enter question statement or introductory problem text..."
                                                         style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', lineHeight: '1.4', outline: 'none' }}
                                                     />
                                                 </div>
+
+                                                {/* Financial / Accounting Table (RENDERED IN-LINE, DIRECTLY DOWNSIDE THE STEM!) */}
+                                                {(currentQuestion.structured_table || currentQuestion.table_data) && (
+                                                    <div style={{ margin: '0.65rem 0' }}>
+                                                        <AccountingTableEditor
+                                                            table={currentQuestion.structured_table || currentQuestion.table_data}
+                                                            onChange={(t) => {
+                                                                updateQuestionField('structured_table', t);
+                                                                updateQuestionField('table_data', t);
+                                                            }}
+                                                            label="Question Financial / Accounting Table"
+                                                        />
+                                                    </div>
+                                                )}
+
+                                                {/* Requirements & Additional Instructions (Following Table) */}
+                                                {(currentQuestion.structured_table || currentQuestion.table_data) && (
+                                                    <div className="ai-form-group" style={{ marginTop: '0.65rem' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                            <label className="ai-form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#0f766e' }}>
+                                                                <ListChecks size={14} color="#0f766e" />
+                                                                <span>Requirements & Calculations (Following Table)</span>
+                                                            </label>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                                                <span style={{ fontSize: '0.725rem', color: '#64748b' }}>
+                                                                    {(postText || '').length} characters
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <textarea
+                                                            rows={3}
+                                                            value={postText}
+                                                            onChange={(e) => handlePostChange(e.target.value)}
+                                                            placeholder="Discounted rates, additional instructions, or specific questions to ascertain/calculate..."
+                                                            style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid #99f6e4', background: '#f0fdfa', fontSize: '0.9rem', lineHeight: '1.4', outline: 'none' }}
+                                                        />
+                                                    </div>
+                                                )}
 
                                                 {/* MCQ Options Suite */}
                                                 {currentQuestion.question_type === 'MCQ' && (
@@ -3628,16 +3776,6 @@ export default function AdminAIQuestionImport() {
                                                         </div>
                                                     </div>
                                                 )}
-
-                                                {/* Financial / Accounting Table */}
-                                                <AccountingTableEditor
-                                                    table={currentQuestion.structured_table || currentQuestion.table_data}
-                                                    onChange={(t) => {
-                                                        updateQuestionField('structured_table', t);
-                                                        updateQuestionField('table_data', t);
-                                                    }}
-                                                    label="Question Accounting Table"
-                                                />
                                             </>
                                         )}
                                     </div>
