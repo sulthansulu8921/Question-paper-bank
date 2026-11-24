@@ -609,7 +609,7 @@ export default function QuestionModal({
                                 )}
 
                                 {/* Main Text and Media */}
-                                {question.question_type !== 'CASE_SCENARIO' && (question.question_text || (!question.image_url && !question.pdf_url)) && (
+                                {question.question_type !== 'CASE_SCENARIO' && (question.question_text || !question.image_url) && (
                                     <div className="bg-bg border border-border rounded-2xl p-5 text-sm font-semibold text-text-primary leading-relaxed">
                                         {renderTextWithInlineTables(question.question_text || 'No question text provided.', question.table_data)}
                                     </div>
@@ -618,14 +618,6 @@ export default function QuestionModal({
                                 {question.image_url && (
                                     <div className="w-full mt-4 rounded-2xl overflow-hidden border border-border shadow-sm">
                                         <img src={question.image_url} alt="Question Media" className="w-full h-auto object-contain" />
-                                    </div>
-                                )}
-
-                                {question.pdf_url && (
-                                    <div className="w-full mt-4 flex items-center justify-center p-8 border-2 border-dashed border-border rounded-2xl">
-                                        <a href={question.pdf_url} target="_blank" rel="noreferrer" className="px-6 py-3 bg-primary text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg hover:scale-105 transition-transform">
-                                            View PDF Document
-                                        </a>
                                     </div>
                                 )}
 
