@@ -1,17 +1,16 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
     Upload, FileText, Sparkles, CheckCircle2, AlertTriangle,
-    RefreshCw, ChevronLeft, ChevronRight, Eye, Trash2, Check,
+    RefreshCw, Eye, Trash2, Check,
     Save, Layers, Clock, DollarSign, Database,
     FileSpreadsheet, ShieldCheck, Minimize2, Maximize2,
-    BookOpen, ListChecks, Plus, Scissors, CheckCheck, AlertCircle,
+    BookOpen, Bookmark, ListChecks, Plus, Scissors, CheckCheck, AlertCircle,
     ArrowUp, ArrowDown, FolderPlus, History, Files, X, ExternalLink,
     ChevronUp, ChevronDown
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '@/api/axios';
-import { useQuery } from '@tanstack/react-query';
-import { extractAllTextFromPdf, renderPdfPageToCanvas, type ExtractedPageText } from '@/utils/pdfExtractor';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ICAISelection } from '@/components/admin/ICAICascadeSelector';
 import '@/styles/admin/AIQuestionImport.css';
 
@@ -646,7 +645,6 @@ export default function AdminAIQuestionImport() {
     const [isDraggingAns, setIsDraggingAns] = useState(false);
 
     const activeDoc = activeBatch?.documents?.find((d: any) => d.id === selectedDocId) || activeBatch?.documents?.[0];
-    const currentPdfFile = (activeDoc ? batchFiles.find(bf => (bf.file && bf.file.name === activeDoc.filename) || bf.name === activeDoc.filename)?.file : null) || qpFile;
 
     // Metadata state
     const [selectedQualification, setSelectedQualification] = useState('CA');
@@ -661,6 +659,8 @@ export default function AdminAIQuestionImport() {
         topicId: '',
     });
     const [targetQuestionType, setTargetQuestionType] = useState<'ALL' | 'MCQ' | 'DESCRIPTIVE' | 'CASE_SCENARIO'>('ALL');
+
+    const queryClient = useQueryClient();
 
     // Master Database queries for Qualification -> Level -> Paper cascade
     const { data: levels = [], isLoading: levelsLoading } = useQuery({
@@ -783,21 +783,48 @@ export default function AdminAIQuestionImport() {
     const [historyJobs, setHistoryJobs] = useState<QuestionImportJob[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
 
+    // Workspace effective paper & level resolution
+    const effectivePaperId = useMemo(() => {
+        if (icaiFilter.paperId) return String(icaiFilter.paperId);
+        const bPaper = (activeBatch as any)?.paper;
+        if (bPaper) return typeof bPaper === 'object' ? String(bPaper.id) : String(bPaper);
+        const jPaper = (activeJob as any)?.paper;
+        if (jPaper) return typeof jPaper === 'object' ? String(jPaper.id) : String(jPaper);
+        return '';
+    }, [icaiFilter.paperId, activeBatch, activeJob]);
+
+    const effectiveLevelId = useMemo(() => {
+        if (icaiFilter.levelId) return String(icaiFilter.levelId);
+        const bLevel = (activeBatch as any)?.level;
+        if (bLevel) return typeof bLevel === 'object' ? String(bLevel.id) : String(bLevel);
+        const jLevel = (activeJob as any)?.level;
+        if (jLevel) return typeof jLevel === 'object' ? String(jLevel.id) : String(jLevel);
+        return '';
+    }, [icaiFilter.levelId, activeBatch, activeJob]);
+
+    // Fetch master chapters for workspace dropdowns
+    const { data: workspaceChapters = [] } = useQuery({
+        queryKey: ['workspace-chapters', effectivePaperId, effectiveLevelId],
+        queryFn: async () => {
+            let url = '/master/chapters/?page_size=300';
+            if (effectivePaperId) {
+                url = `/master/chapters/?paper_id=${effectivePaperId}&page_size=300`;
+            } else if (effectiveLevelId) {
+                url = `/master/chapters/?level_id=${effectiveLevelId}&page_size=300`;
+            }
+            const res = await api.get(url);
+            return Array.isArray(res.data) ? res.data : (res.data.results || []);
+        },
+    });
+
     // Workspace state
     const [selectedQuestionId, setSelectedQuestionId] = useState<string>('');
     const [qTypeFilter, setQTypeFilter] = useState<'ALL' | 'MCQ' | 'SCENARIO' | 'DESCRIPTIVE'>('ALL');
-    const [leftMinimized, setLeftMinimized] = useState(false);
     const [rightMinimized, setRightMinimized] = useState(false);
     const [solutionTab, setSolutionTab] = useState<'OFFICIAL' | 'WORKING_NOTES' | 'AI_EXPLANATION'>('OFFICIAL');
     const [isScenarioCollapsed, setIsScenarioCollapsed] = useState(false);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-    // PDF viewer state
     const [qpNumPages, setQpNumPages] = useState(1);
-    const [qpCurrentPage, setQpCurrentPage] = useState(1);
-    const [qpPagesText, setQpPagesText] = useState<ExtractedPageText[]>([]);
-    const [loadingPdf, setLoadingPdf] = useState(false);
-    const pdfCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
     const showToast = (msg: string) => {
         setToastMessage(msg);
@@ -946,40 +973,12 @@ export default function AdminAIQuestionImport() {
         };
     }, [activeBatch?.id, activeBatch?.status, viewMode]);
 
-    // Handle initial client-side PDF extraction for quick local preview
+    // Sync page count if active document metadata exists
     useEffect(() => {
-        if (!currentPdfFile) {
-            if (activeDoc?.page_count) {
-                setQpNumPages(activeDoc.page_count);
-            }
-            setQpPagesText([]);
-            return;
+        if (activeDoc?.page_count) {
+            setQpNumPages(activeDoc.page_count);
         }
-        let cancelled = false;
-        setLoadingPdf(true);
-        extractAllTextFromPdf(currentPdfFile)
-            .then(res => {
-                if (!cancelled) {
-                    setQpNumPages(res.numPages);
-                    setQpPagesText(res.pages);
-                    setQpCurrentPage(1);
-                }
-            })
-            .catch(err => console.error("Error reading PDF text client-side", err))
-            .finally(() => {
-                if (!cancelled) setLoadingPdf(false);
-            });
-
-        return () => { cancelled = true; };
-    }, [currentPdfFile, activeDoc?.page_count]);
-
-    // Render current PDF page to canvas
-    useEffect(() => {
-        if (!currentPdfFile || !pdfCanvasRef.current) return;
-        renderPdfPageToCanvas(currentPdfFile, qpCurrentPage, pdfCanvasRef.current, 1.2).catch(e => {
-            console.warn("Could not render page canvas", e);
-        });
-    }, [currentPdfFile, qpCurrentPage, qpPagesText.length, leftMinimized]);
+    }, [activeDoc?.page_count]);
 
     // Submit Job
     const handleStartImport = async () => {
@@ -1115,6 +1114,7 @@ export default function AdminAIQuestionImport() {
             updateQuestionField('suggested_chapter_id', newChapter.id);
             updateQuestionField('suggested_chapter_name', newChapter.name);
             updateQuestionField('is_new_proposed_chapter', false);
+            queryClient.invalidateQueries({ queryKey: ['workspace-chapters'] });
             showToast(`✓ Added "${newChapter.name}" to ICAI Master Data Chapters!`);
         } catch (err: any) {
             console.error('Failed to quick add chapter', err);
@@ -1315,10 +1315,84 @@ export default function AdminAIQuestionImport() {
         return allQuestions.find(q => q.question_id === selectedQuestionId) || allQuestions[0];
     }, [allQuestions, selectedQuestionId]);
 
-    // Update question in activeJob payload
+    // Available chapters for the active question / paper
+    const availableChapters = useMemo(() => {
+        const pool = (workspaceChapters && workspaceChapters.length > 0) ? workspaceChapters : chapters;
+        if (pool.length === 0) return [];
+        if (effectivePaperId) {
+            const matching = pool.filter((c: any) => String(c.paper) === String(effectivePaperId) || String(c.paper_id) === String(effectivePaperId));
+            if (matching.length > 0) return matching;
+        }
+        if (currentQuestion?.suggested_chapter_id) {
+            const found = pool.find((c: any) => String(c.id) === String(currentQuestion.suggested_chapter_id));
+            if (found && found.paper) {
+                const samePaper = pool.filter((c: any) => String(c.paper) === String(found.paper));
+                if (samePaper.length > 0) return samePaper;
+            }
+        }
+        return pool;
+    }, [workspaceChapters, chapters, effectivePaperId, currentQuestion?.suggested_chapter_id]);
+
+    // Currently selected chapter object in master data
+    const selectedChapterObj = useMemo(() => {
+        if (!currentQuestion) return null;
+        const pool = (workspaceChapters && workspaceChapters.length > 0) ? workspaceChapters : availableChapters;
+        return pool.find((c: any) =>
+            String(c.id) === String(currentQuestion.suggested_chapter_id) ||
+            (currentQuestion.suggested_chapter_name && c.name?.toLowerCase() === currentQuestion.suggested_chapter_name?.toLowerCase())
+        );
+    }, [currentQuestion?.suggested_chapter_id, currentQuestion?.suggested_chapter_name, workspaceChapters, availableChapters]);
+
+    // Fetch topics specifically for this selected chapter if not preloaded
+    const { data: directTopics = [] } = useQuery({
+        queryKey: ['chapter-topics', selectedChapterObj?.id],
+        queryFn: async () => {
+            if (!selectedChapterObj?.id) return [];
+            const res = await api.get(`/master/topics/?chapter_id=${selectedChapterObj.id}&page_size=100`);
+            return Array.isArray(res.data) ? res.data : (res.data.results || []);
+        },
+        enabled: !!selectedChapterObj?.id,
+    });
+
+    // Derived topics for the selected chapter
+    const currentChapterTopics = useMemo(() => {
+        if (!selectedChapterObj) return [];
+        if (selectedChapterObj.topics && selectedChapterObj.topics.length > 0) {
+            return selectedChapterObj.topics;
+        }
+        return directTopics;
+    }, [selectedChapterObj, directTopics]);
+
+    // Update multiple fields on current active question simultaneously
+    const updateQuestionMultipleFields = (fieldsObj: Record<string, any>) => {
+        if (!currentQuestion) return;
+        const targetPayload = activeJob?.extracted_payload || activeBatch?.extracted_payload || activeBatch?.batch_payload;
+        if (!targetPayload) return;
+        const payload = JSON.parse(JSON.stringify(targetPayload));
+        for (const sec of payload.sections || []) {
+            for (const q of sec.questions || []) {
+                if (q.question_id === currentQuestion.question_id) {
+                    for (const [k, v] of Object.entries(fieldsObj)) {
+                        q[k] = v;
+                    }
+                    break;
+                }
+            }
+        }
+        if (activeJob) {
+            setActiveJob({ ...activeJob, extracted_payload: payload });
+        }
+        if (activeBatch) {
+            setActiveBatch({ ...activeBatch, extracted_payload: payload, batch_payload: payload });
+        }
+    };
+
+    // Update question in activeJob and activeBatch payload
     const updateQuestionField = (field: string, value: any) => {
-        if (!activeJob || !currentQuestion) return;
-        const payload = JSON.parse(JSON.stringify(activeJob.extracted_payload));
+        if (!currentQuestion) return;
+        const targetPayload = activeJob?.extracted_payload || activeBatch?.extracted_payload || activeBatch?.batch_payload;
+        if (!targetPayload) return;
+        const payload = JSON.parse(JSON.stringify(targetPayload));
         for (const sec of payload.sections || []) {
             for (const q of sec.questions || []) {
                 if (q.question_id === currentQuestion.question_id) {
@@ -1351,7 +1425,12 @@ export default function AdminAIQuestionImport() {
                 }
             }
         }
-        setActiveJob({ ...activeJob, extracted_payload: payload });
+        if (activeJob) {
+            setActiveJob({ ...activeJob, extracted_payload: payload });
+        }
+        if (activeBatch) {
+            setActiveBatch({ ...activeBatch, extracted_payload: payload, batch_payload: payload });
+        }
     };
 
     // Update a field on a specific subquestion
@@ -1749,12 +1828,22 @@ export default function AdminAIQuestionImport() {
 
     // Save Draft Payload
     const handleSaveDraft = async () => {
-        if (!activeJob) return;
+        if (!activeJob && !activeBatch) return;
         setIsSavingDraft(true);
         try {
-            await api.put(`/materials/import-jobs/${activeJob.id}/payload/`, {
-                payload: activeJob.extracted_payload
-            });
+            const payloadToSave = activeJob?.extracted_payload || activeBatch?.extracted_payload || activeBatch?.batch_payload;
+            if (activeBatch) {
+                await api.put(`/materials/import-batches/${activeBatch.id}/payload/`, {
+                    payload: payloadToSave
+                });
+            }
+            if (activeJob && activeJob.id !== activeBatch?.id) {
+                try {
+                    await api.put(`/materials/import-jobs/${activeJob.id}/payload/`, {
+                        payload: payloadToSave
+                    });
+                } catch {}
+            }
             showToast('Draft changes saved successfully to server.');
         } catch (err: any) {
             showToast(err.response?.data?.error || 'Failed to save draft changes.');
@@ -2516,6 +2605,20 @@ export default function AdminAIQuestionImport() {
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                            {(activeDoc?.file_url || activeJob?.question_pdf_url) && (
+                                <a
+                                    href={activeDoc?.file_url || activeJob?.question_pdf_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="ai-btn-secondary"
+                                    style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', color: '#4f46e5', borderColor: '#c7d2fe', background: '#eef2ff' }}
+                                    title="Open original examination PDF in a new tab"
+                                >
+                                    <FileText size={15} />
+                                    <span>View Original PDF ↗</span>
+                                </a>
+                            )}
+
                             <button
                                 className="ai-btn-secondary"
                                 onClick={() => handleOpenAuditLogs()}
@@ -2632,95 +2735,10 @@ export default function AdminAIQuestionImport() {
                         )}
                     </div>
 
-                    {/* 3-Panel Main Layout */}
-                    <div className={`ai-workspace-panels ${leftMinimized && rightMinimized ? 'both-minimized' : leftMinimized ? 'left-minimized' : rightMinimized ? 'right-minimized' : ''}`}>
+                    {/* 2-Panel Main Layout: Question Editor & Matched Solution */}
+                    <div className={`ai-workspace-panels ${rightMinimized ? 'right-minimized' : ''}`}>
 
-                        {/* PANEL 1: ORIGINAL PDF VIEWER (WITH MULTI-DOC SWITCHER) */}
-                        <div className={`ai-panel ${leftMinimized ? 'minimized' : ''}`}>
-                            <div className="ai-panel-header">
-                                {!leftMinimized && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: 0 }}>
-                                        <FileText size={17} color="#4f46e5" />
-                                        {activeBatch?.documents && activeBatch.documents.length > 1 ? (
-                                            <select
-                                                value={selectedDocId || activeBatch.documents[0].id}
-                                                onChange={(e) => {
-                                                    setSelectedDocId(e.target.value);
-                                                    setQpCurrentPage(1);
-                                                }}
-                                                style={{ fontSize: '0.785rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', maxWidth: '240px' }}
-                                            >
-                                                {activeBatch.documents.map((d: any) => (
-                                                    <option key={d.id} value={d.id}>
-                                                        {d.filename} ({d.file_type || d.inferred_type})
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        ) : (
-                                            <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>Original Examination PDF</span>
-                                        )}
-                                    </div>
-                                )}
-                                <button
-                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
-                                    onClick={() => setLeftMinimized(!leftMinimized)}
-                                    title={leftMinimized ? 'Expand PDF Panel' : 'Minimize PDF Panel'}
-                                >
-                                    {leftMinimized ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
-                                </button>
-                            </div>
-
-                            {!leftMinimized && (
-                                <div className="ai-panel-body" style={{ padding: '0.75rem' }}>
-                                    {/* Page controls */}
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.4rem 0.5rem', background: '#f8fafc', borderRadius: '8px', fontSize: '0.85rem' }}>
-                                        <button
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                                            disabled={qpCurrentPage <= 1}
-                                            onClick={() => setQpCurrentPage(p => Math.max(1, p - 1))}
-                                        >
-                                            <ChevronLeft size={18} />
-                                        </button>
-                                        <span>{loadingPdf ? 'Loading PDF pages...' : <>Page <strong>{qpCurrentPage}</strong> of {qpNumPages || 1}</>}</span>
-                                        <button
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                                            disabled={qpCurrentPage >= qpNumPages}
-                                            onClick={() => setQpCurrentPage(p => Math.min(qpNumPages, p + 1))}
-                                        >
-                                            <ChevronRight size={18} />
-                                        </button>
-                                    </div>
-
-                                    {/* Canvas viewer or Text fallback */}
-                                    <div style={{ flex: 1, overflowY: 'auto', background: '#e2e8f0', borderRadius: '8px', padding: '0.5rem', display: 'flex', justifyContent: 'center' }}>
-                                        {(() => {
-                                            const docFile = currentPdfFile;
-                                            const docUrl = activeDoc?.file_url || activeJob.question_pdf_url;
-
-                                            if (docFile) {
-                                                return <canvas ref={pdfCanvasRef} style={{ maxWidth: '100%', height: 'auto', background: '#ffffff', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', borderRadius: '4px' }} />;
-                                            } else if (docUrl) {
-                                                return (
-                                                    <iframe
-                                                        src={`${docUrl}#page=${qpCurrentPage}`}
-                                                        style={{ width: '100%', height: '100%', border: 'none', minHeight: '600px' }}
-                                                        title="Examination PDF"
-                                                    />
-                                                );
-                                            } else {
-                                                return (
-                                                    <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
-                                                        PDF preview ready in viewer.
-                                                    </div>
-                                                );
-                                            }
-                                        })()}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* PANEL 2: EXTRACTED QUESTION EDITOR */}
+                        {/* PANEL 1: EXTRACTED QUESTION EDITOR */}
                         <div className="ai-panel">
                             <div className="ai-panel-header">
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -2910,24 +2928,118 @@ export default function AdminAIQuestionImport() {
                                             );
                                         })()}
 
-                                        {/* AI Auto-Classification & Taxonomy Match Card */}
+                                        {/* AI Auto-Classification & Taxonomy Selectors Card */}
                                         <div className="ai-taxonomy-card">
                                             <div className="ai-taxonomy-row">
-                                                <div className="ai-taxonomy-badges">
+                                                <div className="ai-taxonomy-badges" style={{ flex: 1 }}>
                                                     <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#475569' }}>ICAI Classification:</span>
                                                     <span className="ai-taxonomy-badge">
                                                         <Layers size={13} />
                                                         <span>{currentQuestion.suggested_paper_name || caLevel}</span>
                                                     </span>
-                                                    <span className="ai-taxonomy-badge">
-                                                        <BookOpen size={13} />
-                                                        <span>Chapter: <strong>{currentQuestion.suggested_chapter_name || 'General / Unclassified'}</strong></span>
-                                                    </span>
-                                                    {currentQuestion.suggested_topic_name && (
-                                                        <span className="ai-taxonomy-badge" style={{ background: '#f0fdf4', borderColor: '#bbf7d0', color: '#166534' }}>
-                                                            <span>Topic: {currentQuestion.suggested_topic_name}</span>
-                                                        </span>
-                                                    )}
+
+                                                    {/* Chapter Select Option */}
+                                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                                                        <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#3730a3', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
+                                                            <BookOpen size={13} />
+                                                            <span>Chapter:</span>
+                                                        </label>
+                                                        <select
+                                                            className="ai-taxonomy-select chapter"
+                                                            value={currentQuestion.suggested_chapter_id || ''}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                if (!val) {
+                                                                    updateQuestionMultipleFields({
+                                                                        suggested_chapter_id: null,
+                                                                        suggested_chapter_name: '',
+                                                                        chapter_id: null,
+                                                                        chapter_name: '',
+                                                                        suggested_topic_id: null,
+                                                                        suggested_topic_name: '',
+                                                                        topic_id: null,
+                                                                        topic_name: ''
+                                                                    });
+                                                                    return;
+                                                                }
+                                                                const ch = availableChapters.find((c: any) => String(c.id) === String(val));
+                                                                if (ch) {
+                                                                    const firstTopic = (ch.topics && ch.topics.length > 0) ? ch.topics[0] : null;
+                                                                    updateQuestionMultipleFields({
+                                                                        suggested_chapter_id: ch.id,
+                                                                        suggested_chapter_name: ch.name,
+                                                                        chapter_id: ch.id,
+                                                                        chapter_name: ch.name,
+                                                                        suggested_topic_id: firstTopic ? firstTopic.id : null,
+                                                                        suggested_topic_name: firstTopic ? firstTopic.name : '',
+                                                                        topic_id: firstTopic ? firstTopic.id : null,
+                                                                        topic_name: firstTopic ? firstTopic.name : '',
+                                                                        is_new_proposed_chapter: false
+                                                                    });
+                                                                }
+                                                            }}
+                                                            style={{ maxWidth: '260px' }}
+                                                        >
+                                                            <option value="">-- Select Chapter --</option>
+                                                            {currentQuestion.suggested_chapter_name && !availableChapters.some((c: any) => String(c.id) === String(currentQuestion.suggested_chapter_id) || c.name?.toLowerCase() === currentQuestion.suggested_chapter_name?.toLowerCase()) && (
+                                                                <option value={currentQuestion.suggested_chapter_id || 'custom'}>
+                                                                    {currentQuestion.suggested_chapter_name} (AI Proposed)
+                                                                </option>
+                                                            )}
+                                                            {availableChapters.map((ch: any) => (
+                                                                <option key={ch.id} value={ch.id}>
+                                                                    {ch.order ? `${ch.order}. ` : ''}{ch.name}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+
+                                                    {/* Topic Select Option */}
+                                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                                                        <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#166534', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
+                                                            <Bookmark size={13} />
+                                                            <span>Topic:</span>
+                                                        </label>
+                                                        <select
+                                                            className="ai-taxonomy-select topic"
+                                                            value={currentQuestion.suggested_topic_id || ''}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                if (!val) {
+                                                                    updateQuestionMultipleFields({
+                                                                        suggested_topic_id: null,
+                                                                        suggested_topic_name: '',
+                                                                        topic_id: null,
+                                                                        topic_name: ''
+                                                                    });
+                                                                    return;
+                                                                }
+                                                                const top = currentChapterTopics.find((t: any) => String(t.id) === String(val));
+                                                                if (top) {
+                                                                    updateQuestionMultipleFields({
+                                                                        suggested_topic_id: top.id,
+                                                                        suggested_topic_name: top.name,
+                                                                        topic_id: top.id,
+                                                                        topic_name: top.name
+                                                                    });
+                                                                }
+                                                            }}
+                                                            style={{ maxWidth: '220px' }}
+                                                        >
+                                                            <option value="">-- Select Topic --</option>
+                                                            {currentQuestion.suggested_topic_name && !currentChapterTopics.some((t: any) => String(t.id) === String(currentQuestion.suggested_topic_id) || t.name?.toLowerCase() === currentQuestion.suggested_topic_name?.toLowerCase()) && (
+                                                                <option value={currentQuestion.suggested_topic_id || 'custom'}>
+                                                                    {currentQuestion.suggested_topic_name} (AI Proposed)
+                                                                </option>
+                                                            )}
+                                                            {currentChapterTopics.map((top: any) => (
+                                                                <option key={top.id} value={top.id}>
+                                                                    {top.name}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+
                                                     {currentQuestion.classification_confidence && (
                                                         <span className="ai-taxonomy-confidence">
                                                             🎯 {Math.round(currentQuestion.classification_confidence * 100)}% Match
