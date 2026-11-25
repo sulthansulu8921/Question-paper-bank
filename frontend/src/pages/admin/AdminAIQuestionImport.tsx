@@ -979,6 +979,55 @@ export default function AdminAIQuestionImport() {
         }
     };
 
+    const [deletingHistoryId, setDeletingHistoryId] = useState<string | null>(null);
+
+    const handleDeleteBatch = async (batchId: string, batchName?: string) => {
+        const displayName = batchName || `Batch #${batchId.slice(0, 8)}`;
+        if (!window.confirm(`Are you sure you want to delete "${displayName}"?\n\nThis will permanently delete this import batch, all uploaded documents, and unapproved draft questions.`)) {
+            return;
+        }
+        setDeletingHistoryId(batchId);
+        try {
+            await api.delete(`/materials/import-batches/${batchId}/`);
+            setHistoryBatches(prev => prev.filter(b => b.id !== batchId));
+            if (activeBatch?.id === batchId) {
+                setActiveBatch(null);
+                setActiveJob(null);
+                setViewMode('upload');
+            }
+            showToast('✓ Batch deleted successfully.');
+        } catch (err: any) {
+            console.error('Failed to delete batch:', err);
+            showToast('Failed to delete batch: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setDeletingHistoryId(null);
+        }
+    };
+
+    const handleDeleteJob = async (jobId: string, jobFilename?: string) => {
+        const displayName = jobFilename || `Job #${jobId.slice(0, 8)}`;
+        if (!window.confirm(`Are you sure you want to delete "${displayName}"?\n\nThis will permanently delete this import job and its extracted draft questions.`)) {
+            return;
+        }
+        setDeletingHistoryId(jobId);
+        try {
+            await api.delete(`/materials/import-jobs/${jobId}/`);
+            setHistoryJobs(prev => prev.filter(j => j.id !== jobId));
+            if (activeJob?.id === jobId) {
+                setActiveJob(null);
+                if (!activeBatch) {
+                    setViewMode('upload');
+                }
+            }
+            showToast('✓ Job deleted successfully.');
+        } catch (err: any) {
+            console.error('Failed to delete job:', err);
+            showToast('Failed to delete job: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setDeletingHistoryId(null);
+        }
+    };
+
     // Polling job status
     useEffect(() => {
         let interval: any = null;
@@ -2843,6 +2892,22 @@ export default function AdminAIQuestionImport() {
                                 <ShieldCheck size={16} />
                                 <span>{isPublishing ? 'Publishing...' : activeBatch ? 'Publish Batch to Question Bank' : 'Publish to Question Bank'}</span>
                             </button>
+
+                            <button
+                                className="ai-btn-secondary"
+                                onClick={() => {
+                                    if (activeBatch) {
+                                        handleDeleteBatch(activeBatch.id, activeBatch.name);
+                                    } else if (activeJob) {
+                                        handleDeleteJob(activeJob.id, activeJob.question_pdf_filename);
+                                    }
+                                }}
+                                style={{ borderColor: '#fca5a5', color: '#dc2626', backgroundColor: '#fef2f2' }}
+                                title="Delete this import job/batch permanently"
+                            >
+                                <Trash2 size={15} />
+                                <span>Delete</span>
+                            </button>
                         </div>
                     </div>
 
@@ -4487,6 +4552,21 @@ export default function AdminAIQuestionImport() {
                                                         >
                                                             <History size={13} />
                                                         </button>
+                                                        <button
+                                                            className="ai-btn-secondary"
+                                                            style={{
+                                                                padding: '0.35rem 0.55rem',
+                                                                fontSize: '0.775rem',
+                                                                color: '#dc2626',
+                                                                borderColor: '#fca5a5',
+                                                                backgroundColor: '#fef2f2'
+                                                            }}
+                                                            onClick={() => handleDeleteBatch(b.id, b.name)}
+                                                            disabled={deletingHistoryId === b.id}
+                                                            title="Delete Batch"
+                                                        >
+                                                            <Trash2 size={13} />
+                                                        </button>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -4560,6 +4640,21 @@ export default function AdminAIQuestionImport() {
                                                             title="View Audit Logs"
                                                         >
                                                             <History size={14} />
+                                                        </button>
+                                                        <button
+                                                            className="ai-btn-secondary"
+                                                            style={{
+                                                                padding: '0.35rem 0.55rem',
+                                                                fontSize: '0.8rem',
+                                                                color: '#dc2626',
+                                                                borderColor: '#fca5a5',
+                                                                backgroundColor: '#fef2f2'
+                                                            }}
+                                                            onClick={() => handleDeleteJob(j.id, j.question_pdf_filename)}
+                                                            disabled={deletingHistoryId === j.id}
+                                                            title="Delete Job"
+                                                        >
+                                                            <Trash2 size={14} />
                                                         </button>
                                                     </div>
                                                 </td>

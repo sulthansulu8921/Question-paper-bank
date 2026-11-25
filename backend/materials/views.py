@@ -4186,6 +4186,27 @@ class QuestionImportJobViewSet(viewsets.ModelViewSet):
         serializer = ImportAuditLogSerializer(logs, many=True)
         return Response(serializer.data)
 
+    def perform_destroy(self, instance):
+        if instance.question_pdf:
+            try:
+                instance.question_pdf.delete(save=False)
+            except Exception:
+                pass
+        if instance.answer_pdf:
+            try:
+                instance.answer_pdf.delete(save=False)
+            except Exception:
+                pass
+        for doc in instance.documents.all():
+            if doc.file:
+                try:
+                    doc.file.delete(save=False)
+                except Exception:
+                    pass
+            doc.delete()
+        instance.delete()
+
+
 
 class ImportBatchViewSet(viewsets.ModelViewSet):
     queryset = ImportBatch.objects.all()
@@ -4533,6 +4554,29 @@ class ImportBatchViewSet(viewsets.ModelViewSet):
         logs = batch.audit_logs.all()
         serializer = ImportAuditLogSerializer(logs, many=True)
         return Response(serializer.data)
+
+    def perform_destroy(self, instance):
+        for job in instance.jobs.all():
+            if job.question_pdf:
+                try:
+                    job.question_pdf.delete(save=False)
+                except Exception:
+                    pass
+            if job.answer_pdf:
+                try:
+                    job.answer_pdf.delete(save=False)
+                except Exception:
+                    pass
+            job.delete()
+        for doc in instance.documents.all():
+            if doc.file:
+                try:
+                    doc.file.delete(save=False)
+                except Exception:
+                    pass
+            doc.delete()
+        instance.delete()
+
 
 
 
