@@ -1715,7 +1715,7 @@ Return STRICT JSON matching this schema:
   ]
 }}
 """
-    parsed, meta, err = call_unified_ai(prompt, api_key=api_key, candidate_models=models, temperature=0.1, timeout=120, provider='gemini')
+    parsed, meta, err = call_unified_ai(prompt, api_key=api_key, candidate_models=models, temperature=0.1, timeout=180, provider='auto')
     return parsed, meta, err
 
 
@@ -2099,8 +2099,8 @@ def match_questions_and_answers(sections, answers_list):
                 answer_obj = {
                     "answer_id": matched_ans.get("answer_id", "") if matched_ans else "",
                     "answer_question_number": matched_ans.get("question_number", "") if matched_ans else "",
-                    "answer_text": matched_ans.get("answer_text", "") if matched_ans else "",
-                    "solution_text": matched_ans.get("answer_text", "") if matched_ans else "",
+                    "answer_text": ((matched_ans.get("solution_text") or matched_ans.get("answer_text") or "") if matched_ans else ""),
+                    "solution_text": ((matched_ans.get("solution_text") or matched_ans.get("answer_text") or "") if matched_ans else ""),
                     "working_notes": matched_ans.get("working_notes", "") if matched_ans else "",
                     "calculations": matched_ans.get("calculations", "") if matched_ans else "",
                     "answer_table_data": ans_table,
@@ -2399,10 +2399,13 @@ def unwrap_answers(ans_parsed):
             return ans_parsed['answers'] or []
         if 'solutions' in ans_parsed:
             return ans_parsed['solutions'] or []
-        for k in ('paper', 'official_solutions', 'suggested_answers'):
-            if k in ans_parsed and isinstance(ans_parsed[k], dict):
-                return unwrap_answers(ans_parsed[k])
-    return []
+        for k in ('paper', 'official_solutions', 'suggested_answers', 'items', 'data', 'results'):
+            if k in ans_parsed:
+                if isinstance(ans_parsed[k], dict):
+                    return unwrap_answers(ans_parsed[k])
+                if isinstance(ans_parsed[k], list):
+                    return ans_parsed[k]
+        return []
 
 
 # ─────────────────────────────────────────────────────────────
@@ -2549,11 +2552,14 @@ def run_import_job_pipeline(job):
 
         classification_stats = classify_and_enrich_questions(matched_sections, target_paper, job=job)
 
+        validation["answers_list"] = answers_list
         # Assemble full payload
         payload = {
             "document": metadata,
             "sections": matched_sections,
             "validation": validation,
+            "answers_list": answers_list,
+            "raw_answers": answers_list,
             "classification_stats": classification_stats,
             "raw_question_pages": [p['page_number'] for p in qp_content['pages']],
             "total_extracted_tables": len(qp_content['tables']) + len(ans_content['tables']),
@@ -2621,6 +2627,7 @@ def run_import_batch_pipeline(batch):
     total_time = 0.0
 
     batch_sections = []
+    batch_answers = []
 
     for idx, job in enumerate(jobs):
         success, err = run_import_job_pipeline(job)
@@ -2647,6 +2654,7 @@ def run_import_batch_pipeline(batch):
                 sec_copy["job_id"] = str(job.id)
                 sec_copy["job_source"] = job.source
                 batch_sections.append(sec_copy)
+            batch_answers.extend(payload.get("answers_list", []))
 
         batch.progress_percent = int(10 + (idx + 1) / len(jobs) * 85)
         batch.stage_label = f"Processed {idx+1}/{len(jobs)} document pairs..."
@@ -2682,7 +2690,15 @@ def run_import_batch_pipeline(batch):
         "total_jobs": len(jobs),
         "total_questions": total_questions,
         "matched_answers": matched_answers,
-        "missing_answers": missing_answers
+        "missing_answers": missing_answers,
+        "answers_list": batch_answers,
+        "raw_answers": batch_answers,
+        "validation": {
+            "question_count": total_questions,
+            "matched_answer_count": matched_answers,
+            "unmatched_question_count": missing_answers,
+            "answers_list": batch_answers
+        }
     }
     batch.save()
     return total_questions > 0, batch.error_message

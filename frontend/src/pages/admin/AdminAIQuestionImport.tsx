@@ -1718,8 +1718,10 @@ export default function AdminAIQuestionImport() {
                             subList[sqIdx].official_answer.answer_text = value;
                             subList[sqIdx].correct_answer = value;
                         }
-                        if (field === 'structured_table') {
+                        if (field === 'structured_table' || field === 'answer_table_data') {
+                            subList[sqIdx].matched_answer.structured_table = value;
                             subList[sqIdx].matched_answer.answer_table_data = value;
+                            subList[sqIdx].official_answer.structured_table = value;
                             subList[sqIdx].official_answer.answer_table_data = value;
                         }
                     }
@@ -3992,6 +3994,86 @@ export default function AdminAIQuestionImport() {
                                                         </div>
                                                     </div>
                                                 )}
+
+                                                {/* Suggested Solution & Working Notes for Standalone Descriptive / Accounting Problem */}
+                                                {currentQuestion.question_type !== 'MCQ' && (
+                                                    <div className="ai-subq-answer-card" style={{ marginTop: '0.85rem' }}>
+                                                        <div className="ai-subq-answer-header">
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                                                <CheckCircle2 size={16} color="#15803d" />
+                                                                <strong style={{ fontSize: '0.875rem', color: '#166534' }}>
+                                                                    Suggested Answer & Model Solution (Question {currentQuestion.question_number})
+                                                                </strong>
+                                                                {currentQuestion.matched_answer?.confidence_score !== undefined && (
+                                                                    <span className={`ai-confidence-pill ${(currentQuestion.matched_answer?.confidence_score || 0) >= 0.8 ? 'ai-confidence-high' : 'ai-confidence-low'}`} style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem' }}>
+                                                                        {Math.round((currentQuestion.matched_answer?.confidence_score || 0) * 100)}% Match
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {currentQuestion.matched_answer?.answer_source_document && (
+                                                                <span style={{ fontSize: '0.7rem', color: '#166534', opacity: 0.85 }}>
+                                                                    Source: {currentQuestion.matched_answer.answer_source_document}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.4rem' }}>
+                                                            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#166534' }}>
+                                                                Suggested Answer Content / Solution
+                                                            </label>
+                                                            <textarea
+                                                                className="ai-subq-ans-textarea"
+                                                                rows={6}
+                                                                value={currentQuestion.matched_answer?.solution_text || currentQuestion.matched_answer?.answer_text || ''}
+                                                                onChange={(e) => {
+                                                                    const ma = {
+                                                                        ...(currentQuestion.matched_answer || {}),
+                                                                        solution_text: e.target.value,
+                                                                        answer_text: e.target.value
+                                                                    };
+                                                                    updateQuestionField('matched_answer', ma);
+                                                                    updateQuestionField('official_answer', ma);
+                                                                }}
+                                                                placeholder={`Official suggested solution for Question ${currentQuestion.question_number}...`}
+                                                            />
+                                                        </div>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.5rem' }}>
+                                                            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#166534' }}>
+                                                                Working Notes & Step Calculations
+                                                            </label>
+                                                            <textarea
+                                                                className="ai-subq-ans-textarea"
+                                                                rows={3}
+                                                                value={currentQuestion.matched_answer?.working_notes || ''}
+                                                                onChange={(e) => {
+                                                                    const ma = {
+                                                                        ...(currentQuestion.matched_answer || {}),
+                                                                        working_notes: e.target.value
+                                                                    };
+                                                                    updateQuestionField('matched_answer', ma);
+                                                                    updateQuestionField('official_answer', ma);
+                                                                }}
+                                                                placeholder="Working notes, journal entries, reference formulas, or schedules..."
+                                                            />
+                                                        </div>
+                                                        {(currentQuestion.matched_answer?.structured_table || currentQuestion.matched_answer?.answer_table_data) && (
+                                                            <div style={{ marginTop: '0.65rem' }}>
+                                                                <AccountingTableEditor
+                                                                    table={currentQuestion.matched_answer?.structured_table || currentQuestion.matched_answer?.answer_table_data}
+                                                                    onChange={(t) => {
+                                                                        const ma = {
+                                                                            ...(currentQuestion.matched_answer || {}),
+                                                                            structured_table: t,
+                                                                            answer_table_data: t
+                                                                        };
+                                                                        updateQuestionField('matched_answer', ma);
+                                                                        updateQuestionField('official_answer', ma);
+                                                                    }}
+                                                                    label={`Question ${currentQuestion.question_number} Solution Accounting Table`}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </>
                                         )}
                                     </div>
@@ -4050,11 +4132,17 @@ export default function AdminAIQuestionImport() {
                                                 onChange={(e) => handleOverrideMatch(e.target.value)}
                                             >
                                                 <option value="">(None)</option>
-                                                {(activeJob.extracted_payload?.validation?.answers_list || []).map((ans: any) => (
-                                                    <option key={ans.answer_id} value={ans.question_number}>
-                                                        Answer Q{ans.question_number}
-                                                    </option>
-                                                ))}
+                                                {((activeJob?.extracted_payload?.validation?.answers_list || activeJob?.extracted_payload?.answers_list || activeBatch?.batch_payload?.answers_list || activeBatch?.batch_payload?.validation?.answers_list) || []).map((ans: any, aIdx: number) => {
+                                                    const qNum = ans.question_number || '';
+                                                    const subId = ans.sub_identifier || '';
+                                                    const label = `Answer Q${qNum}${subId ? ` (${subId})` : ''}`;
+                                                    const valKey = subId ? `${qNum}${subId}` : qNum;
+                                                    return (
+                                                        <option key={ans.answer_id || aIdx} value={valKey}>
+                                                            {label}
+                                                        </option>
+                                                    );
+                                                })}
                                             </select>
                                         </div>
                                     </div>
