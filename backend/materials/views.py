@@ -857,7 +857,7 @@ def test_gemini_api_key(api_key):
     """Tests if a Gemini API Key is valid and active."""
     if not api_key:
         return False, None, "No API key provided."
-    models = ["gemini-3-flash-preview", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
+    models = ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3-flash-preview"]
     last_err = "Unknown error"
     for m in models:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={api_key}"
@@ -1348,7 +1348,7 @@ ANSWER PAPER / SUGGESTED ANSWERS CONTENT:
 CRITICAL: Match each extracted question above with its corresponding suggested answer from this Answer Paper content!
 """
 
-    models_to_try = ["gemini-3-flash-preview", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
+    models_to_try = ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3-flash-preview"]
     last_err = None
 
     for model in models_to_try:
@@ -1562,7 +1562,7 @@ Respond in STRICT JSON with this schema:
   "correct_mcq_option": null or "A" / "B" / "C" / "D" (if MCQ)
 }
 """
-    models = ["gemini-3-flash-preview", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
+    models = ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3-flash-preview"]
     last_err = None
     for model in models:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"

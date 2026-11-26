@@ -47,20 +47,18 @@ def get_gemini_config(explicit_key=None):
     if not api_key:
         api_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
-    primary_model = os.environ.get("GEMINI_MODEL", "gemini-3-flash-preview").strip()
-    fallback_model = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.8-flash").strip()
+    primary_model = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
+    fallback_model = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash").strip()
 
     candidate_models = [
-        "gemini-3-flash-preview",
         primary_model,
-        "gemini-3.8-flash",
-        "gemini-3.7-flash",
-        "gemini-flash-latest",
+        "gemini-3.5-flash-lite",
         "gemini-flash-lite-latest",
         "gemini-3.5-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-3.1-flash-lite",
+        "gemini-3.6-flash",
+        "gemini-3-flash-preview",
         fallback_model,
+        "gemini-flash-latest",
     ]
     # Remove duplicates preserving order
     seen = set()
@@ -724,7 +722,7 @@ def auto_pair_batch_documents(documents):
 # Step 2: Gemini API Caller with Resilient Model Fallback
 # ─────────────────────────────────────────────────────────────
 
-def call_gemini_api(prompt, api_key, candidate_models, temperature=0.1, timeout=120, inline_images=None):
+def call_gemini_api(prompt, api_key, candidate_models, temperature=0.1, timeout=180, inline_images=None):
     """
     Sends request to Gemini API with JSON structured output and optional multimodal images.
     Tries candidate models in order with exponential backoff on rate limits.
@@ -788,6 +786,14 @@ def call_gemini_api(prompt, api_key, candidate_models, temperature=0.1, timeout=
                         }, None
                 elif resp.status_code in (429, 503):
                     last_error = f"Model {model} HTTP {resp.status_code}: {resp.text[:200]}"
+                    # Daily free tier quota exhausted: retrying this model is futile, try next candidate model immediately!
+                    if "free_tier_requests" in resp.text or "per day" in resp.text.lower() or "RESOURCE_EXHAUSTED" in resp.text:
+                        logger.warning(f"Model {model} daily quota exhausted. Skipping immediately to next candidate model.")
+                        break
+                    # High demand 503: do not wait, try next candidate model immediately
+                    if resp.status_code == 503:
+                        logger.warning(f"Model {model} 503 high demand spike. Skipping immediately to next candidate model.")
+                        break
                     time.sleep(1.5 * (attempt + 1))
                     continue
                 else:
@@ -1599,7 +1605,7 @@ Return STRICT JSON matching this schema:
   ]
 }}
 """
-    parsed, meta, err = call_unified_ai(prompt, api_key=api_key, candidate_models=models, temperature=0.1, timeout=120, provider='gemini')
+    parsed, meta, err = call_unified_ai(prompt, api_key=api_key, candidate_models=models, temperature=0.1, timeout=180, provider='auto')
     if target_clean != 'ALL' and parsed:
         if isinstance(parsed, dict) and "sections" in parsed:
             parsed["sections"] = filter_questions_by_target_type(parsed["sections"], target_clean)
