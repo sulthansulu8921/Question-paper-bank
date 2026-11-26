@@ -875,6 +875,32 @@ export default function AdminAIQuestionImport() {
     const [isScenarioCollapsed, setIsScenarioCollapsed] = useState(false);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [qpNumPages, setQpNumPages] = useState(1);
+    const [activeSubQuestionIdx, setActiveSubQuestionIdx] = useState<number>(0);
+
+    // Reset sub-question index when switching parent question
+    useEffect(() => {
+        setActiveSubQuestionIdx(0);
+    }, [selectedQuestionId]);
+
+    const handleJumpToSubQuestion = (sIdx: number) => {
+        setActiveSubQuestionIdx(sIdx);
+        const el1 = document.getElementById(`subq_card_${sIdx}`);
+        if (el1) {
+            el1.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el1.classList.remove('ai-highlight-glow');
+            void el1.offsetWidth;
+            el1.classList.add('ai-highlight-glow');
+            setTimeout(() => el1.classList.remove('ai-highlight-glow'), 2000);
+        }
+        const el2 = document.getElementById(`sol_subq_card_${sIdx}`);
+        if (el2) {
+            el2.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el2.classList.remove('ai-highlight-glow');
+            void el2.offsetWidth;
+            el2.classList.add('ai-highlight-glow');
+            setTimeout(() => el2.classList.remove('ai-highlight-glow'), 2000);
+        }
+    };
 
     const showToast = (msg: string) => {
         setToastMessage(msg);
@@ -2970,12 +2996,17 @@ export default function AdminAIQuestionImport() {
                                 const isFlagged = q.matched_answer?.review_flag && q.matched_answer.review_flag !== 'MATCHED';
                                 const isMcq = q.question_type === 'MCQ' || (q.options && q.options.length > 0);
                                 const isScenario = !isMcq && (q.question_type === 'CASE_SCENARIO' || !!(q.case_scenario_passage && q.case_scenario_passage.trim().length > 0));
+                                const subList = q.subquestions || q.sub_questions || [];
+                                const subCount = subList.length;
 
                                 return (
                                     <button
                                         key={q.question_id}
                                         className={`ai-q-pill-btn ${isSelected ? 'active' : ''} ${isApproved ? 'approved' : ''} ${isFlagged ? 'flagged' : ''}`}
-                                        onClick={() => setSelectedQuestionId(q.question_id)}
+                                        onClick={() => {
+                                            setSelectedQuestionId(q.question_id);
+                                            setActiveSubQuestionIdx(0);
+                                        }}
                                     >
                                         {isApproved ? <Check size={13} /> : isFlagged ? <AlertTriangle size={13} /> : null}
                                         <span className={`ai-pill-type-tag ${isMcq ? 'mcq' : isScenario ? 'scenario' : 'descriptive'}`}>
@@ -2983,6 +3014,19 @@ export default function AdminAIQuestionImport() {
                                         </span>
                                         <span>Q{q.question_number}</span>
                                         <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>({q.marks}M)</span>
+                                        {subCount > 0 && (
+                                            <span style={{
+                                                fontSize: '0.67rem',
+                                                padding: '0.1rem 0.35rem',
+                                                borderRadius: '4px',
+                                                background: isSelected ? 'rgba(255,255,255,0.25)' : '#e0e7ff',
+                                                color: isSelected ? '#ffffff' : '#4338ca',
+                                                fontWeight: 800,
+                                                marginLeft: '0.15rem'
+                                            }}>
+                                                {subCount} parts
+                                            </span>
+                                        )}
                                     </button>
                                 );
                             })
@@ -3035,6 +3079,98 @@ export default function AdminAIQuestionImport() {
                             <span>+ Add Question Manually</span>
                         </button>
                     </div>
+
+                    {/* Sub-Questions / Sub-Parts Strip for Active Question */}
+                    {currentQuestion && (
+                        (currentQuestion.subquestions && currentQuestion.subquestions.length > 0) ||
+                        (currentQuestion.sub_questions && currentQuestion.sub_questions.length > 0) ||
+                        currentQuestion.question_type === 'CASE_SCENARIO' ||
+                        (currentQuestion.case_scenario_passage && currentQuestion.case_scenario_passage.trim().length > 0)
+                    ) && (() => {
+                        const activeSubList = currentQuestion.subquestions || currentQuestion.sub_questions || [];
+                        const totalSubMarks = activeSubList.reduce((acc: number, sq: any) => acc + (parseFloat(sq.marks) || 0), 0);
+                        const parentMarks = parseFloat(currentQuestion.marks) || 0;
+
+                        return (
+                            <div className="ai-subparts-selector-strip">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                                    <span style={{
+                                        fontSize: '0.74rem',
+                                        fontWeight: 900,
+                                        color: '#1e293b',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em'
+                                    }}>
+                                        SUB-PARTS:
+                                    </span>
+                                    <span style={{
+                                        fontSize: '0.7rem',
+                                        fontWeight: 800,
+                                        padding: '0.1rem 0.45rem',
+                                        borderRadius: '9999px',
+                                        background: '#e0e7ff',
+                                        color: '#4338ca'
+                                    }}>
+                                        {activeSubList.length} parts {parentMarks > 0 ? `(${totalSubMarks || parentMarks}M)` : ''}
+                                    </span>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'nowrap' }}>
+                                    {activeSubList.map((sq: any, sIdx: number) => {
+                                        const sqId = sq.identifier || sq.sub_question_number || `${currentQuestion.question_number}(${String.fromCharCode(97 + sIdx)})`;
+                                        const isApproved = !!sq.is_approved;
+                                        const isSubActive = activeSubQuestionIdx === sIdx;
+                                        const sqMarks = sq.marks !== undefined && sq.marks !== null ? sq.marks : 2;
+
+                                        return (
+                                            <button
+                                                key={sIdx}
+                                                type="button"
+                                                onClick={() => handleJumpToSubQuestion(sIdx)}
+                                                className={`ai-subpart-pill-btn ${isSubActive ? 'active' : ''} ${isApproved ? 'approved' : ''}`}
+                                                title={`Jump to Sub-Question ${sqId} (${sqMarks} Marks)`}
+                                            >
+                                                {isApproved && <Check size={12} />}
+                                                <span>{sqId}</span>
+                                                <span style={{ fontSize: '0.7rem', opacity: isSubActive ? 0.9 : 0.8 }}>({sqMarks}M)</span>
+                                            </button>
+                                        );
+                                    })}
+
+                                    {/* Add Another Sub-Part Button */}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            handleAddSubQuestion();
+                                            setTimeout(() => {
+                                                const newIdx = activeSubList.length;
+                                                handleJumpToSubQuestion(newIdx);
+                                            }, 100);
+                                        }}
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '0.3rem',
+                                            padding: '0.28rem 0.65rem',
+                                            borderRadius: '6px',
+                                            border: '1.5px dashed #6366f1',
+                                            background: '#ffffff',
+                                            color: '#4f46e5',
+                                            fontSize: '0.76rem',
+                                            fontWeight: 700,
+                                            cursor: 'pointer',
+                                            whiteSpace: 'nowrap',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                        title="Add another sub-part under this question"
+                                    >
+                                        <Plus size={13} />
+                                        <span>+ Add Sub-Part</span>
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })()}
 
                     {/* 2-Panel Main Layout: Question Editor & Matched Solution */}
                     <div className={`ai-workspace-panels ${rightMinimized ? 'right-minimized' : ''}`}>
@@ -3616,30 +3752,59 @@ export default function AdminAIQuestionImport() {
                                                     <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase' }}>Sub-Parts:</span>
                                                     {(currentQuestion.subquestions || []).map((sq: any, sIdx: number) => {
                                                         const sqId = sq.identifier || sq.sub_question_number || `${currentQuestion.question_number}(${String.fromCharCode(97 + sIdx)})`;
+                                                        const isApproved = !!sq.is_approved;
+                                                        const isSubActive = activeSubQuestionIdx === sIdx;
                                                         return (
                                                             <button
                                                                 key={sIdx}
                                                                 type="button"
-                                                                onClick={() => {
-                                                                    const el = document.getElementById(`subq_card_${sIdx}`);
-                                                                    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                                                }}
+                                                                onClick={() => handleJumpToSubQuestion(sIdx)}
                                                                 style={{
-                                                                    padding: '0.2rem 0.55rem',
-                                                                    borderRadius: '4px',
-                                                                    border: '1px solid #c7d2fe',
-                                                                    background: '#eef2ff',
-                                                                    color: '#4338ca',
-                                                                    fontSize: '0.75rem',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '0.25rem',
+                                                                    padding: '0.22rem 0.55rem',
+                                                                    borderRadius: '5px',
+                                                                    border: isSubActive ? '1.5px solid #4f46e5' : isApproved ? '1px solid #86efac' : '1px solid #c7d2fe',
+                                                                    background: isSubActive ? '#4f46e5' : isApproved ? '#f0fdf4' : '#eef2ff',
+                                                                    color: isSubActive ? '#ffffff' : isApproved ? '#15803d' : '#4338ca',
+                                                                    fontSize: '0.76rem',
                                                                     fontWeight: 700,
                                                                     cursor: 'pointer'
                                                                 }}
                                                             >
+                                                                {isApproved && <Check size={12} color={isSubActive ? '#ffffff' : '#16a34a'} />}
                                                                 <span>{sqId}</span>
-                                                                <span style={{ fontSize: '0.68rem', opacity: 0.8, marginLeft: '0.2rem' }}>({sq.marks || 0}M)</span>
+                                                                <span style={{ fontSize: '0.68rem', opacity: isSubActive ? 0.9 : 0.8, marginLeft: '0.15rem' }}>({sq.marks || 0}M)</span>
                                                             </button>
                                                         );
                                                     })}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            handleAddSubQuestion();
+                                                            setTimeout(() => {
+                                                                const newIdx = (currentQuestion.subquestions || []).length;
+                                                                handleJumpToSubQuestion(newIdx);
+                                                            }, 100);
+                                                        }}
+                                                        style={{
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '0.25rem',
+                                                            padding: '0.22rem 0.55rem',
+                                                            borderRadius: '5px',
+                                                            border: '1.5px dashed #6366f1',
+                                                            background: '#ffffff',
+                                                            color: '#4f46e5',
+                                                            fontSize: '0.74rem',
+                                                            fontWeight: 700,
+                                                            cursor: 'pointer'
+                                                        }}
+                                                    >
+                                                        <Plus size={12} />
+                                                        <span>Add Sub-Part</span>
+                                                    </button>
                                                 </div>
 
                                                 {(currentQuestion.subquestions || []).map((sq: any, sqIdx: number) => {
@@ -4286,6 +4451,7 @@ export default function AdminAIQuestionImport() {
                                                             return (
                                                                 <div
                                                                     key={sqIdx}
+                                                                    id={`sol_subq_card_${sqIdx}`}
                                                                     style={{
                                                                         background: '#f8fafc',
                                                                         border: '1px solid #e2e8f0',
