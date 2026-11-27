@@ -6,7 +6,7 @@ import {
     FileSpreadsheet, ShieldCheck, Minimize2, Maximize2,
     BookOpen, Bookmark, ListChecks, Plus, Scissors, CheckCheck, AlertCircle,
     ArrowUp, ArrowDown, FolderPlus, History, Files, X, ExternalLink,
-    ChevronUp, ChevronDown
+    ChevronUp, ChevronDown, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import api from '@/api/axios';
@@ -876,14 +876,12 @@ export default function AdminAIQuestionImport() {
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [qpNumPages, setQpNumPages] = useState(1);
     const [activeSubQuestionIdx, setActiveSubQuestionIdx] = useState<number>(0);
-
-    // Reset sub-question index when switching parent question
-    useEffect(() => {
-        setActiveSubQuestionIdx(0);
-    }, [selectedQuestionId]);
+    const [subQuestionViewMode, setSubQuestionViewMode] = useState<'SINGLE' | 'COMBINED'>('SINGLE');
+    const [isParentStemCollapsed, setIsParentStemCollapsed] = useState<boolean>(false);
 
     const handleJumpToSubQuestion = (sIdx: number) => {
         setActiveSubQuestionIdx(sIdx);
+        setSubQuestionViewMode('SINGLE');
         const el1 = document.getElementById(`subq_card_${sIdx}`);
         if (el1) {
             el1.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1515,45 +1513,119 @@ export default function AdminAIQuestionImport() {
     }, [activeJob?.extracted_payload, activeBatch?.extracted_payload, activeBatch?.batch_payload]);
 
     // Format analysis metrics and filter helpers
-    const mcqCount = useMemo(() => {
-        return allQuestions.filter(q => q.question_type === 'MCQ' || (q.options && q.options.length > 0)).length;
+    interface QuestionNavItem {
+        navId: string;
+        questionId: string;
+        subIdx: number;
+        isSub: boolean;
+        qNum: string;
+        label: string;
+        subIdentifier: string;
+        badgeType: 'MCQ' | 'SCENARIO' | 'PROBLEM' | 'DESCRIPTIVE';
+        marks: number;
+        isApproved: boolean;
+        isFlagged: boolean;
+        parentQuestion: any;
+        subQuestion: any | null;
+    }
+
+    const allNavItems = useMemo<QuestionNavItem[]>(() => {
+        const items: QuestionNavItem[] = [];
+        allQuestions.forEach((q) => {
+            const isParentMcq = q.question_type === 'MCQ' || ((q.options || []).length > 0);
+            const isScenario = !isParentMcq && (q.question_type === 'CASE_SCENARIO' || !!(q.case_scenario_passage && q.case_scenario_passage.trim()));
+            const subList = q.subquestions || q.sub_questions || [];
+
+            if (subList.length > 0) {
+                subList.forEach((sq: any, sIdx: number) => {
+                    const sqId = sq.identifier || sq.sub_question_number || `${q.question_number}(${String.fromCharCode(97 + sIdx)})`;
+                    const isSqMcq = (sq.question_type === 'MCQ') || ((sq.options || []).length > 0);
+                    const bType: 'MCQ' | 'SCENARIO' | 'PROBLEM' | 'DESCRIPTIVE' = isSqMcq ? 'MCQ' : (isScenario ? 'SCENARIO' : 'PROBLEM');
+                    const sqMarks = sq.marks !== undefined && sq.marks !== null ? Number(sq.marks) : 2;
+                    const isApproved = !!sq.is_approved;
+                    const isFlagged = sq.matching_status === 'needs_review' || (sq.matched_answer?.review_flag && sq.matched_answer.review_flag !== 'MATCHED');
+
+                    items.push({
+                        navId: `${q.question_id}_sub_${sIdx}`,
+                        questionId: q.question_id,
+                        subIdx: sIdx,
+                        isSub: true,
+                        qNum: String(q.question_number || ''),
+                        label: sqId,
+                        subIdentifier: sqId,
+                        badgeType: bType,
+                        marks: sqMarks,
+                        isApproved,
+                        isFlagged,
+                        parentQuestion: q,
+                        subQuestion: sq
+                    });
+                });
+            } else {
+                const bType: 'MCQ' | 'SCENARIO' | 'PROBLEM' | 'DESCRIPTIVE' = isParentMcq ? 'MCQ' : (isScenario ? 'SCENARIO' : 'PROBLEM');
+                const isApproved = !!q.is_approved;
+                const isFlagged = q.matched_answer?.review_flag && q.matched_answer.review_flag !== 'MATCHED';
+
+                items.push({
+                    navId: q.question_id,
+                    questionId: q.question_id,
+                    subIdx: -1,
+                    isSub: false,
+                    qNum: String(q.question_number || ''),
+                    label: `Q${q.question_number}`,
+                    subIdentifier: '',
+                    badgeType: bType,
+                    marks: Number(q.marks) || 0,
+                    isApproved,
+                    isFlagged,
+                    parentQuestion: q,
+                    subQuestion: null
+                });
+            }
+        });
+        return items;
     }, [allQuestions]);
 
-    const scenarioCount = useMemo(() => {
-        return allQuestions.filter(q => (q.question_type === 'CASE_SCENARIO' || !!(q.case_scenario_passage && q.case_scenario_passage.trim().length > 0)) && q.question_type !== 'MCQ').length;
-    }, [allQuestions]);
-
-    const descriptiveCount = useMemo(() => {
-        return allQuestions.filter(q => q.question_type !== 'MCQ' && !(q.options && q.options.length > 0) && q.question_type !== 'CASE_SCENARIO' && !(q.case_scenario_passage && q.case_scenario_passage.trim().length > 0)).length;
-    }, [allQuestions]);
-
-    const filteredQuestions = useMemo(() => {
+    const filteredNavItems = useMemo<QuestionNavItem[]>(() => {
         if (qTypeFilter === 'MCQ') {
-            return allQuestions.filter(q => q.question_type === 'MCQ' || (q.options && q.options.length > 0));
+            return allNavItems.filter(item => item.badgeType === 'MCQ');
         }
         if (qTypeFilter === 'SCENARIO') {
-            return allQuestions.filter(q => (q.question_type === 'CASE_SCENARIO' || !!(q.case_scenario_passage && q.case_scenario_passage.trim().length > 0)) && q.question_type !== 'MCQ');
+            return allNavItems.filter(item => item.badgeType === 'SCENARIO');
         }
         if (qTypeFilter === 'DESCRIPTIVE') {
-            return allQuestions.filter(q => q.question_type !== 'MCQ' && !(q.options && q.options.length > 0) && q.question_type !== 'CASE_SCENARIO' && !(q.case_scenario_passage && q.case_scenario_passage.trim().length > 0));
+            return allNavItems.filter(item => item.badgeType === 'PROBLEM' || item.badgeType === 'DESCRIPTIVE');
         }
-        return allQuestions;
-    }, [allQuestions, qTypeFilter]);
+        return allNavItems;
+    }, [allNavItems, qTypeFilter]);
+
+    // Format analysis metrics and filter helpers
+    const mcqCount = useMemo(() => {
+        return allNavItems.filter(item => item.badgeType === 'MCQ').length;
+    }, [allNavItems]);
+
+    const scenarioCount = useMemo(() => {
+        return allNavItems.filter(item => item.badgeType === 'SCENARIO').length;
+    }, [allNavItems]);
+
+    const descriptiveCount = useMemo(() => {
+        return allNavItems.filter(item => item.badgeType === 'PROBLEM' || item.badgeType === 'DESCRIPTIVE').length;
+    }, [allNavItems]);
 
     const handleSetQTypeFilter = (filter: 'ALL' | 'MCQ' | 'SCENARIO' | 'DESCRIPTIVE') => {
         setQTypeFilter(filter);
         if (filter === 'ALL') return;
-        const matches = allQuestions.filter(q => {
-            const isM = q.question_type === 'MCQ' || (q.options && q.options.length > 0);
-            const isS = !isM && (q.question_type === 'CASE_SCENARIO' || !!(q.case_scenario_passage && q.case_scenario_passage.trim().length > 0));
-            if (filter === 'MCQ') return isM;
-            if (filter === 'SCENARIO') return isS;
-            if (filter === 'DESCRIPTIVE') return !isM && !isS;
+        const matches = allNavItems.filter(item => {
+            if (filter === 'MCQ') return item.badgeType === 'MCQ';
+            if (filter === 'SCENARIO') return item.badgeType === 'SCENARIO';
+            if (filter === 'DESCRIPTIVE') return item.badgeType === 'PROBLEM' || item.badgeType === 'DESCRIPTIVE';
             return true;
         });
         if (matches.length > 0) {
-            if (!matches.some(m => m.question_id === currentQuestion?.question_id)) {
-                setSelectedQuestionId(matches[0].question_id);
+            const currentMatch = matches.find(m => m.questionId === selectedQuestionId && (m.subIdx < 0 || m.subIdx === activeSubQuestionIdx));
+            if (!currentMatch) {
+                setSelectedQuestionId(matches[0].questionId);
+                setActiveSubQuestionIdx(matches[0].subIdx >= 0 ? matches[0].subIdx : 0);
             }
         }
     };
@@ -1563,6 +1635,40 @@ export default function AdminAIQuestionImport() {
         if (!allQuestions.length) return null;
         return allQuestions.find(q => q.question_id === selectedQuestionId) || allQuestions[0];
     }, [allQuestions, selectedQuestionId]);
+
+    // Current active sub-question
+    const currentSubQuestion = useMemo(() => {
+        if (!currentQuestion) return null;
+        const subList = currentQuestion.subquestions || currentQuestion.sub_questions || [];
+        if (!subList.length) return null;
+        const safeIdx = Math.min(Math.max(0, activeSubQuestionIdx), subList.length - 1);
+        return subList[safeIdx];
+    }, [currentQuestion, activeSubQuestionIdx]);
+
+    const currentSubIdentifier = useMemo(() => {
+        if (!currentQuestion || !currentSubQuestion) return '';
+        const subList = currentQuestion.subquestions || currentQuestion.sub_questions || [];
+        const safeIdx = Math.min(Math.max(0, activeSubQuestionIdx), subList.length - 1);
+        return currentSubQuestion.identifier || currentSubQuestion.sub_question_number || `${currentQuestion.question_number}(${String.fromCharCode(97 + safeIdx)})`;
+    }, [currentQuestion, currentSubQuestion, activeSubQuestionIdx]);
+
+    const allAnswersList = useMemo(() => {
+        return (
+            activeJob?.extracted_payload?.validation?.answers_list ||
+            activeJob?.extracted_payload?.answers_list ||
+            activeBatch?.batch_payload?.answers_list ||
+            activeBatch?.batch_payload?.validation?.answers_list ||
+            []
+        );
+    }, [activeJob?.extracted_payload, activeBatch?.batch_payload]);
+
+    const navigateToNavItem = (item: QuestionNavItem) => {
+        setSelectedQuestionId(item.questionId);
+        setActiveSubQuestionIdx(item.subIdx >= 0 ? item.subIdx : 0);
+        if (item.subIdx >= 0) {
+            setSubQuestionViewMode('SINGLE');
+        }
+    };
 
     // Available chapters for the active question / paper
     const availableChapters = useMemo(() => {
@@ -2220,21 +2326,37 @@ export default function AdminAIQuestionImport() {
     };
 
     // Handle Manual Match Overrides
-    const handleOverrideMatch = (answerQNum: string) => {
-        if (!currentQuestion || !activeJob) return;
-        const answersList = activeJob.extracted_payload?.validation?.answers_list || [];
-        const found = answersList.find((a: any) => a.question_number === answerQNum);
+    const handleOverrideMatch = (answerQNum: string, targetSqIdx?: number) => {
+        if (!currentQuestion) return;
+        const found = allAnswersList.find((a: any) => {
+            const subId = a.sub_identifier || '';
+            const key = subId ? `${a.question_number}${subId}` : String(a.question_number || '');
+            return key === answerQNum || String(a.question_number || '') === answerQNum;
+        });
 
-        updateQuestionField('matched_answer', {
+        const newAns = {
             answer_id: found ? found.answer_id : '',
             answer_question_number: answerQNum,
             confidence_score: 1.0,
             review_flag: found ? 'MANUAL_MATCH' : 'UNMATCHED',
-            solution_text: found ? found.solution_text : '',
-            working_notes: found ? (found.working_notes || []).join('\n') : '',
-            structured_table: found ? found.structured_table : null,
+            solution_text: found ? found.solution_text || found.answer_text || '' : '',
+            working_notes: found ? (Array.isArray(found.working_notes) ? found.working_notes.join('\n') : found.working_notes || '') : '',
+            structured_table: found ? (found.structured_table || found.answer_table_data || null) : null,
             ai_explanation: currentQuestion.matched_answer?.ai_explanation || ''
-        });
+        };
+
+        const effSqIdx = targetSqIdx !== undefined ? targetSqIdx : (activeSubQuestionIdx >= 0 && (currentQuestion.subquestions || []).length > 0 ? activeSubQuestionIdx : -1);
+
+        if (effSqIdx >= 0) {
+            updateSubQuestionAnswerField(effSqIdx, 'solution_text', newAns.solution_text);
+            updateSubQuestionAnswerField(effSqIdx, 'working_notes', newAns.working_notes);
+            updateSubQuestionAnswerField(effSqIdx, 'structured_table', newAns.structured_table);
+            updateSubQuestionAnswerField(effSqIdx, 'confidence_score', 1.0);
+            updateSubQuestionAnswerField(effSqIdx, 'matching_status', 'matched');
+            updateSubQuestionAnswerField(effSqIdx, 'answer_question_number', answerQNum);
+        } else {
+            updateQuestionField('matched_answer', newAns);
+        }
         showToast(`Matched to Answer ${answerQNum}`);
     };
 
@@ -2999,7 +3121,7 @@ export default function AdminAIQuestionImport() {
 
                     {/* Question Selector Strip */}
                     <div className="ai-q-selector-strip" ref={stripRef}>
-                        {filteredQuestions.length === 0 ? (
+                        {filteredNavItems.length === 0 ? (
                             <div style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 <span>No questions match this format filter.</span>
                                 <button
@@ -3007,47 +3129,29 @@ export default function AdminAIQuestionImport() {
                                     onClick={() => handleSetQTypeFilter('ALL')}
                                     style={{ border: 'none', background: '#e2e8f0', padding: '0.2rem 0.5rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
                                 >
-                                    Show All ({allQuestions.length})
+                                    Show All ({allNavItems.length})
                                 </button>
                             </div>
                         ) : (
-                            filteredQuestions.map((q) => {
-                                const isSelected = q.question_id === currentQuestion?.question_id;
-                                const isApproved = q.is_approved;
-                                const isFlagged = q.matched_answer?.review_flag && q.matched_answer.review_flag !== 'MATCHED';
-                                const isMcq = q.question_type === 'MCQ' || (q.options && q.options.length > 0);
-                                const isScenario = !isMcq && (q.question_type === 'CASE_SCENARIO' || !!(q.case_scenario_passage && q.case_scenario_passage.trim().length > 0));
-                                const subList = q.subquestions || q.sub_questions || [];
-                                const subCount = subList.length;
+                            filteredNavItems.map((item) => {
+                                const isSelected = item.questionId === currentQuestion?.question_id &&
+                                    (item.subIdx === -1 || item.subIdx === activeSubQuestionIdx);
+                                const isApproved = item.isApproved;
+                                const isFlagged = item.isFlagged;
 
                                 return (
                                     <button
-                                        key={q.question_id}
+                                        key={item.navId}
                                         className={`ai-q-pill-btn ${isSelected ? 'active' : ''} ${isApproved ? 'approved' : ''} ${isFlagged ? 'flagged' : ''}`}
-                                        onClick={() => {
-                                            setSelectedQuestionId(q.question_id);
-                                            setActiveSubQuestionIdx(0);
-                                        }}
+                                        onClick={() => navigateToNavItem(item)}
+                                        title={item.isSub ? `Sub-Question ${item.label} (${item.marks} Marks)` : `Question ${item.label} (${item.marks} Marks)`}
                                     >
                                         {isApproved ? <Check size={13} /> : isFlagged ? <AlertTriangle size={13} /> : null}
-                                        <span className={`ai-pill-type-tag ${isMcq ? 'mcq' : isScenario ? 'scenario' : 'descriptive'}`}>
-                                            {isMcq ? 'MCQ' : isScenario ? 'SCENARIO' : 'PROBLEM'}
+                                        <span className={`ai-pill-type-tag ${item.badgeType.toLowerCase()}`}>
+                                            {item.badgeType}
                                         </span>
-                                        <span>Q{q.question_number}</span>
-                                        <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>({q.marks}M)</span>
-                                        {subCount > 0 && (
-                                            <span style={{
-                                                fontSize: '0.67rem',
-                                                padding: '0.1rem 0.35rem',
-                                                borderRadius: '4px',
-                                                background: isSelected ? 'rgba(255,255,255,0.25)' : '#e0e7ff',
-                                                color: isSelected ? '#ffffff' : '#4338ca',
-                                                fontWeight: 800,
-                                                marginLeft: '0.15rem'
-                                            }}>
-                                                {subCount} parts
-                                            </span>
-                                        )}
+                                        <span>{item.label}</span>
+                                        <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>({item.marks}M)</span>
                                     </button>
                                 );
                             })
@@ -3229,6 +3333,44 @@ export default function AdminAIQuestionImport() {
                                         <span>+ Add Sub-Part</span>
                                     </button>
                                 </div>
+
+                                {/* View Mode Toggle */}
+                                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSubQuestionViewMode('SINGLE')}
+                                        style={{
+                                            padding: '0.22rem 0.55rem',
+                                            borderRadius: '5px',
+                                            fontSize: '0.72rem',
+                                            fontWeight: subQuestionViewMode === 'SINGLE' ? 800 : 500,
+                                            background: subQuestionViewMode === 'SINGLE' ? '#4f46e5' : '#f1f5f9',
+                                            color: subQuestionViewMode === 'SINGLE' ? '#ffffff' : '#64748b',
+                                            border: 'none',
+                                            cursor: 'pointer'
+                                        }}
+                                        title="View this sub-question cleanly on its own page"
+                                    >
+                                        📄 Single Part View
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSubQuestionViewMode('COMBINED')}
+                                        style={{
+                                            padding: '0.22rem 0.55rem',
+                                            borderRadius: '5px',
+                                            fontSize: '0.72rem',
+                                            fontWeight: subQuestionViewMode === 'COMBINED' ? 800 : 500,
+                                            background: subQuestionViewMode === 'COMBINED' ? '#4f46e5' : '#f1f5f9',
+                                            color: subQuestionViewMode === 'COMBINED' ? '#ffffff' : '#64748b',
+                                            border: 'none',
+                                            cursor: 'pointer'
+                                        }}
+                                        title="View all sub-parts together in one scrollable page"
+                                    >
+                                        📜 View All Parts
+                                    </button>
+                                </div>
                             </div>
                         );
                     })()}
@@ -3241,7 +3383,11 @@ export default function AdminAIQuestionImport() {
                             <div className="ai-panel-header">
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                     <Sparkles size={17} color="#4f46e5" />
-                                    <span>Extracted Question {currentQuestion ? `Q${currentQuestion.question_number}` : ''}</span>
+                                    <span>
+                                        {currentSubQuestion && subQuestionViewMode === 'SINGLE'
+                                            ? `Extracted Sub-Question ${currentSubIdentifier} (Q${currentQuestion?.question_number})`
+                                            : `Extracted Question Q${currentQuestion?.question_number || ''}`}
+                                    </span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                     {currentQuestion && (
@@ -3252,15 +3398,25 @@ export default function AdminAIQuestionImport() {
                                                 fontSize: '0.8rem',
                                                 fontWeight: 700,
                                                 cursor: 'pointer',
-                                                border: currentQuestion.is_approved ? '1px solid #10b981' : '1px solid #cbd5e1',
-                                                background: currentQuestion.is_approved ? '#10b981' : '#ffffff',
-                                                color: currentQuestion.is_approved ? '#ffffff' : '#475569',
+                                                border: (currentSubQuestion && subQuestionViewMode === 'SINGLE' ? currentSubQuestion.is_approved : currentQuestion.is_approved) ? '1px solid #10b981' : '1px solid #cbd5e1',
+                                                background: (currentSubQuestion && subQuestionViewMode === 'SINGLE' ? currentSubQuestion.is_approved : currentQuestion.is_approved) ? '#10b981' : '#ffffff',
+                                                color: (currentSubQuestion && subQuestionViewMode === 'SINGLE' ? currentSubQuestion.is_approved : currentQuestion.is_approved) ? '#ffffff' : '#475569',
                                                 display: 'flex', alignItems: 'center', gap: '0.35rem'
                                             }}
-                                            onClick={toggleApproveQuestion}
+                                            onClick={() => {
+                                                if (currentSubQuestion && subQuestionViewMode === 'SINGLE') {
+                                                    handleToggleApproveSubQuestion(activeSubQuestionIdx);
+                                                } else {
+                                                    toggleApproveQuestion();
+                                                }
+                                            }}
                                         >
                                             <Check size={14} />
-                                            <span>{currentQuestion.is_approved ? 'Approved' : 'Approve Question'}</span>
+                                            <span>
+                                                {(currentSubQuestion && subQuestionViewMode === 'SINGLE')
+                                                    ? (currentSubQuestion.is_approved ? 'Approved' : 'Approve Sub-Part')
+                                                    : (currentQuestion.is_approved ? 'Approved' : 'Approve Question')}
+                                            </span>
                                         </button>
                                     )}
                                     {currentQuestion && (
@@ -3789,23 +3945,61 @@ export default function AdminAIQuestionImport() {
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                                                         <ListChecks size={18} color="#4f46e5" />
                                                         <strong style={{ fontSize: '0.95rem', color: '#1e293b' }}>
-                                                            Linked Sub-Questions ({(currentQuestion.subquestions || []).length})
+                                                            {subQuestionViewMode === 'SINGLE' && currentSubQuestion
+                                                                ? `Sub-Question ${currentSubIdentifier} of Question ${currentQuestion.question_number}`
+                                                                : `Linked Sub-Questions (${(currentQuestion.subquestions || []).length})`}
                                                         </strong>
                                                         <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                                                            {currentQuestion.question_type === 'CASE_SCENARIO' || !!(currentQuestion.case_scenario_passage && currentQuestion.case_scenario_passage.trim())
-                                                                ? '(Scenario extracted at parent top; sub-questions displayed below with individual suggested answers)'
-                                                                : '(Descriptive sub-questions displayed below with individual problem statements, tables, and answers)'}
+                                                            {subQuestionViewMode === 'SINGLE'
+                                                                ? `(Part ${activeSubQuestionIdx + 1} of ${(currentQuestion.subquestions || []).length})`
+                                                                : '(All sub-parts displayed on this page)'}
                                                         </span>
                                                     </div>
-                                                    <button
-                                                        type="button"
-                                                        className="ai-tool-btn primary"
-                                                        onClick={handleAddSubQuestion}
-                                                        title="Add a new sub-question under this parent question"
-                                                    >
-                                                        <Plus size={13} />
-                                                        <span>Add Sub-Question</span>
-                                                    </button>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', background: '#e0e7ff', padding: '2px', borderRadius: '6px' }}>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSubQuestionViewMode('SINGLE')}
+                                                                style={{
+                                                                    padding: '0.2rem 0.5rem',
+                                                                    borderRadius: '4px',
+                                                                    fontSize: '0.72rem',
+                                                                    fontWeight: subQuestionViewMode === 'SINGLE' ? 800 : 500,
+                                                                    background: subQuestionViewMode === 'SINGLE' ? '#4f46e5' : 'transparent',
+                                                                    color: subQuestionViewMode === 'SINGLE' ? '#ffffff' : '#4338ca',
+                                                                    border: 'none',
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                            >
+                                                                📄 Single Part Page
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSubQuestionViewMode('COMBINED')}
+                                                                style={{
+                                                                    padding: '0.2rem 0.5rem',
+                                                                    borderRadius: '4px',
+                                                                    fontSize: '0.72rem',
+                                                                    fontWeight: subQuestionViewMode === 'COMBINED' ? 800 : 500,
+                                                                    background: subQuestionViewMode === 'COMBINED' ? '#4f46e5' : 'transparent',
+                                                                    color: subQuestionViewMode === 'COMBINED' ? '#ffffff' : '#4338ca',
+                                                                    border: 'none',
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                            >
+                                                                📜 View All Parts
+                                                            </button>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            className="ai-tool-btn primary"
+                                                            onClick={handleAddSubQuestion}
+                                                            title="Add a new sub-question under this parent question"
+                                                        >
+                                                            <Plus size={13} />
+                                                            <span>Add Sub-Question</span>
+                                                        </button>
+                                                    </div>
                                                 </div>
 
                                                 {/* Quick Jump Bar across Sub-Questions */}
@@ -3868,236 +4062,385 @@ export default function AdminAIQuestionImport() {
                                                     </button>
                                                 </div>
 
-                                                {(currentQuestion.subquestions || []).map((sq: any, sqIdx: number) => {
-                                                    const sqIdentifier = sq.identifier || sq.sub_question_number || sq.sub_number || `${currentQuestion.question_number}(${String.fromCharCode(97 + sqIdx)})`;
-                                                    const isMcq = (sq.question_type === 'MCQ') || ((sq.options || []).length > 0);
-                                                    const matchStatus = (sq.matching_status || (sq.matched_answer ? 'matched' : 'needs_review')).toLowerCase();
-                                                    const isMatched = matchStatus === 'matched';
-                                                    const isApproved = !!sq.is_approved;
-
-                                                    return (
-                                                        <div key={sqIdx} id={`subq_card_${sqIdx}`} className="ai-subquestion-card">
-                                                            {/* Sub-Question Header */}
-                                                            <div className="ai-subq-card-header">
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                                                    <span className="ai-subq-badge">
-                                                                        Sub-Question {sqIdentifier}
-                                                                    </span>
-                                                                    {sq.original_question_number && sq.original_question_number !== sqIdentifier && (
-                                                                        <span className="ai-subq-orig-pill" title="Original Question Number in Source PDF">
-                                                                            Orig: {sq.original_question_number}
-                                                                        </span>
-                                                                    )}
-                                                                    <span className={`ai-subq-type-pill ${isMcq ? 'mcq' : 'descriptive'}`}>
-                                                                        {isMcq ? 'MCQ' : 'Descriptive'}
-                                                                    </span>
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                                                        <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Marks:</span>
-                                                                        <input
-                                                                            type="number"
-                                                                            className="ai-subq-marks-pill"
-                                                                            style={{ width: '50px', padding: '0.1rem 0.35rem' }}
-                                                                            value={sq.marks || 0}
-                                                                            onChange={(e) => updateSubQuestionField(sqIdx, 'marks', parseFloat(e.target.value) || 0)}
+                                                {/* Parent Problem Background & Financial Ledger / Table (Collapsible in Single View) */}
+                                                {subQuestionViewMode === 'SINGLE' && ((currentQuestion.case_scenario_passage && currentQuestion.case_scenario_passage.trim()) || 
+                                                  (currentQuestion.structured_table || currentQuestion.table_data) || 
+                                                  (currentQuestion.question_text && currentQuestion.question_text.trim() && currentQuestion.question_text.trim() !== currentSubQuestion?.question_text?.trim())) && (
+                                                    <div style={{
+                                                        marginBottom: '0.85rem',
+                                                        border: '1px solid #c7d2fe',
+                                                        borderRadius: '8px',
+                                                        background: '#f8fafc',
+                                                        overflow: 'hidden'
+                                                    }}>
+                                                        <div 
+                                                            onClick={() => setIsParentStemCollapsed(!isParentStemCollapsed)}
+                                                            style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'space-between',
+                                                                padding: '0.55rem 0.85rem',
+                                                                background: '#eef2ff',
+                                                                cursor: 'pointer',
+                                                                userSelect: 'none'
+                                                            }}
+                                                        >
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                                                <FileSpreadsheet size={15} color="#4f46e5" />
+                                                                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#3730a3' }}>
+                                                                    Question {currentQuestion.question_number} Common Context & Problem Data
+                                                                </span>
+                                                                <span style={{ fontSize: '0.7rem', color: '#6366f1' }}>
+                                                                    (Shared across all sub-parts)
+                                                                </span>
+                                                            </div>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#4f46e5', fontSize: '0.75rem', fontWeight: 600 }}>
+                                                                <span>{isParentStemCollapsed ? 'Show Details' : 'Hide'}</span>
+                                                                {isParentStemCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                                                            </div>
+                                                        </div>
+                                                        {!isParentStemCollapsed && (
+                                                            <div style={{ padding: '0.75rem 0.85rem' }}>
+                                                                {currentQuestion.case_scenario_passage?.trim() && (
+                                                                    <div style={{ marginBottom: '0.65rem' }}>
+                                                                        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569', marginBottom: '0.25rem' }}>Problem Scenario Passage:</div>
+                                                                        <textarea
+                                                                            className="ai-scenario-textarea"
+                                                                            rows={4}
+                                                                            value={currentQuestion.case_scenario_passage}
+                                                                            onChange={(e) => updateQuestionField('case_scenario_passage', e.target.value)}
+                                                                            style={{ width: '100%', fontSize: '0.84rem' }}
                                                                         />
                                                                     </div>
-                                                                    <span className={`ai-match-status-badge ${isMatched ? 'matched' : 'needs-review'}`}>
-                                                                        {isMatched ? '✓ MATCHED' : '⚠ NEEDS REVIEW'}
-                                                                    </span>
-                                                                </div>
-
-                                                                <div className="ai-subq-actions">
-                                                                    <button
-                                                                        type="button"
-                                                                        className={`ai-subq-approve-btn ${isApproved ? 'approved' : ''}`}
-                                                                        onClick={() => handleToggleApproveSubQuestion(sqIdx)}
-                                                                        title={isApproved ? 'Sub-question approved for publishing' : 'Click to approve sub-question'}
-                                                                    >
-                                                                        <CheckCircle2 size={13} />
-                                                                        <span>{isApproved ? 'Approved' : 'Approve'}</span>
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        className="ai-subq-delete-btn"
-                                                                        onClick={() => handleDeleteSubQuestion(sqIdx)}
-                                                                        title="Delete this sub-question"
-                                                                    >
-                                                                        <Trash2 size={13} />
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-
-                                                            {/* Sub-Question Statement */}
-                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                                    <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>
-                                                                        Sub-Question {sqIdentifier} Statement
-                                                                    </label>
-                                                                    {!(sq.structured_table || sq.table_data) && (
-                                                                        <button
-                                                                            type="button"
-                                                                            className="ai-tool-btn"
-                                                                            style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem' }}
-                                                                            onClick={() => {
-                                                                                const newTable = {
-                                                                                    title: `Table for Sub-Question ${sqIdentifier}`,
-                                                                                    columns: ['Particulars', 'Amount (₹)'],
-                                                                                    rows: [['', '']],
-                                                                                    notes: []
-                                                                                };
-                                                                                updateSubQuestionField(sqIdx, 'structured_table', newTable);
-                                                                                updateSubQuestionField(sqIdx, 'table_data', newTable);
-                                                                            }}
-                                                                        >
-                                                                            <Plus size={11} />
-                                                                            <span>+ Insert Table In-line</span>
-                                                                        </button>
-                                                                    )}
-                                                                </div>
-                                                                <textarea
-                                                                    className="ai-subq-textarea"
-                                                                    rows={3}
-                                                                    value={sq.question_text || sq.sub_text || ''}
-                                                                    onChange={(e) => updateSubQuestionField(sqIdx, 'question_text', e.target.value)}
-                                                                    placeholder={`Enter actual sub-question statement for ${sqIdentifier} (do not repeat scenario text here)...`}
-                                                                />
-                                                            </div>
-
-                                                            {/* Sub-Question Accounting Table (In-line, directly downside sub-question statement) */}
-                                                            {(sq.structured_table || sq.table_data) && (
-                                                                <div style={{ margin: '0.5rem 0' }}>
-                                                                    <AccountingTableEditor
-                                                                        table={sq.structured_table || sq.table_data}
-                                                                        onChange={(t) => {
-                                                                            updateSubQuestionField(sqIdx, 'structured_table', t);
-                                                                            updateSubQuestionField(sqIdx, 'table_data', t);
-                                                                        }}
-                                                                        label={`Sub-Question ${sqIdentifier} Financial / Ledger Table`}
-                                                                    />
-                                                                </div>
-                                                            )}
-
-                                                            {/* Sub-Question MCQ Options (if MCQ) */}
-                                                            {isMcq && (
-                                                                <div className="ai-subq-mcq-box">
-                                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0369a1' }}>
-                                                                            MCQ Options (Select the official correct option)
-                                                                        </span>
-                                                                        <button
-                                                                            type="button"
-                                                                            className="ai-tool-btn"
-                                                                            style={{ fontSize: '0.72rem', padding: '0.15rem 0.45rem' }}
-                                                                            onClick={() => {
-                                                                                const opts = sq.options || [];
-                                                                                const nextLabel = String.fromCharCode(65 + opts.length);
-                                                                                const newOpts = [...opts, { label: nextLabel, option_key: nextLabel, text: '', is_correct: false }];
-                                                                                updateSubQuestionField(sqIdx, 'options', newOpts);
-                                                                            }}
-                                                                        >
-                                                                            <Plus size={11} />
-                                                                            <span>Add Option</span>
-                                                                        </button>
-                                                                    </div>
-                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                                                                        {(sq.options || []).map((opt: any, oIdx: number) => {
-                                                                            const optLabel = opt.label || opt.option_key || String.fromCharCode(65 + oIdx);
-                                                                            const optText = opt.text ?? opt.option_text ?? '';
-                                                                            const isCorrect = !!opt.is_correct;
-                                                                            return (
-                                                                                <div key={oIdx} className={`ai-option-item-enhanced ${isCorrect ? 'correct' : ''}`} style={{ padding: '0.35rem 0.5rem' }}>
-                                                                                    <input
-                                                                                        type="radio"
-                                                                                        className="ai-option-radio-btn"
-                                                                                        name={`subq_opt_${sqIdx}_${currentQuestion.question_id}`}
-                                                                                        checked={isCorrect}
-                                                                                        onChange={() => updateSubQuestionCorrectOption(sqIdx, oIdx)}
-                                                                                        title={`Mark Option ${optLabel} as official correct answer`}
-                                                                                    />
-                                                                                    <div className="ai-option-badge-label" style={{ width: '22px', height: '22px', fontSize: '0.75rem' }}>
-                                                                                        {optLabel}
-                                                                                    </div>
-                                                                                    <input
-                                                                                        type="text"
-                                                                                        className="ai-option-text-input"
-                                                                                        value={optText}
-                                                                                        onChange={(e) => updateSubQuestionOption(sqIdx, oIdx, e.target.value)}
-                                                                                        placeholder={`Option ${optLabel} statement text`}
-                                                                                        style={{ fontSize: '0.82rem', padding: '0.25rem 0.45rem' }}
-                                                                                    />
-                                                                                    {isCorrect && (
-                                                                                        <span style={{ fontSize: '0.68rem', fontWeight: 800, background: '#10b981', color: '#fff', padding: '0.1rem 0.35rem', borderRadius: '4px' }}>
-                                                                                            Correct ✓
-                                                                                        </span>
-                                                                                    )}
-                                                                                    {(sq.options || []).length > 2 && (
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            className="ai-option-delete-btn"
-                                                                                            onClick={() => {
-                                                                                                const newOpts = sq.options.filter((_: any, idx: number) => idx !== oIdx);
-                                                                                                updateSubQuestionField(sqIdx, 'options', newOpts);
-                                                                                            }}
-                                                                                            title={`Delete option ${optLabel}`}
-                                                                                        >
-                                                                                            <Trash2 size={12} />
-                                                                                        </button>
-                                                                                    )}
-                                                                                </div>
-                                                                            );
-                                                                        })}
-                                                                    </div>
-                                                                </div>
-                                                            )}
-
-                                                            {/* Suggested Answer directly below each Sub-Question */}
-                                                            <div className="ai-subq-answer-card">
-                                                                <div className="ai-subq-answer-header">
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                                                        <CheckCircle2 size={15} color="#15803d" />
-                                                                        <strong style={{ fontSize: '0.82rem', color: '#166534' }}>
-                                                                            Suggested Answer {sqIdentifier}
-                                                                        </strong>
-                                                                        {sq.matched_answer?.confidence_score !== undefined && (
-                                                                            <span className={`ai-confidence-pill ${(sq.matched_answer?.confidence_score || 0) >= 0.8 ? 'ai-confidence-high' : 'ai-confidence-low'}`} style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem' }}>
-                                                                                {Math.round((sq.matched_answer?.confidence_score || 0) * 100)}% Match
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    {sq.matched_answer?.answer_source_document && (
-                                                                        <span style={{ fontSize: '0.7rem', color: '#166534', opacity: 0.85 }}>
-                                                                            Source: {sq.matched_answer.answer_source_document}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                                                                    <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#166534' }}>
-                                                                        {isMcq ? 'Official Option & Solution' : 'Suggested Answer Content'}
-                                                                    </label>
-                                                                    <textarea
-                                                                        className="ai-subq-ans-textarea"
-                                                                        rows={isMcq ? 2 : 4}
-                                                                        value={sq.matched_answer?.solution_text || sq.matched_answer?.answer_text || ''}
-                                                                        onChange={(e) => updateSubQuestionAnswerField(sqIdx, 'solution_text', e.target.value)}
-                                                                        placeholder={`Suggested official answer for Sub-Question ${sqIdentifier}...`}
-                                                                    />
-                                                                </div>
-                                                                {!isMcq && (
-                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                                                                        <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#166534' }}>Working Notes & Step Calculations</label>
+                                                                )}
+                                                                {!currentQuestion.case_scenario_passage?.trim() && currentQuestion.question_text?.trim() && currentQuestion.question_text.trim() !== currentSubQuestion?.question_text?.trim() && (
+                                                                    <div style={{ marginBottom: '0.65rem' }}>
+                                                                        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569', marginBottom: '0.25rem' }}>Problem Opening Statement:</div>
                                                                         <textarea
-                                                                            className="ai-subq-ans-textarea"
-                                                                            rows={2}
-                                                                            value={sq.matched_answer?.working_notes || ''}
-                                                                            onChange={(e) => updateSubQuestionAnswerField(sqIdx, 'working_notes', e.target.value)}
-                                                                            placeholder="ICAI step-marking notes, statutory references, or workings..."
+                                                                            className="ai-subq-textarea"
+                                                                            rows={3}
+                                                                            value={currentQuestion.question_text}
+                                                                            onChange={(e) => updateQuestionField('question_text', e.target.value)}
+                                                                            style={{ width: '100%', fontSize: '0.84rem' }}
+                                                                        />
+                                                                    </div>
+                                                                )}
+                                                                {(currentQuestion.structured_table || currentQuestion.table_data) && (
+                                                                    <div style={{ marginTop: '0.5rem' }}>
+                                                                        <AccountingTableEditor
+                                                                            table={currentQuestion.structured_table || currentQuestion.table_data}
+                                                                            onChange={(t) => {
+                                                                                updateQuestionField('structured_table', t);
+                                                                                updateQuestionField('table_data', t);
+                                                                            }}
+                                                                            label={`Question ${currentQuestion.question_number} Master Financial / Ledger Table`}
                                                                         />
                                                                     </div>
                                                                 )}
                                                             </div>
-                                                        </div>
-                                                    );
-                                                })}
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {(() => {
+                                                    const rawList = currentQuestion.subquestions || [];
+                                                    const subQuestionsToRender = (subQuestionViewMode === 'SINGLE' && currentSubQuestion)
+                                                        ? [{ sq: currentSubQuestion, sqIdx: activeSubQuestionIdx }]
+                                                        : rawList.map((sq: any, sqIdx: number) => ({ sq, sqIdx }));
+
+                                                    return subQuestionsToRender.map(({ sq, sqIdx }: { sq: any; sqIdx: number }) => {
+                                                        const sqIdentifier = sq.identifier || sq.sub_question_number || sq.sub_number || `${currentQuestion.question_number}(${String.fromCharCode(97 + sqIdx)})`;
+                                                        const isMcq = (sq.question_type === 'MCQ') || ((sq.options || []).length > 0);
+                                                        const matchStatus = (sq.matching_status || (sq.matched_answer ? 'matched' : 'needs_review')).toLowerCase();
+                                                        const isMatched = matchStatus === 'matched';
+                                                        const isApproved = !!sq.is_approved;
+
+                                                        return (
+                                                            <div key={sqIdx} id={`subq_card_${sqIdx}`} className="ai-subquestion-card">
+                                                                {/* Sub-Question Header */}
+                                                                <div className="ai-subq-card-header">
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                                        <span className="ai-subq-badge">
+                                                                            Sub-Question {sqIdentifier}
+                                                                        </span>
+                                                                        {sq.original_question_number && sq.original_question_number !== sqIdentifier && (
+                                                                            <span className="ai-subq-orig-pill" title="Original Question Number in Source PDF">
+                                                                                Orig: {sq.original_question_number}
+                                                                            </span>
+                                                                        )}
+                                                                        <span className={`ai-subq-type-pill ${isMcq ? 'mcq' : 'descriptive'}`}>
+                                                                            {isMcq ? 'MCQ' : 'Descriptive'}
+                                                                        </span>
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                                                            <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Marks:</span>
+                                                                            <input
+                                                                                type="number"
+                                                                                className="ai-subq-marks-pill"
+                                                                                style={{ width: '50px', padding: '0.1rem 0.35rem' }}
+                                                                                value={sq.marks || 0}
+                                                                                onChange={(e) => updateSubQuestionField(sqIdx, 'marks', parseFloat(e.target.value) || 0)}
+                                                                            />
+                                                                        </div>
+                                                                        <span className={`ai-match-status-badge ${isMatched ? 'matched' : 'needs-review'}`}>
+                                                                            {isMatched ? '✓ MATCHED' : '⚠ NEEDS REVIEW'}
+                                                                        </span>
+                                                                    </div>
+
+                                                                    <div className="ai-subq-actions">
+                                                                        <button
+                                                                            type="button"
+                                                                            className={`ai-subq-approve-btn ${isApproved ? 'approved' : ''}`}
+                                                                            onClick={() => handleToggleApproveSubQuestion(sqIdx)}
+                                                                            title={isApproved ? 'Sub-question approved for publishing' : 'Click to approve sub-question'}
+                                                                        >
+                                                                            <CheckCircle2 size={13} />
+                                                                            <span>{isApproved ? 'Approved' : 'Approve'}</span>
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            className="ai-subq-delete-btn"
+                                                                            onClick={() => handleDeleteSubQuestion(sqIdx)}
+                                                                            title="Delete this sub-question"
+                                                                        >
+                                                                            <Trash2 size={13} />
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Sub-Question Statement */}
+                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                                        <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>
+                                                                            Sub-Question {sqIdentifier} Statement
+                                                                        </label>
+                                                                        {!(sq.structured_table || sq.table_data) && (
+                                                                            <button
+                                                                                type="button"
+                                                                                className="ai-tool-btn"
+                                                                                style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem' }}
+                                                                                onClick={() => {
+                                                                                    const newTable = {
+                                                                                        title: `Table for Sub-Question ${sqIdentifier}`,
+                                                                                        columns: ['Particulars', 'Amount (₹)'],
+                                                                                        rows: [['', '']],
+                                                                                        notes: []
+                                                                                    };
+                                                                                    updateSubQuestionField(sqIdx, 'structured_table', newTable);
+                                                                                    updateSubQuestionField(sqIdx, 'table_data', newTable);
+                                                                                }}
+                                                                            >
+                                                                                <Plus size={11} />
+                                                                                <span>+ Insert Table In-line</span>
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                    <textarea
+                                                                        className="ai-subq-textarea"
+                                                                        rows={3}
+                                                                        value={sq.question_text || sq.sub_text || ''}
+                                                                        onChange={(e) => updateSubQuestionField(sqIdx, 'question_text', e.target.value)}
+                                                                        placeholder={`Enter actual sub-question statement for ${sqIdentifier} (do not repeat scenario text here)...`}
+                                                                    />
+                                                                </div>
+
+                                                                {/* Sub-Question Accounting Table (In-line, directly downside sub-question statement) */}
+                                                                {(sq.structured_table || sq.table_data) && (
+                                                                    <div style={{ margin: '0.5rem 0' }}>
+                                                                        <AccountingTableEditor
+                                                                            table={sq.structured_table || sq.table_data}
+                                                                            onChange={(t) => {
+                                                                                updateSubQuestionField(sqIdx, 'structured_table', t);
+                                                                                updateSubQuestionField(sqIdx, 'table_data', t);
+                                                                            }}
+                                                                            label={`Sub-Question ${sqIdentifier} Financial / Ledger Table`}
+                                                                        />
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Sub-Question MCQ Options (if MCQ) */}
+                                                                {isMcq && (
+                                                                    <div className="ai-subq-mcq-box">
+                                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0369a1' }}>
+                                                                                MCQ Options (Select the official correct option)
+                                                                            </span>
+                                                                            <button
+                                                                                type="button"
+                                                                                className="ai-tool-btn"
+                                                                                style={{ fontSize: '0.72rem', padding: '0.15rem 0.45rem' }}
+                                                                                onClick={() => {
+                                                                                    const opts = sq.options || [];
+                                                                                    const nextLabel = String.fromCharCode(65 + opts.length);
+                                                                                    const newOpts = [...opts, { label: nextLabel, option_key: nextLabel, text: '', is_correct: false }];
+                                                                                    updateSubQuestionField(sqIdx, 'options', newOpts);
+                                                                                }}
+                                                                            >
+                                                                                <Plus size={11} />
+                                                                                <span>Add Option</span>
+                                                                            </button>
+                                                                        </div>
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                                                            {(sq.options || []).map((opt: any, oIdx: number) => {
+                                                                                const optLabel = opt.label || opt.option_key || String.fromCharCode(65 + oIdx);
+                                                                                const optText = opt.text ?? opt.option_text ?? '';
+                                                                                const isCorrect = !!opt.is_correct;
+                                                                                return (
+                                                                                    <div key={oIdx} className={`ai-option-item-enhanced ${isCorrect ? 'correct' : ''}`} style={{ padding: '0.35rem 0.5rem' }}>
+                                                                                        <input
+                                                                                            type="radio"
+                                                                                            className="ai-option-radio-btn"
+                                                                                            name={`subq_opt_${sqIdx}_${currentQuestion.question_id}`}
+                                                                                            checked={isCorrect}
+                                                                                            onChange={() => updateSubQuestionCorrectOption(sqIdx, oIdx)}
+                                                                                            title={`Mark Option ${optLabel} as official correct answer`}
+                                                                                        />
+                                                                                        <div className="ai-option-badge-label" style={{ width: '22px', height: '22px', fontSize: '0.75rem' }}>
+                                                                                            {optLabel}
+                                                                                        </div>
+                                                                                        <input
+                                                                                            type="text"
+                                                                                            className="ai-option-text-input"
+                                                                                            value={optText}
+                                                                                            onChange={(e) => updateSubQuestionOption(sqIdx, oIdx, e.target.value)}
+                                                                                            placeholder={`Option ${optLabel} statement text`}
+                                                                                            style={{ fontSize: '0.82rem', padding: '0.25rem 0.45rem' }}
+                                                                                        />
+                                                                                        {isCorrect && (
+                                                                                            <span style={{ fontSize: '0.68rem', fontWeight: 800, background: '#10b981', color: '#fff', padding: '0.1rem 0.35rem', borderRadius: '4px' }}>
+                                                                                                Correct ✓
+                                                                                            </span>
+                                                                                        )}
+                                                                                        {(sq.options || []).length > 2 && (
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                className="ai-option-delete-btn"
+                                                                                                onClick={() => {
+                                                                                                    const newOpts = sq.options.filter((_: any, idx: number) => idx !== oIdx);
+                                                                                                    updateSubQuestionField(sqIdx, 'options', newOpts);
+                                                                                                }}
+                                                                                                title={`Delete option ${optLabel}`}
+                                                                                            >
+                                                                                                <Trash2 size={12} />
+                                                                                            </button>
+                                                                                        )}
+                                                                                    </div>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Suggested Answer directly below each Sub-Question */}
+                                                                <div className="ai-subq-answer-card">
+                                                                    <div className="ai-subq-answer-header">
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                                                            <CheckCircle2 size={15} color="#15803d" />
+                                                                            <strong style={{ fontSize: '0.82rem', color: '#166534' }}>
+                                                                                Suggested Answer {sqIdentifier}
+                                                                            </strong>
+                                                                            {sq.matched_answer?.confidence_score !== undefined && (
+                                                                                <span className={`ai-confidence-pill ${(sq.matched_answer?.confidence_score || 0) >= 0.8 ? 'ai-confidence-high' : 'ai-confidence-low'}`} style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem' }}>
+                                                                                    {Math.round((sq.matched_answer?.confidence_score || 0) * 100)}% Match
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        {sq.matched_answer?.answer_source_document && (
+                                                                            <span style={{ fontSize: '0.7rem', color: '#166534', opacity: 0.85 }}>
+                                                                                Source: {sq.matched_answer.answer_source_document}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                                                        <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#166534' }}>
+                                                                            {isMcq ? 'Official Option & Solution' : 'Suggested Answer Content'}
+                                                                        </label>
+                                                                        <textarea
+                                                                            className="ai-subq-ans-textarea"
+                                                                            rows={isMcq ? 2 : 4}
+                                                                            value={sq.matched_answer?.solution_text || sq.matched_answer?.answer_text || ''}
+                                                                            onChange={(e) => updateSubQuestionAnswerField(sqIdx, 'solution_text', e.target.value)}
+                                                                            placeholder={`Suggested official answer for Sub-Question ${sqIdentifier}...`}
+                                                                        />
+                                                                    </div>
+                                                                    {!isMcq && (
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                                                            <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#166534' }}>Working Notes & Step Calculations</label>
+                                                                            <textarea
+                                                                                className="ai-subq-ans-textarea"
+                                                                                rows={2}
+                                                                                value={sq.matched_answer?.working_notes || ''}
+                                                                                onChange={(e) => updateSubQuestionAnswerField(sqIdx, 'working_notes', e.target.value)}
+                                                                                placeholder="ICAI step-marking notes, statutory references, or workings..."
+                                                                            />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    });
+                                                })()}
+
+                                                {/* Navigation Bar between Sub-Parts in Single View */}
+                                                {subQuestionViewMode === 'SINGLE' && (currentQuestion.subquestions || []).length > 1 && (
+                                                    <div style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        marginTop: '1rem',
+                                                        padding: '0.75rem 1rem',
+                                                        background: '#f8fafc',
+                                                        border: '1px solid #e2e8f0',
+                                                        borderRadius: '8px'
+                                                    }}>
+                                                        <button
+                                                            type="button"
+                                                            disabled={activeSubQuestionIdx <= 0}
+                                                            onClick={() => handleJumpToSubQuestion(activeSubQuestionIdx - 1)}
+                                                            style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '0.35rem',
+                                                                padding: '0.35rem 0.75rem',
+                                                                borderRadius: '6px',
+                                                                border: '1px solid #cbd5e1',
+                                                                background: activeSubQuestionIdx <= 0 ? '#f1f5f9' : '#ffffff',
+                                                                color: activeSubQuestionIdx <= 0 ? '#94a3b8' : '#334155',
+                                                                fontSize: '0.8rem',
+                                                                fontWeight: 600,
+                                                                cursor: activeSubQuestionIdx <= 0 ? 'not-allowed' : 'pointer'
+                                                            }}
+                                                        >
+                                                            <ChevronLeft size={15} />
+                                                            <span>Previous Part</span>
+                                                        </button>
+
+                                                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569' }}>
+                                                            Part {activeSubQuestionIdx + 1} of {(currentQuestion.subquestions || []).length} ({currentSubIdentifier})
+                                                        </span>
+
+                                                        <button
+                                                            type="button"
+                                                            disabled={activeSubQuestionIdx >= (currentQuestion.subquestions || []).length - 1}
+                                                            onClick={() => handleJumpToSubQuestion(activeSubQuestionIdx + 1)}
+                                                            style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '0.35rem',
+                                                                padding: '0.35rem 0.75rem',
+                                                                borderRadius: '6px',
+                                                                border: '1px solid #cbd5e1',
+                                                                background: activeSubQuestionIdx >= (currentQuestion.subquestions || []).length - 1 ? '#f1f5f9' : '#ffffff',
+                                                                color: activeSubQuestionIdx >= (currentQuestion.subquestions || []).length - 1 ? '#94a3b8' : '#334155',
+                                                                fontSize: '0.8rem',
+                                                                fontWeight: 600,
+                                                                cursor: activeSubQuestionIdx >= (currentQuestion.subquestions || []).length - 1 ? 'not-allowed' : 'pointer'
+                                                            }}
+                                                        >
+                                                            <span>Next Part</span>
+                                                            <ChevronRight size={15} />
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </div>
                                         ) : (
                                             /* STANDALONE QUESTION (NO SUB-QUESTIONS) */
@@ -4441,215 +4784,250 @@ export default function AdminAIQuestionImport() {
                                 </button>
                             </div>
 
-                            {!rightMinimized && currentQuestion && (
-                                <>
-                                    {/* Match Confidence & Manual Override */}
-                                    <div style={{ padding: '0.85rem 1.25rem', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <span className={`ai-confidence-pill ${(currentQuestion.matched_answer?.confidence_score || 0) >= 0.8
-                                                    ? 'ai-confidence-high'
-                                                    : (currentQuestion.matched_answer?.confidence_score || 0) >= 0.5
-                                                        ? 'ai-confidence-medium'
-                                                        : 'ai-confidence-low'
-                                                }`}>
-                                                {Math.round((currentQuestion.matched_answer?.confidence_score || 0) * 100)}% Match
-                                            </span>
-                                            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>
-                                                {currentQuestion.matched_answer?.answer_question_number
-                                                    ? `Answer to Q${currentQuestion.matched_answer.answer_question_number}`
-                                                    : 'Unmatched'}
-                                            </span>
+                            {!rightMinimized && currentQuestion && (() => {
+                                const isSingleSub = subQuestionViewMode === 'SINGLE' && !!currentSubQuestion;
+                                const activeAns = isSingleSub
+                                    ? (currentSubQuestion.matched_answer || {})
+                                    : (currentQuestion.matched_answer || {});
+
+                                const ansConfidence = activeAns.confidence_score !== undefined
+                                    ? activeAns.confidence_score
+                                    : (activeAns.solution_text || activeAns.answer_text ? 0.95 : 0.0);
+
+                                const ansHeading = isSingleSub
+                                    ? (activeAns.answer_question_number
+                                        ? `Answer to ${activeAns.answer_question_number}`
+                                        : `Answer for Sub-Part ${currentSubIdentifier}`)
+                                    : (currentQuestion.matched_answer?.answer_question_number
+                                        ? `Answer to Q${currentQuestion.matched_answer.answer_question_number}`
+                                        : 'Unmatched');
+
+                                return (
+                                    <>
+                                        {/* Match Confidence & Manual Override */}
+                                        <div style={{ padding: '0.85rem 1.25rem', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <span className={`ai-confidence-pill ${ansConfidence >= 0.8
+                                                        ? 'ai-confidence-high'
+                                                        : ansConfidence >= 0.5
+                                                            ? 'ai-confidence-medium'
+                                                            : 'ai-confidence-low'
+                                                    }`}>
+                                                    {Math.round(ansConfidence * 100)}% Match
+                                                </span>
+                                                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>
+                                                    {ansHeading}
+                                                </span>
+                                            </div>
+
+                                            {/* Re-match selector */}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                                <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Remap:</label>
+                                                <select
+                                                    style={{ fontSize: '0.75rem', padding: '0.2rem 0.4rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                                                    value={activeAns.answer_question_number || ''}
+                                                    onChange={(e) => handleOverrideMatch(e.target.value, isSingleSub ? activeSubQuestionIdx : undefined)}
+                                                >
+                                                    <option value="">(None)</option>
+                                                    {allAnswersList.map((ans: any, aIdx: number) => {
+                                                        const qNum = ans.question_number || '';
+                                                        const subId = ans.sub_identifier || '';
+                                                        const label = `Answer Q${qNum}${subId ? ` (${subId})` : ''}`;
+                                                        const valKey = subId ? `${qNum}${subId}` : qNum;
+                                                        return (
+                                                            <option key={ans.answer_id || aIdx} value={valKey}>
+                                                                {label}
+                                                            </option>
+                                                        );
+                                                    })}
+                                                </select>
+                                            </div>
                                         </div>
 
-                                        {/* Re-match selector */}
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                                            <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Remap:</label>
-                                            <select
-                                                style={{ fontSize: '0.75rem', padding: '0.2rem 0.4rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}
-                                                value={currentQuestion.matched_answer?.answer_question_number || ''}
-                                                onChange={(e) => handleOverrideMatch(e.target.value)}
+                                        {/* Solution Tabs */}
+                                        <div className="ai-solution-tabs">
+                                            <button
+                                                className={`ai-solution-tab ${solutionTab === 'OFFICIAL' ? 'active' : ''}`}
+                                                onClick={() => setSolutionTab('OFFICIAL')}
                                             >
-                                                <option value="">(None)</option>
-                                                {((activeJob?.extracted_payload?.validation?.answers_list || activeJob?.extracted_payload?.answers_list || activeBatch?.batch_payload?.answers_list || activeBatch?.batch_payload?.validation?.answers_list) || []).map((ans: any, aIdx: number) => {
-                                                    const qNum = ans.question_number || '';
-                                                    const subId = ans.sub_identifier || '';
-                                                    const label = `Answer Q${qNum}${subId ? ` (${subId})` : ''}`;
-                                                    const valKey = subId ? `${qNum}${subId}` : qNum;
-                                                    return (
-                                                        <option key={ans.answer_id || aIdx} value={valKey}>
-                                                            {label}
-                                                        </option>
-                                                    );
-                                                })}
-                                            </select>
+                                                Official Answer
+                                            </button>
+                                            <button
+                                                className={`ai-solution-tab ${solutionTab === 'WORKING_NOTES' ? 'active' : ''}`}
+                                                onClick={() => setSolutionTab('WORKING_NOTES')}
+                                            >
+                                                Working Notes
+                                            </button>
+                                            <button
+                                                className={`ai-solution-tab ${solutionTab === 'AI_EXPLANATION' ? 'active' : ''}`}
+                                                onClick={() => setSolutionTab('AI_EXPLANATION')}
+                                            >
+                                                AI Explanation
+                                            </button>
                                         </div>
-                                    </div>
 
-                                    {/* Solution Tabs */}
-                                    <div className="ai-solution-tabs">
-                                        <button
-                                            className={`ai-solution-tab ${solutionTab === 'OFFICIAL' ? 'active' : ''}`}
-                                            onClick={() => setSolutionTab('OFFICIAL')}
-                                        >
-                                            Official Answer
-                                        </button>
-                                        <button
-                                            className={`ai-solution-tab ${solutionTab === 'WORKING_NOTES' ? 'active' : ''}`}
-                                            onClick={() => setSolutionTab('WORKING_NOTES')}
-                                        >
-                                            Working Notes
-                                        </button>
-                                        <button
-                                            className={`ai-solution-tab ${solutionTab === 'AI_EXPLANATION' ? 'active' : ''}`}
-                                            onClick={() => setSolutionTab('AI_EXPLANATION')}
-                                        >
-                                            AI Explanation
-                                        </button>
-                                    </div>
+                                        <div className="ai-panel-body">
+                                            {/* Tab 1: Official Solution */}
+                                            {solutionTab === 'OFFICIAL' && (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                                    <div className="ai-form-group">
+                                                        <label className="ai-form-label">
+                                                            {isSingleSub ? `Solution Text & Journal Entries (Sub-Question ${currentSubIdentifier})` : 'Solution Text & Journal Entries'}
+                                                        </label>
+                                                        <textarea
+                                                            rows={10}
+                                                            value={activeAns.solution_text || activeAns.answer_text || ''}
+                                                            onChange={(e) => {
+                                                                if (isSingleSub) {
+                                                                    updateSubQuestionAnswerField(activeSubQuestionIdx, 'solution_text', e.target.value);
+                                                                } else {
+                                                                    const ma = { ...currentQuestion.matched_answer, solution_text: e.target.value, answer_text: e.target.value };
+                                                                    updateQuestionField('matched_answer', ma);
+                                                                }
+                                                            }}
+                                                            style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', lineHeight: '1.45', outline: 'none' }}
+                                                        />
+                                                    </div>
 
-                                    <div className="ai-panel-body">
-                                        {/* Tab 1: Official Solution */}
-                                        {solutionTab === 'OFFICIAL' && (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                                <div className="ai-form-group">
-                                                    <label className="ai-form-label">Solution Text & Journal Entries</label>
-                                                    <textarea
-                                                        rows={10}
-                                                        value={currentQuestion.matched_answer?.solution_text || ''}
-                                                        onChange={(e) => {
-                                                            const ma = { ...currentQuestion.matched_answer, solution_text: e.target.value };
-                                                            updateQuestionField('matched_answer', ma);
+                                                    {/* Official Solution Financial / Ledger Table */}
+                                                    <AccountingTableEditor
+                                                        table={activeAns.structured_table || activeAns.answer_table_data}
+                                                        onChange={(t) => {
+                                                            if (isSingleSub) {
+                                                                updateSubQuestionAnswerField(activeSubQuestionIdx, 'structured_table', t);
+                                                            } else {
+                                                                const ma = {
+                                                                    ...currentQuestion.matched_answer,
+                                                                    structured_table: t,
+                                                                    answer_table_data: t
+                                                                };
+                                                                updateQuestionField('matched_answer', ma);
+                                                            }
                                                         }}
-                                                        style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', lineHeight: '1.45', outline: 'none' }}
+                                                        label={isSingleSub ? `Sub-Question ${currentSubIdentifier} Solution Table` : "Official Solution Accounting Table"}
                                                     />
-                                                </div>
 
-                                                {/* Official Solution Financial / Ledger Table */}
-                                                <AccountingTableEditor
-                                                    table={currentQuestion.matched_answer?.structured_table || currentQuestion.matched_answer?.answer_table_data}
-                                                    onChange={(t) => {
-                                                        const ma = {
-                                                            ...currentQuestion.matched_answer,
-                                                            structured_table: t,
-                                                            answer_table_data: t
-                                                        };
-                                                        updateQuestionField('matched_answer', ma);
-                                                    }}
-                                                    label="Official Solution Accounting Table"
-                                                />
-
-                                                {/* Sub-Question Solutions Breakdown in Panel 3 */}
-                                                {(currentQuestion.subquestions || []).length > 0 && (
-                                                    <div style={{ marginTop: '1rem', borderTop: '2px dashed #cbd5e1', paddingTop: '1rem' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                                                <CheckCircle2 size={16} color="#15803d" />
-                                                                <strong style={{ fontSize: '0.85rem', color: '#166534' }}>
-                                                                    Sub-Question Suggested Solutions ({(currentQuestion.subquestions || []).length} Parts)
-                                                                </strong>
+                                                    {/* Sub-Question Solutions Breakdown in Panel 3 (Shown only in COMBINED view) */}
+                                                    {!isSingleSub && (currentQuestion.subquestions || []).length > 0 && (
+                                                        <div style={{ marginTop: '1rem', borderTop: '2px dashed #cbd5e1', paddingTop: '1rem' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                                                    <CheckCircle2 size={16} color="#15803d" />
+                                                                    <strong style={{ fontSize: '0.85rem', color: '#166534' }}>
+                                                                        Sub-Question Suggested Solutions ({(currentQuestion.subquestions || []).length} Parts)
+                                                                    </strong>
+                                                                </div>
+                                                                <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                                                    Editable per sub-part
+                                                                </span>
                                                             </div>
-                                                            <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                                                                Editable per sub-part
-                                                            </span>
-                                                        </div>
 
-                                                        {(currentQuestion.subquestions || []).map((sq: any, sqIdx: number) => {
-                                                            const sqId = sq.identifier || sq.sub_question_number || `${currentQuestion.question_number}(${String.fromCharCode(97 + sqIdx)})`;
-                                                            const sqAns = sq.matched_answer || {};
-                                                            return (
-                                                                <div
-                                                                    key={sqIdx}
-                                                                    id={`sol_subq_card_${sqIdx}`}
-                                                                    style={{
-                                                                        background: '#f8fafc',
-                                                                        border: '1px solid #e2e8f0',
-                                                                        borderRadius: '8px',
-                                                                        padding: '0.75rem',
-                                                                        marginBottom: '0.75rem'
-                                                                    }}
-                                                                >
-                                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                                                                        <span style={{ fontWeight: 800, fontSize: '0.8rem', color: '#1e293b' }}>
-                                                                            Part {sqId} Solution ({sq.marks || 0} Marks)
-                                                                        </span>
-                                                                        {sqAns.confidence_score !== undefined && (
-                                                                            <span className="ai-confidence-pill ai-confidence-high" style={{ fontSize: '0.68rem', padding: '0.1rem 0.35rem' }}>
-                                                                                {Math.round((sqAns.confidence_score || 0) * 100)}% Match
+                                                            {(currentQuestion.subquestions || []).map((sq: any, sqIdx: number) => {
+                                                                const sqId = sq.identifier || sq.sub_question_number || `${currentQuestion.question_number}(${String.fromCharCode(97 + sqIdx)})`;
+                                                                const sqAns = sq.matched_answer || {};
+                                                                return (
+                                                                    <div
+                                                                        key={sqIdx}
+                                                                        id={`sol_subq_card_${sqIdx}`}
+                                                                        style={{
+                                                                            background: '#f8fafc',
+                                                                            border: '1px solid #e2e8f0',
+                                                                            borderRadius: '8px',
+                                                                            padding: '0.75rem',
+                                                                            marginBottom: '0.75rem'
+                                                                        }}
+                                                                    >
+                                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                                                                            <span style={{ fontWeight: 800, fontSize: '0.8rem', color: '#1e293b' }}>
+                                                                                Part {sqId} Solution ({sq.marks || 0} Marks)
                                                                             </span>
+                                                                            {sqAns.confidence_score !== undefined && (
+                                                                                <span className="ai-confidence-pill ai-confidence-high" style={{ fontSize: '0.68rem', padding: '0.1rem 0.35rem' }}>
+                                                                                    {Math.round((sqAns.confidence_score || 0) * 100)}% Match
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        {sq.question_text && (
+                                                                            <p style={{ margin: '0 0 0.4rem', fontSize: '0.75rem', color: '#475569', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sq.question_text}>
+                                                                                Q: {sq.question_text}
+                                                                            </p>
+                                                                        )}
+                                                                        <textarea
+                                                                            rows={4}
+                                                                            value={sqAns.solution_text || sqAns.answer_text || ''}
+                                                                            onChange={(e) => updateSubQuestionAnswerField(sqIdx, 'solution_text', e.target.value)}
+                                                                            placeholder={`Solution for Part ${sqId}...`}
+                                                                            style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', lineHeight: '1.4', outline: 'none' }}
+                                                                        />
+                                                                        {(sqAns.structured_table || sqAns.answer_table_data) && (
+                                                                            <div style={{ marginTop: '0.5rem' }}>
+                                                                                <AccountingTableEditor
+                                                                                    table={sqAns.structured_table || sqAns.answer_table_data}
+                                                                                    onChange={(t) => updateSubQuestionAnswerField(sqIdx, 'answer_table_data', t)}
+                                                                                    label={`Part ${sqId} Accounting Table`}
+                                                                                />
+                                                                            </div>
                                                                         )}
                                                                     </div>
-                                                                    {sq.question_text && (
-                                                                        <p style={{ margin: '0 0 0.4rem', fontSize: '0.75rem', color: '#475569', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sq.question_text}>
-                                                                            Q: {sq.question_text}
-                                                                        </p>
-                                                                    )}
-                                                                    <textarea
-                                                                        rows={4}
-                                                                        value={sqAns.solution_text || sqAns.answer_text || ''}
-                                                                        onChange={(e) => updateSubQuestionAnswerField(sqIdx, 'solution_text', e.target.value)}
-                                                                        placeholder={`Solution for Part ${sqId}...`}
-                                                                        style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', lineHeight: '1.4', outline: 'none' }}
-                                                                    />
-                                                                    {(sqAns.structured_table || sqAns.answer_table_data) && (
-                                                                        <div style={{ marginTop: '0.5rem' }}>
-                                                                            <AccountingTableEditor
-                                                                                table={sqAns.structured_table || sqAns.answer_table_data}
-                                                                                onChange={(t) => updateSubQuestionAnswerField(sqIdx, 'answer_table_data', t)}
-                                                                                label={`Part ${sqId} Accounting Table`}
-                                                                            />
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })}
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Tab 2: Working Notes */}
+                                            {solutionTab === 'WORKING_NOTES' && (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                                    <div className="ai-working-notes-box">
+                                                        <strong>💡 ICAI Working Notes & Calculations:</strong>
+                                                        <p style={{ margin: '0.35rem 0 0', fontSize: '0.8rem' }}>
+                                                            Preserved exactly from official answer key to ensure step-marking parity.
+                                                        </p>
                                                     </div>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        {/* Tab 2: Working Notes */}
-                                        {solutionTab === 'WORKING_NOTES' && (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                                <div className="ai-working-notes-box">
-                                                    <strong>💡 ICAI Working Notes & Calculations:</strong>
-                                                    <p style={{ margin: '0.35rem 0 0', fontSize: '0.8rem' }}>
-                                                        Preserved exactly from official answer key to ensure step-marking parity.
-                                                    </p>
+                                                    <textarea
+                                                        rows={10}
+                                                        value={activeAns.working_notes || ''}
+                                                        onChange={(e) => {
+                                                            if (isSingleSub) {
+                                                                updateSubQuestionAnswerField(activeSubQuestionIdx, 'working_notes', e.target.value);
+                                                            } else {
+                                                                const ma = { ...currentQuestion.matched_answer, working_notes: e.target.value };
+                                                                updateQuestionField('matched_answer', ma);
+                                                            }
+                                                        }}
+                                                        placeholder="Enter working notes, reference formulas, or schedules..."
+                                                        style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', lineHeight: '1.45' }}
+                                                    />
                                                 </div>
-                                                <textarea
-                                                    rows={10}
-                                                    value={currentQuestion.matched_answer?.working_notes || ''}
-                                                    onChange={(e) => {
-                                                        const ma = { ...currentQuestion.matched_answer, working_notes: e.target.value };
-                                                        updateQuestionField('matched_answer', ma);
-                                                    }}
-                                                    placeholder="Enter working notes, reference formulas, or schedules..."
-                                                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', lineHeight: '1.45' }}
-                                                />
-                                            </div>
-                                        )}
+                                            )}
 
-                                        {/* Tab 3: AI Explanation */}
-                                        {solutionTab === 'AI_EXPLANATION' && (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                                <div style={{ background: '#eef2ff', padding: '0.75rem', borderRadius: '8px', fontSize: '0.8rem', color: '#4338ca' }}>
-                                                    <strong>🤖 AI Pedagogical Breakdown:</strong> Kept strictly separate from the student's official answer key.
+                                            {/* Tab 3: AI Explanation */}
+                                            {solutionTab === 'AI_EXPLANATION' && (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                                    <div style={{ background: '#eef2ff', padding: '0.75rem', borderRadius: '8px', fontSize: '0.8rem', color: '#4338ca' }}>
+                                                        <strong>🤖 AI Pedagogical Breakdown:</strong> Kept strictly separate from the student's official answer key.
+                                                    </div>
+                                                    <textarea
+                                                        rows={8}
+                                                        value={activeAns.ai_explanation || ''}
+                                                        onChange={(e) => {
+                                                            if (isSingleSub) {
+                                                                updateSubQuestionAnswerField(activeSubQuestionIdx, 'ai_explanation', e.target.value);
+                                                            } else {
+                                                                const ma = { ...currentQuestion.matched_answer, ai_explanation: e.target.value };
+                                                                updateQuestionField('matched_answer', ma);
+                                                            }
+                                                        }}
+                                                        placeholder="Optional conceptual explanation for students who miss this question..."
+                                                        style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
+                                                    />
                                                 </div>
-                                                <textarea
-                                                    rows={8}
-                                                    value={currentQuestion.matched_answer?.ai_explanation || ''}
-                                                    onChange={(e) => {
-                                                        const ma = { ...currentQuestion.matched_answer, ai_explanation: e.target.value };
-                                                        updateQuestionField('matched_answer', ma);
-                                                    }}
-                                                    placeholder="Optional conceptual explanation for students who miss this question..."
-                                                    style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
-                                                />
-                                            </div>
-                                        )}
-                                    </div>
-                                </>
-                            )}
+                                            )}
+                                        </div>
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
 
