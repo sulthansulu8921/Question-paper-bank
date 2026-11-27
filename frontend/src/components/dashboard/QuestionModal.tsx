@@ -143,13 +143,13 @@ const renderTextWithInlineTables = (text: string, tableJson: string) => {
     // Fallback for legacy format: if no cursor tables explicitly defined, but tables exist and text has placeholders, treat them as cursor tables
     const activeCursorTables = cursorTables.length > 0 
         ? cursorTables 
-        : (text.includes('[TABLE]') ? tables : []);
+        : (text.includes('[TABLE') ? tables : []);
 
     if (activeCursorTables.length === 0 || !text.includes('[TABLE')) {
         return <div className="whitespace-pre-wrap" style={{ whiteSpace: 'pre-wrap' }}>{parseFormattingTags(text)}</div>;
     }
 
-    const regex = /(\[TABLE(?:_\d+)?\])/g;
+    const regex = /(\[TABLE(?:[_-]\d+)?\])/gi;
     const parts = text.split(regex);
     let generalCursorIndex = 0;
 
@@ -158,7 +158,7 @@ const renderTextWithInlineTables = (text: string, tableJson: string) => {
             {parts.map((part, index) => {
                 if (part.startsWith('[TABLE')) {
                     let targetTable = null;
-                    const match = part.match(/\[TABLE_(\d+)\]/);
+                    const match = part.match(/\[TABLE[_-](\d+)\]/i);
                     if (match) {
                         const tableNum = parseInt(match[1], 10);
                         targetTable = activeCursorTables[tableNum - 1];

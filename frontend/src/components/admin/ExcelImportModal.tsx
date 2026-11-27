@@ -18,19 +18,31 @@ interface ExcelImportModalProps {
     onSuccess: () => void;
 }
 
+interface ImportErrorItem {
+    row?: number;
+    column?: string;
+    message?: string;
+}
+
+interface ImportSkippedItem {
+    row?: number;
+    reason?: string;
+}
+
 interface ImportSummary {
     success: boolean;
     message: string;
+    created_count?: number;
+    skipped_count?: number;
+    error_count?: number;
     total_created?: number;
     mcq_count?: number;
     scenario_count?: number;
     scenario_sub_count?: number;
     problem_count?: number;
     problem_sub_count?: number;
-    skipped_count?: number;
-    error_count?: number;
-    skipped_rows?: string[];
-    error_rows?: string[];
+    skipped_rows?: (string | ImportSkippedItem)[];
+    error_rows?: (string | ImportErrorItem)[];
 }
 
 export default function ExcelImportModal({ isOpen, onClose, onSuccess }: ExcelImportModalProps) {
@@ -52,12 +64,12 @@ export default function ExcelImportModal({ isOpen, onClose, onSuccess }: ExcelIm
                 responseType: 'blob'
             });
             const filenameMap: Record<string, string> = {
-                all: 'QBank_Master_Import_Template.xlsx',
+                all: 'QBank_Import_Format.xlsx',
                 mcq: 'QBank_MCQ_Template.xlsx',
                 case_scenario: 'QBank_Case_Scenario_Template.xlsx',
                 descriptive: 'QBank_Descriptive_Problem_Template.xlsx'
             };
-            const filename = filenameMap[type] || 'Question_Template.xlsx';
+            const filename = filenameMap[type] || 'QBank_Import_Format.xlsx';
             const url = URL.createObjectURL(new Blob([resp.data]));
             const a = document.createElement('a');
             a.href = url;
@@ -637,18 +649,43 @@ export default function ExcelImportModal({ isOpen, onClose, onSuccess }: ExcelIm
                                 </div>
                             )}
 
+                            {/* Skipped rows / duplicate reporting */}
+                            {importResult.skipped_rows && importResult.skipped_rows.length > 0 && (
+                                <div style={{ marginTop: '0.75rem', background: '#ffffff', border: '1px solid #fde68a', borderRadius: '8px', padding: '0.75rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#92400e', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.35rem' }}>
+                                        <AlertCircle size={16} />
+                                        <span>Skipped Rows ({importResult.skipped_count || importResult.skipped_rows.length} duplicates / already exist):</span>
+                                    </div>
+                                    <div style={{ maxHeight: '140px', overflowY: 'auto' }}>
+                                        <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.75rem', color: '#78350f' }}>
+                                            {importResult.skipped_rows.map((item, i) => {
+                                                if (typeof item === 'string') return <li key={i}>{item}</li>;
+                                                return <li key={i}>Row {item.row}: {item.reason}</li>;
+                                            })}
+                                        </ul>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Warnings or errors */}
                             {importResult.error_rows && importResult.error_rows.length > 0 && (
                                 <div style={{ marginTop: '0.75rem', background: '#ffffff', border: '1px solid #fca5a5', borderRadius: '8px', padding: '0.75rem' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#b91c1c', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.35rem' }}>
                                         <AlertCircle size={16} />
-                                        <span>Error Details:</span>
+                                        <span>Error Details ({importResult.error_count || importResult.error_rows.length} issues found):</span>
                                     </div>
-                                    <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.75rem', color: '#7f1d1d' }}>
-                                        {importResult.error_rows.map((err, i) => (
-                                            <li key={i}>{err}</li>
-                                        ))}
-                                    </ul>
+                                    <div style={{ maxHeight: '160px', overflowY: 'auto' }}>
+                                        <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.75rem', color: '#7f1d1d' }}>
+                                            {importResult.error_rows.map((err, i) => {
+                                                if (typeof err === 'string') return <li key={i}>{err}</li>;
+                                                return (
+                                                    <li key={i}>
+                                                        <strong>Row {err.row}</strong> [{err.column || 'General'}]: {err.message}
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    </div>
                                 </div>
                             )}
 

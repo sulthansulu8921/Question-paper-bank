@@ -4,7 +4,7 @@ import api from '@/api/axios';
 import {
     Search, Plus, Edit, Trash2,
     SortAsc, SortDesc, Filter, Upload, FileSpreadsheet, Loader2,
-    Sparkles
+    Sparkles, Download
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ICAICascadeSelector, { type ICAISelection } from '@/components/admin/ICAICascadeSelector';
@@ -161,6 +161,24 @@ export default function AdminQuestionBank() {
         return filtered.slice(start, start + ITEMS_PER_PAGE);
     }, [filtered, currentPage]);
 
+    const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+    const downloadTemplate = async () => {
+        setDownloadingTemplate(true);
+        try {
+            const resp = await api.get('/materials/questions/download-template/?type=all', { responseType: 'blob' });
+            const url  = URL.createObjectURL(new Blob([resp.data]));
+            const a    = document.createElement('a');
+            a.href     = url;
+            a.download = 'QBank_Import_Format.xlsx';
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            alert('Failed to download template. Please try again.');
+        } finally {
+            setDownloadingTemplate(false);
+        }
+    };
+
     const exportExcel = async () => {
         setExporting(true);
         try {
@@ -168,7 +186,7 @@ export default function AdminQuestionBank() {
             const url  = URL.createObjectURL(new Blob([resp.data]));
             const a    = document.createElement('a');
             a.href     = url;
-            a.download = 'QBank_Questions.xlsx';
+            a.download = 'QBank_Exported_Questions.xlsx';
             a.click();
             URL.revokeObjectURL(url);
         } catch (e) {
@@ -193,6 +211,18 @@ export default function AdminQuestionBank() {
                     <p className="page-subtitle" style={{ color: '#64748b' }}>Manage enterprise questions</p>
                 </div>
                 <div className="header-actions">
+                    {/* Download Template */}
+                    <button
+                        className="secondary-btn flex-center gap-sm"
+                        onClick={downloadTemplate}
+                        disabled={downloadingTemplate}
+                        style={{ borderColor: '#4f46e5', color: '#4f46e5', fontWeight: 600 }}
+                        title="Download QBank_Import_Format.xlsx (Master Template)"
+                    >
+                        {downloadingTemplate ? <Loader2 size={18} className="spin" /> : <Download size={18} color="#4f46e5" />}
+                        <span>{downloadingTemplate ? 'Downloading...' : 'Download Template'}</span>
+                    </button>
+
                     {/* Export Excel */}
                     <button className="secondary-btn flex-center gap-sm" onClick={exportExcel} disabled={exporting}>
                         {exporting ? <Loader2 size={18} className="spin" /> : <FileSpreadsheet size={18} color="#16a34a" />}
@@ -203,20 +233,21 @@ export default function AdminQuestionBank() {
                     <button
                         className="secondary-btn flex-center gap-sm"
                         onClick={() => setIsExcelModalOpen(true)}
-                        style={{ borderColor: '#6366f1', color: '#6366f1', fontWeight: 600 }}
+                        style={{ background: '#f5f3ff', borderColor: '#7c3aed', color: '#7c3aed', fontWeight: 700 }}
                     >
                         <Upload size={18} />
                         <span>Import Excel (3 Models)</span>
                     </button>
 
-                    {/* AI Dual-PDF Import (QP + Answer Sheet) */}
+                    {/* AI Dual-PDF Import (Secondary) */}
                     <Link
                         to="/admin/questions/import"
-                        className="primary-btn flex-center gap-sm"
-                        style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)', borderColor: '#6366f1', color: '#ffffff', boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)' }}
+                        className="secondary-btn flex-center gap-sm"
+                        style={{ color: '#64748b', borderColor: '#cbd5e1' }}
+                        title="AI PDF Question Paper & Answer Sheet Import"
                     >
-                        <Sparkles size={18} />
-                        <span>AI PDF Question Paper Import</span>
+                        <Sparkles size={16} />
+                        <span>AI PDF Import</span>
                     </Link>
 
                     {/* Add Single Question Manually */}

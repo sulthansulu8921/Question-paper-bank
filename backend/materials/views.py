@@ -627,121 +627,41 @@ class AdminDashboardStatsView(APIView):
 import io
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
-from django.http import HttpResponse
+from rest_framework.parsers import MultiPartParser
+from materials.excel_service import (
+    generate_qbank_template,
+    import_questions_from_excel,
+    export_questions_to_excel
+)
 
 class ExportQuestionsExcelView(APIView):
+    """
+    GET /api/materials/questions/export-excel/
+    Lossless round-trip export conforming to Developer Spec:
+    Emits Group ID, 5 hierarchy columns, inline tables, MCQ options, and scenarios.
+    """
     permission_classes = [permissions.IsAuthenticated, IsQuestionAdmin]
 
     def get(self, request):
-        questions = SubjectiveQuestion.objects.select_related(
-            'subject', 'topic', 'icai_topic'
-        ).order_by('-created_at')
-
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Questions"
-
-        # ── Styles ──
-        header_font   = Font(bold=True, color="FFFFFF", size=11)
-        header_fill   = PatternFill("solid", fgColor="1E3A5F")
-        center_align  = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        left_align    = Alignment(horizontal="left",   vertical="top",    wrap_text=True)
-        thin_border   = Border(
-            left=Side(style='thin'), right=Side(style='thin'),
-            top=Side(style='thin'), bottom=Side(style='thin')
-        )
-        alt_fill      = PatternFill("solid", fgColor="EEF2FF")
-
-        # ── Column headers ──
-        headers = [
-            "ID", "Source", "Year", "Attempt", "Section", "Q No.",
-            "Question Type", "Marks", "Difficulty", "Status",
-            "Question Text", "Correct Answer",
-            "Subject", "Topic", "ICAI Path",
-            "Tags", "Is Important", "Added By", "Created At"
-        ]
-        col_widths = [6, 10, 6, 8, 8, 8, 12, 7, 10, 10, 60, 60, 20, 20, 30, 20, 12, 20, 18]
-
-        for col_idx, (header, width) in enumerate(zip(headers, col_widths), start=1):
-            cell = ws.cell(row=1, column=col_idx, value=header)
-            cell.font      = header_font
-            cell.fill      = header_fill
-            cell.alignment = center_align
-            cell.border    = thin_border
-            ws.column_dimensions[get_column_letter(col_idx)].width = width
-
-        ws.row_dimensions[1].height = 30
-        ws.freeze_panes = "A2"
-
-        # ── Data rows ──
-        for row_idx, q in enumerate(questions, start=2):
-            fill = alt_fill if row_idx % 2 == 0 else PatternFill()
-            
-            created_by_str = "System"
-            if q.created_by:
-                if q.created_by.first_name or q.created_by.last_name:
-                    created_by_str = f"{q.created_by.first_name} {q.created_by.last_name}".strip()
-                else:
-                    created_by_str = q.created_by.email or q.created_by.username
-
-            values = [
-                q.id,
-                q.source,
-                q.year,
-                q.attempt,
-                q.section or "",
-                q.q_no,
-                q.question_type,
-                q.marks,
-                q.difficulty,
-                q.status,
-                q.question_text or "",
-                q.correct_answer or "",
-                q.subject.name if q.subject else "",
-                q.topic.name   if q.topic   else "",
-                q.icai_path    if q.icai_topic_id else "",
-                q.tags or "",
-                "Yes" if q.is_important else "No",
-                created_by_str,
-                q.created_at.strftime("%Y-%m-%d %H:%M") if q.created_at else "",
-            ]
-            for col_idx, value in enumerate(values, start=1):
-                cell = ws.cell(row=row_idx, column=col_idx, value=value)
-                cell.border    = thin_border
-                cell.fill      = fill
-                cell.alignment = left_align if col_idx in (11, 12) else center_align
-
-        # ── Download response ──
-        buffer = io.BytesIO()
-        wb.save(buffer)
-        buffer.seek(0)
+        buffer, filename = export_questions_to_excel()
         response = HttpResponse(
             buffer.read(),
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
-        response['Content-Disposition'] = 'attachment; filename="QBank_Questions.xlsx"'
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
-
-
-# ─────────────────────────────────────────────────────────────
-# Excel Template Download & Import for 3 Question Types
-# (MCQ, Case Scenarios, Descriptive Problems)
-# ─────────────────────────────────────────────────────────────
-from rest_framework.parsers import MultiPartParser
-from materials.excel_service import generate_question_template, import_questions_from_excel
 
 
 class DownloadQuestionTemplateExcelView(APIView):
     """
-    GET /api/materials/questions/download-template/?type={all|mcq|case_scenario|descriptive}
-    Generates and downloads professional Excel templates pre-filled with CA exam questions.
+    GET /api/materials/questions/download-template/
+    Serves QBank_Import_Format.xlsx (Instructions + Questions sheet with real CA Inter Jan 2025 samples)
     """
     permission_classes = [permissions.IsAuthenticated, IsQuestionAdmin]
 
     def get(self, request):
         template_type = request.query_params.get('type', 'all')
-        buffer, filename = generate_question_template(template_type)
+        buffer, filename = generate_qbank_template(template_type)
         response = HttpResponse(
             buffer.read(),
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -753,11 +673,8 @@ class DownloadQuestionTemplateExcelView(APIView):
 class ImportQuestionsExcelView(APIView):
     """
     POST /api/materials/questions/import-excel/
-    Reads uploaded .xlsx and bulk-creates questions supporting:
-      1. Type 1: MCQ with Options A, B, C, D and correct answers
-      2. Type 2: Case Scenarios with passage, sub-questions, and options
-      3. Type 3: Descriptive / Practical Problems with sub-parts and working notes
-    Accepts both Master 3-in-1 multi-sheet workbooks and single-sheet template files.
+    Conforms to Developer Spec:
+    Bulk question importer reading 'Questions' sheet into Qualification -> Level -> Paper -> Chapter -> Topic hierarchy.
     """
     permission_classes = [permissions.IsAuthenticated, IsQuestionAdmin]
     parser_classes     = [MultiPartParser]
@@ -768,7 +685,7 @@ class ImportQuestionsExcelView(APIView):
             return Response({'error': 'No file uploaded. Send the Excel file as form-data field "file".'}, status=400)
 
         result = import_questions_from_excel(file_obj, request.user)
-        status_code = 201 if result.get('success') else 400
+        status_code = 201 if result.get('created_count', 0) > 0 else 400
         return Response(result, status=status_code)
 
 

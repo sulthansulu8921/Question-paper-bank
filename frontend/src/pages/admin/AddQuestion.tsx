@@ -243,7 +243,7 @@ const RenderPassageWithInlineTables = ({ text, tableJson }: { text: string; tabl
         );
     }
 
-    const regex = /(\[TABLE(?:_\d+)?\])/g;
+    const regex = /(\[TABLE(?:[_-]\d+)?\])/gi;
     const parts = text.split(regex);
     let generalCursorIndex = 0;
 
@@ -252,7 +252,7 @@ const RenderPassageWithInlineTables = ({ text, tableJson }: { text: string; tabl
             {parts.map((part, index) => {
                 if (part.startsWith('[TABLE')) {
                     let targetTable = null;
-                    const match = part.match(/\[TABLE_(\d+)\]/);
+                    const match = part.match(/\[TABLE[_-](\d+)\]/i);
                     if (match) {
                         const tableNum = parseInt(match[1], 10);
                         targetTable = activeTables[tableNum - 1];
