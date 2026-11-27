@@ -1695,10 +1695,25 @@ export default function AdminAIQuestionImport() {
         updateQuestionField('post_table_text', newPost);
     };
 
+    const getWorkingPayload = () => {
+        const raw = activeJob?.extracted_payload || activeBatch?.extracted_payload || activeBatch?.batch_payload;
+        return raw ? JSON.parse(JSON.stringify(raw)) : null;
+    };
+
+    const commitWorkingPayload = (payload: any) => {
+        if (activeJob) {
+            setActiveJob(prev => prev ? { ...prev, extracted_payload: payload } : null);
+        }
+        if (activeBatch) {
+            setActiveBatch(prev => prev ? { ...prev, extracted_payload: payload, batch_payload: payload } : null);
+        }
+    };
+
     // Update a field on a specific subquestion
     const updateSubQuestionField = (sqIdx: number, field: string, value: any) => {
-        if (!activeJob || !currentQuestion) return;
-        const payload = JSON.parse(JSON.stringify(activeJob.extracted_payload));
+        if ((!activeJob && !activeBatch) || !currentQuestion) return;
+        const payload = getWorkingPayload();
+        if (!payload) return;
         for (const sec of payload.sections || []) {
             for (const q of sec.questions || []) {
                 if (q.question_id === currentQuestion.question_id) {
@@ -1718,15 +1733,16 @@ export default function AdminAIQuestionImport() {
                 }
             }
         }
-        setActiveJob({ ...activeJob, extracted_payload: payload });
+        commitWorkingPayload(payload);
     };
 
     // Update an option on a specific subquestion
     const updateSubQuestionOption = (sqIdx: number, oIdx: number, arg3: string, arg4?: any) => {
-        if (!activeJob || !currentQuestion) return;
+        if ((!activeJob && !activeBatch) || !currentQuestion) return;
         const field = arg4 !== undefined ? arg3 : 'text';
         const value = arg4 !== undefined ? arg4 : arg3;
-        const payload = JSON.parse(JSON.stringify(activeJob.extracted_payload));
+        const payload = getWorkingPayload();
+        if (!payload) return;
         for (const sec of payload.sections || []) {
             for (const q of sec.questions || []) {
                 if (q.question_id === currentQuestion.question_id) {
@@ -1744,13 +1760,14 @@ export default function AdminAIQuestionImport() {
                 }
             }
         }
-        setActiveJob({ ...activeJob, extracted_payload: payload });
+        commitWorkingPayload(payload);
     };
 
     // Set correct option on a specific subquestion
     const updateSubQuestionCorrectOption = (sqIdx: number, oIdx: number) => {
-        if (!activeJob || !currentQuestion) return;
-        const payload = JSON.parse(JSON.stringify(activeJob.extracted_payload));
+        if ((!activeJob && !activeBatch) || !currentQuestion) return;
+        const payload = getWorkingPayload();
+        if (!payload) return;
         for (const sec of payload.sections || []) {
             for (const q of sec.questions || []) {
                 if (q.question_id === currentQuestion.question_id) {
@@ -1772,13 +1789,14 @@ export default function AdminAIQuestionImport() {
                 }
             }
         }
-        setActiveJob({ ...activeJob, extracted_payload: payload });
+        commitWorkingPayload(payload);
     };
 
     // Update answer field on a specific subquestion
     const updateSubQuestionAnswerField = (sqIdx: number, field: string, value: any) => {
-        if (!activeJob || !currentQuestion) return;
-        const payload = JSON.parse(JSON.stringify(activeJob.extracted_payload));
+        if ((!activeJob && !activeBatch) || !currentQuestion) return;
+        const payload = getWorkingPayload();
+        if (!payload) return;
         for (const sec of payload.sections || []) {
             for (const q of sec.questions || []) {
                 if (q.question_id === currentQuestion.question_id) {
@@ -1806,13 +1824,14 @@ export default function AdminAIQuestionImport() {
                 }
             }
         }
-        setActiveJob({ ...activeJob, extracted_payload: payload });
+        commitWorkingPayload(payload);
     };
 
     // Toggle approval for a subquestion
     const handleToggleApproveSubQuestion = (sqIdx: number) => {
-        if (!activeJob || !currentQuestion) return;
-        const payload = JSON.parse(JSON.stringify(activeJob.extracted_payload));
+        if ((!activeJob && !activeBatch) || !currentQuestion) return;
+        const payload = getWorkingPayload();
+        if (!payload) return;
         for (const sec of payload.sections || []) {
             for (const q of sec.questions || []) {
                 if (q.question_id === currentQuestion.question_id) {
@@ -1827,13 +1846,14 @@ export default function AdminAIQuestionImport() {
                 }
             }
         }
-        setActiveJob({ ...activeJob, extracted_payload: payload });
+        commitWorkingPayload(payload);
     };
 
     // Delete a subquestion
     const handleDeleteSubQuestion = (sqIdx: number) => {
-        if (!activeJob || !currentQuestion) return;
-        const payload = JSON.parse(JSON.stringify(activeJob.extracted_payload));
+        if ((!activeJob && !activeBatch) || !currentQuestion) return;
+        const payload = getWorkingPayload();
+        if (!payload) return;
         for (const sec of payload.sections || []) {
             for (const q of sec.questions || []) {
                 if (q.question_id === currentQuestion.question_id) {
@@ -1844,13 +1864,14 @@ export default function AdminAIQuestionImport() {
                 }
             }
         }
-        setActiveJob({ ...activeJob, extracted_payload: payload });
+        commitWorkingPayload(payload);
     };
 
     // Add a new subquestion
     const handleAddSubQuestion = () => {
-        if (!activeJob || !currentQuestion) return;
-        const payload = JSON.parse(JSON.stringify(activeJob.extracted_payload));
+        if ((!activeJob && !activeBatch) || !currentQuestion) return;
+        const payload = getWorkingPayload();
+        if (!payload) return;
         for (const sec of payload.sections || []) {
             for (const q of sec.questions || []) {
                 if (q.question_id === currentQuestion.question_id) {
@@ -1861,9 +1882,9 @@ export default function AdminAIQuestionImport() {
                         identifier: newId,
                         original_question_number: q.question_number,
                         sub_question_number: newId,
-                        question_type: currentQuestion.question_type === 'MCQ' ? 'MCQ' : 'NORMAL',
+                        question_type: currentQuestion.question_type === 'MCQ' ? 'MCQ' : (currentQuestion.question_type || 'NORMAL'),
                         question_text: '',
-                        marks: 2,
+                        marks: Math.max(2, Math.floor((parseFloat(q.marks) || 14) / Math.max(2, subList.length + 1))),
                         options: currentQuestion.question_type === 'MCQ' ? [
                             { label: 'A', option_key: 'A', text: '', is_correct: true, order: 0 },
                             { label: 'B', option_key: 'B', text: '', is_correct: false, order: 1 },
@@ -1887,7 +1908,7 @@ export default function AdminAIQuestionImport() {
                 }
             }
         }
-        setActiveJob({ ...activeJob, extracted_payload: payload });
+        commitWorkingPayload(payload);
     };
 
     // Format check helper for the 3 distinct question types
@@ -3085,11 +3106,51 @@ export default function AdminAIQuestionImport() {
                         (currentQuestion.subquestions && currentQuestion.subquestions.length > 0) ||
                         (currentQuestion.sub_questions && currentQuestion.sub_questions.length > 0) ||
                         currentQuestion.question_type === 'CASE_SCENARIO' ||
+                        currentQuestion.question_type === 'ACCOUNTING_PROBLEM' ||
                         (currentQuestion.case_scenario_passage && currentQuestion.case_scenario_passage.trim().length > 0)
                     ) && (() => {
                         const activeSubList = currentQuestion.subquestions || currentQuestion.sub_questions || [];
                         const totalSubMarks = activeSubList.reduce((acc: number, sq: any) => acc + (parseFloat(sq.marks) || 0), 0);
                         const parentMarks = parseFloat(currentQuestion.marks) || 0;
+
+                        if (activeSubList.length === 0) {
+                            return (
+                                <div className="ai-subparts-selector-strip">
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                                        <span style={{ fontSize: '0.74rem', fontWeight: 900, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                            SUB-PARTS:
+                                        </span>
+                                        <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                            (0 sub-parts)
+                                        </span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            handleAddSubQuestion();
+                                            setTimeout(() => handleJumpToSubQuestion(0), 100);
+                                        }}
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '0.3rem',
+                                            padding: '0.28rem 0.65rem',
+                                            borderRadius: '6px',
+                                            border: '1.5px dashed #6366f1',
+                                            background: '#ffffff',
+                                            color: '#4f46e5',
+                                            fontSize: '0.76rem',
+                                            fontWeight: 700,
+                                            cursor: 'pointer',
+                                            whiteSpace: 'nowrap'
+                                        }}
+                                    >
+                                        <Plus size={13} />
+                                        <span>+ Add Sub-Question {currentQuestion.question_number}(a)</span>
+                                    </button>
+                                </div>
+                            );
+                        }
 
                         return (
                             <div className="ai-subparts-selector-strip">
@@ -4041,6 +4102,53 @@ export default function AdminAIQuestionImport() {
                                         ) : (
                                             /* STANDALONE QUESTION (NO SUB-QUESTIONS) */
                                             <>
+                                                {/* Convert to Sub-Questions Quick Action Card */}
+                                                <div style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    padding: '0.65rem 0.95rem',
+                                                    background: '#f8fafc',
+                                                    border: '1.5px dashed #c7d2fe',
+                                                    borderRadius: '8px',
+                                                    marginBottom: '0.75rem',
+                                                    flexWrap: 'wrap',
+                                                    gap: '0.5rem'
+                                                }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                        <ListChecks size={18} color="#4f46e5" />
+                                                        <div>
+                                                            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1e293b' }}>
+                                                                Multi-Part Question? Add Sub-Questions
+                                                            </div>
+                                                            <div style={{ fontSize: '0.73rem', color: '#64748b' }}>
+                                                                Convert into sub-parts like {currentQuestion?.question_number}(a), {currentQuestion?.question_number}(b) with separate statements, tables, and answers.
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleAddSubQuestion}
+                                                        style={{
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '0.35rem',
+                                                            padding: '0.35rem 0.85rem',
+                                                            borderRadius: '6px',
+                                                            border: '1px solid #6366f1',
+                                                            background: '#4f46e5',
+                                                            color: '#ffffff',
+                                                            fontSize: '0.78rem',
+                                                            fontWeight: 700,
+                                                            cursor: 'pointer',
+                                                            boxShadow: '0 1px 3px rgba(79, 70, 229, 0.3)'
+                                                        }}
+                                                    >
+                                                        <Plus size={14} />
+                                                        <span>+ Add Sub-Question {currentQuestion?.question_number}(a)</span>
+                                                    </button>
+                                                </div>
+
                                                 {/* Main Question Stem / Opening Statement */}
                                                 <div className="ai-form-group">
                                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

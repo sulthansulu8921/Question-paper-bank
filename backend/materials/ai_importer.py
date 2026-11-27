@@ -1479,9 +1479,17 @@ CRITICAL HIERARCHICAL CASE SCENARIO & SUB-QUESTION RULES:
    - Set "question_type": "MCQ".
    - Options array: [{{"label": "A", "text": "...", "is_correct": false}}, ...].
    - ALWAYS separate options from "question_text"! The "question_text" contains ONLY the question stem.
-4. ACCOUNTING & FINANCIAL PRACTICAL PROBLEMS:
-   - Set "question_type": "ACCOUNTING_PROBLEM".
-   - Extract full problem statement, marks, subquestions, and accounting tables.
+4. ACCOUNTING & FINANCIAL PRACTICAL PROBLEMS (MANDATORY SUB-QUESTIONS):
+   - Set "question_type": "ACCOUNTING_PROBLEM" (or "NORMAL" / "DESCRIPTIVE").
+   - Extract full problem statement, background narrative, balance sheets, and trial balances.
+   - MANDATORY SUB-QUESTION EXTRACTION: Whenever an accounting problem or descriptive question contains multiple requirements, sub-parts, or lettered questions (e.g., "You are required to: (a) Show the journal entries... (10 Marks) (b) Prepare a note to show revised Share capital structure... (4 Marks)"):
+     * You MUST extract EACH requirement part as an item inside "subquestions"!
+     * Example: For Question 2 with requirements (a) and (b):
+       - Put the overall company background, balance sheet, and scheme adjustments in Question 2's "question_text" and "table_data".
+       - In Question 2's "subquestions", provide:
+         1) "identifier": "2(a)", "original_question_number": "2", "sub_question_number": "2(a)", "question_type": "DESCRIPTIVE", "question_text": "Show the journal entries, necessary to record the above transactions in the company’s books.", "marks": 10
+         2) "identifier": "2(b)", "original_question_number": "2", "sub_question_number": "2(b)", "question_type": "DESCRIPTIVE", "question_text": "Prepare a note to show revised Share capital structure of the company after completion of the scheme.", "marks": 4
+     * DO NOT collapse multi-part practical problems into a single question with empty subquestions! Sub-questions are essential for question navigation, answer matching, and step-by-step scoring.
 5. PRESERVE ACCOUNTING TABLES & INLINE POSITIONING:
    - Extract 4-column Balance Sheets/Trial Balances, Schedule III, Journal Entries, and Ledgers into "table_data": {{"headers": [...], "rows": [[...], ...]}}.
    - CRITICAL INLINE TABLE POSITIONING: If a question has an introductory stem (e.g. "Money Limited leased a machine to Hello Limited on the following terms:"), followed by a table, followed by requirements, discount rates, or calculations (e.g. "Discounted rates for 1st year to 5th year are 0.8696... Ascertain Unearned Finance Income."):
