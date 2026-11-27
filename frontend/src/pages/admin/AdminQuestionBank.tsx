@@ -1,13 +1,14 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/api/axios';
 import {
     Search, Plus, Edit, Trash2,
-    SortAsc, SortDesc, Filter, Upload, FileSpreadsheet, CheckCircle, XCircle, Loader2,
+    SortAsc, SortDesc, Filter, Upload, FileSpreadsheet, Loader2,
     Sparkles
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ICAICascadeSelector, { type ICAISelection } from '@/components/admin/ICAICascadeSelector';
+import ExcelImportModal from '@/components/admin/ExcelImportModal';
 import '@/styles/admin/QuestionManagement.css';
 
 const ITEMS_PER_PAGE = 20;
@@ -68,11 +69,8 @@ export default function AdminQuestionBank() {
 
     const [currentPage, setCurrentPage] = useState(1);
 
-    // Excel import state
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const [importing, setImporting] = useState(false);
-    const [importResult, setImportResult] = useState<any>(null);
     const [exporting, setExporting] = useState(false);
+    const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
 
     const { data: questions = [], isLoading } = useQuery({
         queryKey: ['admin-questions', icaiFilter],
@@ -180,66 +178,13 @@ export default function AdminQuestionBank() {
         }
     };
 
-    const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        setImporting(true);
-        setImportResult(null);
-        const formData = new FormData();
-        formData.append('file', file);
-        try {
-            const resp = await api.post('/materials/questions/import-excel/', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-            });
-            setImportResult({ success: true, ...resp.data });
-            queryClient.invalidateQueries({ queryKey: ['admin-questions'] });
-        } catch (err: any) {
-            setImportResult({ success: false, message: err?.response?.data?.error || 'Import failed.' });
-        } finally {
-            setImporting(false);
-            if (fileInputRef.current) fileInputRef.current.value = '';
-        }
-    };
-
     return (
         <div className="qm-container">
-            {/* Import result toast */}
-            {importResult && (
-                <div style={{
-                    position: 'fixed', top: '1.5rem', right: '1.5rem', zIndex: 9999,
-                    background: importResult.success ? '#f0fdf4' : '#fef2f2',
-                    border: `1px solid ${importResult.success ? '#86efac' : '#fca5a5'}`,
-                    borderRadius: '12px', padding: '1rem 1.5rem', maxWidth: '380px',
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                        {importResult.success
-                            ? <CheckCircle size={20} color="#16a34a" />
-                            : <XCircle size={20} color="#dc2626" />}
-                        <strong style={{ color: importResult.success ? '#15803d' : '#b91c1c' }}>
-                            {importResult.success ? 'Import Successful!' : 'Import Failed'}
-                        </strong>
-                        <button onClick={() => setImportResult(null)}
-                            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem', color: '#64748b' }}>✕</button>
-                    </div>
-                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#475569' }}>{importResult.message}</p>
-                    {importResult.success && (
-                        <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: '#64748b' }}>
-                            ✅ {importResult.created_count} added &nbsp;|&nbsp;
-                            ⚠️ {importResult.skipped_count} skipped &nbsp;|&nbsp;
-                            ❌ {importResult.error_count} errors
-                        </p>
-                    )}
-                </div>
-            )}
-
-            {/* Hidden file input for import */}
-            <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                style={{ display: 'none' }}
-                onChange={handleImportFile}
+            {/* Excel Import Working Model Modal */}
+            <ExcelImportModal
+                isOpen={isExcelModalOpen}
+                onClose={() => setIsExcelModalOpen(false)}
+                onSuccess={() => queryClient.invalidateQueries({ queryKey: ['admin-questions'] })}
             />
 
             <div className="qm-header" style={{ marginBottom: '1rem' }}>
@@ -254,15 +199,14 @@ export default function AdminQuestionBank() {
                         <span>{exporting ? 'Exporting...' : 'Export Excel'}</span>
                     </button>
 
-                    {/* Import Excel */}
+                    {/* Import Excel Working Model */}
                     <button
                         className="secondary-btn flex-center gap-sm"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={importing}
-                        style={{ borderColor: '#6366f1', color: '#6366f1' }}
+                        onClick={() => setIsExcelModalOpen(true)}
+                        style={{ borderColor: '#6366f1', color: '#6366f1', fontWeight: 600 }}
                     >
-                        {importing ? <Loader2 size={18} className="spin" /> : <Upload size={18} />}
-                        <span>{importing ? 'Importing...' : 'Import Excel'}</span>
+                        <Upload size={18} />
+                        <span>Import Excel (3 Models)</span>
                     </button>
 
                     {/* AI Dual-PDF Import (QP + Answer Sheet) */}

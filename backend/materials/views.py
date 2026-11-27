@@ -725,98 +725,52 @@ class ExportQuestionsExcelView(APIView):
 
 
 # ─────────────────────────────────────────────────────────────
-# Excel Import: POST /api/materials/questions/import-excel/
-# Reads uploaded .xlsx and bulk-creates questions
-# Required columns: source, year, attempt, q_no, question_text
+# Excel Template Download & Import for 3 Question Types
+# (MCQ, Case Scenarios, Descriptive Problems)
 # ─────────────────────────────────────────────────────────────
 from rest_framework.parsers import MultiPartParser
-from courses.models import Subject
+from materials.excel_service import generate_question_template, import_questions_from_excel
+
+
+class DownloadQuestionTemplateExcelView(APIView):
+    """
+    GET /api/materials/questions/download-template/?type={all|mcq|case_scenario|descriptive}
+    Generates and downloads professional Excel templates pre-filled with CA exam questions.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsQuestionAdmin]
+
+    def get(self, request):
+        template_type = request.query_params.get('type', 'all')
+        buffer, filename = generate_question_template(template_type)
+        response = HttpResponse(
+            buffer.read(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
 
 class ImportQuestionsExcelView(APIView):
+    """
+    POST /api/materials/questions/import-excel/
+    Reads uploaded .xlsx and bulk-creates questions supporting:
+      1. Type 1: MCQ with Options A, B, C, D and correct answers
+      2. Type 2: Case Scenarios with passage, sub-questions, and options
+      3. Type 3: Descriptive / Practical Problems with sub-parts and working notes
+    Accepts both Master 3-in-1 multi-sheet workbooks and single-sheet template files.
+    """
     permission_classes = [permissions.IsAuthenticated, IsQuestionAdmin]
     parser_classes     = [MultiPartParser]
-
-    REQUIRED_COLS = {'source', 'year', 'attempt', 'q_no', 'question_text'}
 
     def post(self, request):
         file_obj = request.FILES.get('file')
         if not file_obj:
             return Response({'error': 'No file uploaded. Send the Excel file as form-data field "file".'}, status=400)
 
-        try:
-            wb = openpyxl.load_workbook(file_obj, read_only=True, data_only=True)
-        except Exception:
-            return Response({'error': 'Invalid Excel file. Please upload a valid .xlsx file.'}, status=400)
+        result = import_questions_from_excel(file_obj, request.user)
+        status_code = 201 if result.get('success') else 400
+        return Response(result, status=status_code)
 
-        ws = wb.active
-        rows = list(ws.iter_rows(values_only=True))
-        if not rows:
-            return Response({'error': 'The Excel file is empty.'}, status=400)
-
-        # ── Map header names to column indexes ──
-        raw_headers = rows[0]
-        headers = {str(h).strip().lower().replace(' ', '_'): idx for idx, h in enumerate(raw_headers) if h}
-
-        missing = self.REQUIRED_COLS - headers.keys()
-        if missing:
-            return Response({
-                'error': f'Missing required columns: {", ".join(missing)}',
-                'hint':  'Required: source, year, attempt, q_no, question_text'
-            }, status=400)
-
-        created, skipped, errors = [], [], []
-
-        for row_num, row in enumerate(rows[1:], start=2):
-            def val(col, default=''):
-                idx = headers.get(col)
-                return str(row[idx]).strip() if idx is not None and row[idx] is not None else default
-
-            source = val('source')
-            year   = val('year')
-            attempt = val('attempt', 'MAY').upper()
-            q_no   = val('q_no')
-            q_text = val('question_text')
-
-            if not all([source, year, q_no, q_text]):
-                skipped.append(f"Row {row_num}: missing required values.")
-                continue
-
-            # Look up subject by name (optional)
-            subject = None
-            subj_name = val('subject')
-            if subj_name:
-                subject = Subject.objects.filter(name__iexact=subj_name).first()
-
-            try:
-                q = SubjectiveQuestion.objects.create(
-                    source         = source,
-                    year           = year,
-                    attempt        = attempt,
-                    section        = val('section', ''),
-                    q_no           = q_no,
-                    question_text  = q_text,
-                    correct_answer = val('correct_answer') or val('answer', ''),
-                    marks          = int(val('marks', '1') or 1),
-                    difficulty     = val('difficulty', 'MEDIUM').upper(),
-                    question_type  = val('question_type', 'NORMAL').upper(),
-                    tags           = val('tags', ''),
-                    is_important   = val('is_important', 'no').lower() in ('yes', 'true', '1'),
-                    status         = 'ACTIVE',
-                    subject        = subject,
-                    created_by     = request.user,
-                )
-                created.append(q.id)
-            except Exception as e:
-                errors.append(f"Row {row_num}: {str(e)}")
-
-        return Response({
-            'message':       f'Import complete. {len(created)} created, {len(skipped)} skipped, {len(errors)} errors.',
-            'created_count': len(created),
-            'skipped_count': len(skipped),
-            'error_count':   len(errors),
-            'skipped_rows':  skipped[:10],
-            'error_rows':    errors[:10],
-        }, status=201 if created else 400)
 
 
 # ─────────────────────────────────────────────────────────────
