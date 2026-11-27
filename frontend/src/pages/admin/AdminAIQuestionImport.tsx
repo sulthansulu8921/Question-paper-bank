@@ -1532,15 +1532,15 @@ export default function AdminAIQuestionImport() {
     const allNavItems = useMemo<QuestionNavItem[]>(() => {
         const items: QuestionNavItem[] = [];
         allQuestions.forEach((q) => {
-            const isParentMcq = q.question_type === 'MCQ' || ((q.options || []).length > 0);
-            const isScenario = !isParentMcq && (q.question_type === 'CASE_SCENARIO' || !!(q.case_scenario_passage && q.case_scenario_passage.trim()));
+            const isScenario = q.question_type === 'CASE_SCENARIO' || !!(q.case_scenario_passage && q.case_scenario_passage.trim());
+            const isParentMcq = !isScenario && (q.question_type === 'MCQ' || ((q.options || []).length > 0));
             const subList = q.subquestions || q.sub_questions || [];
 
             if (subList.length > 0) {
                 subList.forEach((sq: any, sIdx: number) => {
-                    const sqId = sq.identifier || sq.sub_question_number || `${q.question_number}(${String.fromCharCode(97 + sIdx)})`;
+                    const sqId = sq.identifier || sq.sub_question_number || (isScenario ? `${q.question_number}.${sIdx + 1}` : `${q.question_number}(${String.fromCharCode(97 + sIdx)})`);
                     const isSqMcq = (sq.question_type === 'MCQ') || ((sq.options || []).length > 0);
-                    const bType: 'MCQ' | 'SCENARIO' | 'PROBLEM' | 'DESCRIPTIVE' = isSqMcq ? 'MCQ' : (isScenario ? 'SCENARIO' : 'PROBLEM');
+                    const bType: 'MCQ' | 'SCENARIO' | 'PROBLEM' | 'DESCRIPTIVE' = isScenario ? 'SCENARIO' : (isSqMcq ? 'MCQ' : 'PROBLEM');
                     const sqMarks = sq.marks !== undefined && sq.marks !== null ? Number(sq.marks) : 2;
                     const isApproved = !!sq.is_approved;
                     const isFlagged = sq.matching_status === 'needs_review' || (sq.matched_answer?.review_flag && sq.matched_answer.review_flag !== 'MATCHED');
@@ -1562,7 +1562,7 @@ export default function AdminAIQuestionImport() {
                     });
                 });
             } else {
-                const bType: 'MCQ' | 'SCENARIO' | 'PROBLEM' | 'DESCRIPTIVE' = isParentMcq ? 'MCQ' : (isScenario ? 'SCENARIO' : 'PROBLEM');
+                const bType: 'MCQ' | 'SCENARIO' | 'PROBLEM' | 'DESCRIPTIVE' = isScenario ? 'SCENARIO' : (isParentMcq ? 'MCQ' : 'PROBLEM');
                 const isApproved = !!q.is_approved;
                 const isFlagged = q.matched_answer?.review_flag && q.matched_answer.review_flag !== 'MATCHED';
 
@@ -3091,7 +3091,7 @@ export default function AdminAIQuestionImport() {
                             onClick={() => handleSetQTypeFilter('ALL')}
                         >
                             <span>All Questions</span>
-                            <span style={{ opacity: 0.8, fontSize: '0.72rem' }}>({allQuestions.length})</span>
+                            <span style={{ opacity: 0.8, fontSize: '0.72rem' }}>({allNavItems.length})</span>
                         </button>
                         <button
                             type="button"
@@ -3512,9 +3512,9 @@ export default function AdminAIQuestionImport() {
 
                                         {/* AI Question Format Analysis & Perfection Banner */}
                                         {(() => {
-                                            const isCurMcq = currentQuestion.question_type === 'MCQ' || (currentQuestion.options && currentQuestion.options.length > 0);
-                                            const isCurScenario = !isCurMcq && (currentQuestion.question_type === 'CASE_SCENARIO' || !!(currentQuestion.case_scenario_passage && currentQuestion.case_scenario_passage.trim().length > 0));
-                                            const curFormat = isCurMcq ? 'mcq' : isCurScenario ? 'scenario' : 'descriptive';
+                                            const isCurScenario = currentQuestion.question_type === 'CASE_SCENARIO' || !!(currentQuestion.case_scenario_passage && currentQuestion.case_scenario_passage.trim().length > 0);
+                                            const isCurMcq = !isCurScenario && (currentQuestion.question_type === 'MCQ' || (currentQuestion.options && currentQuestion.options.length > 0));
+                                            const curFormat = isCurScenario ? 'scenario' : isCurMcq ? 'mcq' : 'descriptive';
 
                                             return (
                                                 <div className={`ai-format-analysis-banner ${curFormat}`}>
