@@ -1,11 +1,14 @@
 import io
 import re
 import json
+import uuid
+import hashlib
 from typing import Dict, List, Tuple, Any, Optional
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from django.db import transaction
+from django.utils import timezone
 from django.utils.text import slugify
 
 from materials.models import (
@@ -13,7 +16,11 @@ from materials.models import (
     SubQuestion,
     QuestionOption,
     Answer,
-    Scenario
+    Scenario,
+    ImportBatch,
+    QuestionImportJob,
+    SourceDocument,
+    ImportAuditLog
 )
 from master_data.models import (
     CALevel,
@@ -445,6 +452,37 @@ def generate_qbank_template(template_type: str = 'all') -> Tuple[io.BytesIO, str
         "[/TABLE]"
     )
 
+    table_q6_eps = (
+        "(Or - alternative to Q6(a))\n\n"
+        "From the following information, compute Basic and Diluted Earnings Per Share (EPS) of Alpha Ltd. as per AS 20:\n\n"
+        "[TABLE]\n"
+        "Particulars | ₹\n"
+        "Net Profit for the year 2024-2025 | 22,00,000\n"
+        "10% Convertible Debentures of ₹ 100 each | 10,00,000\n"
+        "Number of equity shares of ₹ 10 each | 5,00,000\n"
+        "Rate of Income Tax | 30%\n"
+        "Conversion terms: Each debenture is convertible into 2 equity shares | -\n"
+        "[/TABLE]"
+    )
+
+    ans_q6_eps = (
+        "Working Notes & Computation of Basic and Diluted EPS as per AS 20:\n\n"
+        "[TABLE]\n"
+        "Particulars | Basic EPS | Diluted EPS\n"
+        "Net Profit attributable to Equity Shareholders (₹) | 22,00,000 | 22,70,000\n"
+        "Number of Equity Shares | 5,00,000 | 7,00,000\n"
+        "Earnings Per Share (EPS) (₹) | 4.40 | 3.24\n"
+        "[/TABLE]\n\n"
+        "Working Notes:\n"
+        "1. Number of convertible debentures = ₹ 10,00,000 / ₹ 100 = 10,000 debentures.\n"
+        "2. Additional equity shares on conversion = 10,000 * 2 = 20,000 shares (or 2,00,000 shares). Total shares for Diluted EPS = 5,00,000 + 2,00,000 = 7,00,000 shares.\n"
+        "3. Debenture Interest = ₹ 10,00,000 * 10% = ₹ 1,00,000.\n"
+        "4. Net interest saved after tax = ₹ 1,00,000 * (1 - 0.30) = ₹ 70,000.\n"
+        "5. Adjusted Net Profit for Diluted EPS = ₹ 22,00,000 + ₹ 70,000 = ₹ 22,70,000.\n"
+        "6. Basic EPS = ₹ 22,00,000 / 5,00,000 = ₹ 4.40 per share.\n"
+        "7. Diluted EPS = ₹ 22,70,000 / 7,00,000 = ₹ 3.24 per share."
+    )
+
     cs_sample_rows = [
         [
             "CS-01", "CA", "CA Intermediate", "Advanced Accounting", "Accounting Standards", "Case Scenarios",
@@ -496,6 +534,14 @@ def generate_qbank_template(template_type: str = 'all') -> Tuple[io.BytesIO, str
             table_q3b,
             "", "", "", "",
             "", ans_q3b, "Journal Entries, TDS", "No"
+        ],
+        [
+            "Q6", "CA", "CA Intermediate", "Advanced Accounting", "AS 20 Earnings Per Share", "Practical Problems",
+            "PYQ", "2025", "JAN", "Part II", "6(a)", "DESCRIPTIVE", 5, "MEDIUM", "ACTIVE",
+            "",
+            table_q6_eps,
+            "", "", "", "",
+            "", ans_q6_eps, "AS 20, EPS, Basic EPS, Diluted EPS", "Yes"
         ],
     ]
 
@@ -573,26 +619,16 @@ def generate_qbank_template(template_type: str = 'all') -> Tuple[io.BytesIO, str
 # 5. ROBUST BULK EXCEL IMPORTER (DJANGO / DRF)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def import_questions_from_excel(file_obj: Any, user: Any) -> Dict[str, Any]:
+def parse_excel_file_to_rows(file_obj: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Optional[str]]:
     """
-    Master Excel Importer conforming to Developer Spec:
-    - Finds sheet 'Questions' (or processes all data sheets in multi-sheet workbooks).
-    - Auto-creates generic hierarchy: Qualification -> Level -> Paper -> Chapter -> Topic.
-    - Sets icai_topic and chapter on questions.
-    - Recognizes MCQs, Case Scenarios (shared passage + Group ID), Descriptive Problems with sub-parts.
-    - Parses inline [TABLE]...[/TABLE] blocks with shape validation.
-    - Normalizes attempts (JAN/MAY/SEP/NOV).
-    - Deduplicates: Level + Paper + Source + Year + Q No. (+ Group ID).
-    - Safe transaction rollback on failure.
-    - Returns structured counts and scrollable error/skipped rows list.
+    Parses any uploaded Excel workbook (.xlsx or .xls) into structured, validated data rows.
+    Handles multi-sheet workbooks, alias matching, table shape validation, and attempt normalization.
+    Returns: (data_rows, error_rows, fatal_error_string)
     """
     try:
         wb = openpyxl.load_workbook(file_obj, data_only=True)
     except Exception as e:
-        return {
-            'success': False,
-            'error': f'Invalid Excel file: {str(e)}. Please upload a valid .xlsx file.'
-        }
+        return [], [], f'Invalid Excel file: {str(e)}. Please upload a valid .xlsx file.'
 
     # Identify target data sheets:
     # 1. Prefer sheet explicitly named 'questions'
@@ -659,7 +695,6 @@ def import_questions_from_excel(file_obj: Any, user: Any) -> Dict[str, Any]:
     # Parse rows into raw data
     data_rows = []
     error_rows = []
-    skipped_rows = []
 
     for ws in target_sheets:
         raw_rows = list(ws.iter_rows(values_only=True))
@@ -693,10 +728,7 @@ def import_questions_from_excel(file_obj: Any, user: Any) -> Dict[str, Any]:
         missing_cols = [lbl for canon, lbl in required_canon if resolved_cols.get(canon) is None]
         if missing_cols:
             if len(target_sheets) == 1:
-                return {
-                    'success': False,
-                    'error': f'Missing required columns in sheet "{ws.title}": {", ".join(missing_cols)}'
-                }
+                return [], [], f'Missing required columns in sheet "{ws.title}": {", ".join(missing_cols)}'
             continue
 
         # Helper to extract cell value
@@ -853,6 +885,23 @@ def import_questions_from_excel(file_obj: Any, user: Any) -> Dict[str, Any]:
                 'tags': tags,
                 'is_important': is_imp
             })
+
+    return data_rows, error_rows, None
+
+
+def import_questions_from_excel(file_obj: Any, user: Any) -> Dict[str, Any]:
+    """
+    Master Excel Importer conforming to Developer Spec (Direct Bulk Publishing):
+    - Uses parse_excel_file_to_rows to process worksheets.
+    - Resolves/creates hierarchy: Qualification -> Level -> Paper -> Chapter -> Topic.
+    - Atomically creates SubjectiveQuestion, SubQuestion, QuestionOption, Answer records.
+    - Deduplicates against existing questions.
+    """
+    data_rows, error_rows, fatal_error = parse_excel_file_to_rows(file_obj)
+    if fatal_error:
+        return {'success': False, 'error': fatal_error}
+
+    skipped_rows = []
 
     if not data_rows:
         return {
@@ -1237,6 +1286,412 @@ def import_questions_from_excel(file_obj: Any, user: Any) -> Dict[str, Any]:
         'skipped_rows': skipped_rows[:15],
         'error_rows': error_rows[:15],
         'message': msg
+    }
+
+
+def import_excel_to_verification_batch(file_obj: Any, user: Any, batch_name: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Editable Verification Importer:
+    Parses questions, options, and tables from an uploaded Excel workbook,
+    creates an ImportBatch and QuestionImportJob in 'needs_review' status,
+    and returns batch details so the admin can review, edit, test solutions,
+    and click 'Verify & Publish All Questions'.
+    """
+    file_filename = getattr(file_obj, 'name', 'Uploaded_Questions.xlsx')
+    data_rows, error_rows, fatal_error = parse_excel_file_to_rows(file_obj)
+    if fatal_error:
+        return {'success': False, 'error': fatal_error}
+
+    if error_rows:
+        return {
+            'success': False,
+            'error_count': len(error_rows),
+            'error_rows': error_rows[:15],
+            'message': f"Validation failed on {len(error_rows)} row(s). Please correct the table syntax or required columns and re-upload."
+        }
+
+    if not data_rows:
+        return {
+            'success': False,
+            'error_count': 0,
+            'error_rows': [],
+            'message': "The uploaded Excel file contains no valid question rows."
+        }
+
+    grouped_units: List[List[Dict[str, Any]]] = []
+    current_named_groups: Dict[str, List[Dict[str, Any]]] = {}
+
+    for row in data_rows:
+        gid = row['group_id']
+        if not gid:
+            grouped_units.append([row])
+        else:
+            if gid not in current_named_groups:
+                current_named_groups[gid] = []
+                grouped_units.append(current_named_groups[gid])
+            current_named_groups[gid].append(row)
+
+    part1_questions = [] # Objective & Case Scenarios
+    part2_questions = [] # Descriptive Problems
+
+    total_tables_count = 0
+    total_mcqs = 0
+    scenarios_count = 0
+    problems_count = 0
+
+    first_lvl = None
+    first_ppr = None
+    first_ch = None
+    first_top = None
+
+    for group in grouped_units:
+        if not group:
+            continue
+
+        first_r = group[0]
+        lvl_obj, ppr_obj, ch_obj, top_obj = resolve_or_create_hierarchy(
+            qualification=first_r['qualification'],
+            level_name=first_r['level'],
+            paper_name=first_r['paper'],
+            chapter_name=first_r['chapter'],
+            topic_name=first_r['topic']
+        )
+        if not first_lvl:
+            first_lvl = lvl_obj
+            first_ppr = ppr_obj
+            first_ch = ch_obj
+            first_top = top_obj
+
+        gid = first_r['group_id']
+        has_scenario_context = any(bool(r['context']) for r in group)
+
+        if has_scenario_context and gid:
+            # Case Scenario
+            scenarios_count += 1
+            passage = max((r['context'] for r in group if r['context']), key=len, default=f"Case Scenario {gid}")
+            passage_tables = next((r['context_tables'] for r in group if r['context_tables']), [])
+            total_tables_count += len(passage_tables)
+
+            subqs = []
+            for s_idx, r in enumerate(group, start=1):
+                s_tbl = r['question_tables'][0] if r['question_tables'] else None
+                ans_tbl = r['answer_tables'][0] if r['answer_tables'] else None
+                if r['question_tables']: total_tables_count += len(r['question_tables'])
+                if r['answer_tables']: total_tables_count += len(r['answer_tables'])
+
+                opts = []
+                if r['question_type'] == 'MCQ':
+                    total_mcqs += 1
+                    for o_i, (k, key_letter) in enumerate([('opt_a', 'A'), ('opt_b', 'B'), ('opt_c', 'C'), ('opt_d', 'D')]):
+                        if r[k]:
+                            opts.append({
+                                'text': r[k],
+                                'option_text': r[k],
+                                'is_correct': (key_letter == r['correct_opt']),
+                                'order': o_i
+                            })
+                subqs.append({
+                    'identifier': r['q_no'] or f"({s_idx})",
+                    'sub_question_number': r['q_no'] or str(s_idx),
+                    'original_question_number': f"{gid}.{r['q_no']}",
+                    'question_text': r['question_text'],
+                    'question_type': r['question_type'],
+                    'marks': r['marks'],
+                    'is_approved': False,
+                    'matching_status': 'matched',
+                    'table_data': s_tbl,
+                    'structured_table': s_tbl,
+                    'options': opts,
+                    'official_answer': {
+                        'answer_text': r['answer_text'],
+                        'solution_text': r['answer_text'],
+                        'working_notes': '',
+                        'table_data': ans_tbl,
+                        'structured_table': ans_tbl,
+                        'answer_table_data': ans_tbl
+                    },
+                    'matched_answer': {
+                        'answer_text': r['answer_text'],
+                        'solution_text': r['answer_text'],
+                        'working_notes': '',
+                        'structured_table': ans_tbl,
+                        'answer_table_data': ans_tbl
+                    }
+                })
+
+            q_obj = {
+                'question_id': f"q_cs_{uuid.uuid4().hex[:8]}",
+                'question_number': gid,
+                'question_text': passage,
+                'case_scenario_passage': passage,
+                'question_type': 'CASE_SCENARIO',
+                'marks': sum(sq['marks'] for sq in subqs) or 2,
+                'difficulty': group[0]['difficulty'],
+                'is_approved': False,
+                'matching_status': 'matched',
+                'tags': group[0]['tags'],
+                'suggested_chapter_id': ch_obj.id,
+                'suggested_topic_id': top_obj.id,
+                'table_data': passage_tables[0] if passage_tables else None,
+                'structured_table': passage_tables[0] if passage_tables else None,
+                'options': [],
+                'subquestions': subqs,
+                'sub_questions': subqs,
+                'official_answer': {
+                    'answer_text': f"Case scenario {gid} containing {len(subqs)} sub-questions.",
+                    'solution_text': f"Case scenario {gid} containing {len(subqs)} sub-questions."
+                },
+                'matched_answer': {
+                    'answer_text': f"Case scenario {gid} containing {len(subqs)} sub-questions.",
+                    'solution_text': f"Case scenario {gid} containing {len(subqs)} sub-questions."
+                }
+            }
+            part1_questions.append(q_obj)
+
+        elif gid and len(group) > 1 and not has_scenario_context:
+            # Multi-part Descriptive Problem
+            problems_count += 1
+            subqs = []
+            for s_idx, r in enumerate(group, start=1):
+                s_tbl = r['question_tables'][0] if r['question_tables'] else None
+                ans_tbl = r['answer_tables'][0] if r['answer_tables'] else None
+                if r['question_tables']: total_tables_count += len(r['question_tables'])
+                if r['answer_tables']: total_tables_count += len(r['answer_tables'])
+
+                subqs.append({
+                    'identifier': r['q_no'] or f"({chr(96 + s_idx)})",
+                    'sub_question_number': r['q_no'] or f"({chr(96 + s_idx)})",
+                    'original_question_number': r['q_no'],
+                    'question_text': r['question_text'],
+                    'question_type': 'NORMAL',
+                    'marks': r['marks'],
+                    'is_approved': False,
+                    'matching_status': 'matched',
+                    'table_data': s_tbl,
+                    'structured_table': s_tbl,
+                    'options': [],
+                    'official_answer': {
+                        'answer_text': r['answer_text'],
+                        'solution_text': r['answer_text'],
+                        'working_notes': '',
+                        'table_data': ans_tbl,
+                        'structured_table': ans_tbl,
+                        'answer_table_data': ans_tbl
+                    },
+                    'matched_answer': {
+                        'answer_text': r['answer_text'],
+                        'solution_text': r['answer_text'],
+                        'working_notes': '',
+                        'structured_table': ans_tbl,
+                        'answer_table_data': ans_tbl
+                    }
+                })
+
+            parent_q_text = f"Question {gid}: Comprehensive descriptive problem with {len(subqs)} sub-parts."
+            parent_ans_text = "\n\n".join(f"【 Solution {sq['identifier']} 】\n{sq['official_answer']['answer_text']}" for sq in subqs)
+            q_obj = {
+                'question_id': f"q_prob_{uuid.uuid4().hex[:8]}",
+                'question_number': gid,
+                'question_text': parent_q_text,
+                'case_scenario_passage': '',
+                'question_type': 'NORMAL',
+                'marks': sum(sq['marks'] for sq in subqs) or 10,
+                'difficulty': group[0]['difficulty'],
+                'is_approved': False,
+                'matching_status': 'matched',
+                'tags': group[0]['tags'],
+                'suggested_chapter_id': ch_obj.id,
+                'suggested_topic_id': top_obj.id,
+                'table_data': None,
+                'structured_table': None,
+                'options': [],
+                'subquestions': subqs,
+                'sub_questions': subqs,
+                'official_answer': {
+                    'answer_text': parent_ans_text,
+                    'solution_text': parent_ans_text
+                },
+                'matched_answer': {
+                    'answer_text': parent_ans_text,
+                    'solution_text': parent_ans_text
+                }
+            }
+            part2_questions.append(q_obj)
+
+        else:
+            # Standalone question
+            r = group[0]
+            s_tbl = r['question_tables'][0] if r['question_tables'] else None
+            ans_tbl = r['answer_tables'][0] if r['answer_tables'] else None
+            if r['question_tables']: total_tables_count += len(r['question_tables'])
+            if r['answer_tables']: total_tables_count += len(r['answer_tables'])
+
+            opts = []
+            if r['question_type'] == 'MCQ':
+                total_mcqs += 1
+                for o_i, (k, key_letter) in enumerate([('opt_a', 'A'), ('opt_b', 'B'), ('opt_c', 'C'), ('opt_d', 'D')]):
+                    if r[k]:
+                        opts.append({
+                            'text': r[k],
+                            'option_text': r[k],
+                            'is_correct': (key_letter == r['correct_opt']),
+                            'order': o_i
+                        })
+
+            q_obj = {
+                'question_id': f"q_std_{uuid.uuid4().hex[:8]}",
+                'question_number': r['q_no'],
+                'question_text': r['question_text'],
+                'case_scenario_passage': '',
+                'question_type': 'MCQ' if r['question_type'] == 'MCQ' else 'NORMAL',
+                'marks': r['marks'],
+                'difficulty': r['difficulty'],
+                'is_approved': False,
+                'matching_status': 'matched',
+                'tags': r['tags'],
+                'suggested_chapter_id': ch_obj.id,
+                'suggested_topic_id': top_obj.id,
+                'table_data': s_tbl,
+                'structured_table': s_tbl,
+                'options': opts,
+                'subquestions': [],
+                'sub_questions': [],
+                'official_answer': {
+                    'answer_text': r['answer_text'],
+                    'solution_text': r['answer_text'],
+                    'working_notes': '',
+                    'table_data': ans_tbl,
+                    'structured_table': ans_tbl,
+                    'answer_table_data': ans_tbl
+                },
+                'matched_answer': {
+                    'answer_text': r['answer_text'],
+                    'solution_text': r['answer_text'],
+                    'working_notes': '',
+                    'structured_table': ans_tbl,
+                    'answer_table_data': ans_tbl
+                }
+            }
+            if r['question_type'] == 'MCQ':
+                part1_questions.append(q_obj)
+            else:
+                problems_count += 1
+                part2_questions.append(q_obj)
+
+    sections = []
+    if part1_questions:
+        sections.append({
+            'section_name': 'Part I (Objective Questions & Case Scenarios)',
+            'title': 'Part I (Objective Questions & Case Scenarios)',
+            'questions': part1_questions
+        })
+    if part2_questions:
+        sections.append({
+            'section_name': 'Part II (Descriptive & Practical Problems)',
+            'title': 'Part II (Descriptive & Practical Problems)',
+            'questions': part2_questions
+        })
+
+    total_detected = len(part1_questions) + len(part2_questions)
+    first_r = data_rows[0]
+    user_inst = getattr(user, 'institution', None) if user else None
+    is_platform_wide = (user_inst is None or getattr(user, 'is_superuser', False))
+
+    batch = ImportBatch.objects.create(
+        name=batch_name or f"Excel Import - {file_filename} - {timezone.now().strftime('%d %b %Y, %H:%M')}",
+        created_by=user if getattr(user, 'is_authenticated', False) else None,
+        institution=user_inst,
+        is_platform_wide=is_platform_wide,
+        ca_level=first_lvl.name if first_lvl else 'CA Intermediate',
+        level=first_lvl,
+        paper=first_ppr,
+        chapter=first_ch,
+        topic=first_top,
+        exam_session=first_r['attempt'],
+        exam_year=int(first_r['year']) if str(first_r['year']).isdigit() else 2026,
+        source=first_r['source'],
+        status='needs_review',
+        stage_label='Excel questions loaded - Ready for review & publishing',
+        progress_percent=100,
+        total_documents=1,
+        total_questions_detected=total_detected,
+        matched_answers_count=total_detected,
+        tables_count=total_tables_count,
+        mcqs_count=total_mcqs,
+        batch_payload={'sections': sections, 'target_question_type': 'ALL'}
+    )
+
+    job = QuestionImportJob.objects.create(
+        batch=batch,
+        created_by=user if getattr(user, 'is_authenticated', False) else None,
+        institution=user_inst,
+        is_platform_wide=is_platform_wide,
+        status='needs_review',
+        stage_label='Ready for Review',
+        progress_percent=100,
+        ca_level=first_lvl.name if first_lvl else 'CA Intermediate',
+        level=first_lvl,
+        paper=first_ppr,
+        chapter=first_ch,
+        topic=first_top,
+        exam_session=first_r['attempt'],
+        exam_year=int(first_r['year']) if str(first_r['year']).isdigit() else 2026,
+        source=first_r['source'],
+        question_pdf_filename=file_filename,
+        extracted_payload={'sections': sections, 'target_question_type': 'ALL'}
+    )
+
+    try:
+        from django.core.files.base import ContentFile
+        if hasattr(file_obj, 'seek'):
+            file_obj.seek(0)
+            f_content = file_obj.read()
+            c_file = ContentFile(f_content, name=file_filename)
+        else:
+            c_file = file_obj
+        with transaction.atomic():
+            SourceDocument.objects.create(
+                batch=batch,
+                job=job,
+                institution=user_inst,
+                file=c_file,
+                filename=file_filename,
+                file_type='COMBINED',
+                status='extracted'
+            )
+    except Exception:
+        pass
+
+    try:
+        with transaction.atomic():
+            ImportAuditLog.objects.create(
+                batch=batch,
+                job=job,
+                user=user if getattr(user, 'is_authenticated', False) else None,
+                action="UPLOAD_DOCUMENTS",
+                question_reference=f"Excel File: {file_filename}",
+                details={
+                    "total_questions": total_detected,
+                    "mcq_count": total_mcqs,
+                    "scenario_count": scenarios_count,
+                    "problem_count": problems_count,
+                    "tables_count": total_tables_count,
+                    "format": "Excel .xlsx"
+                }
+            )
+    except Exception:
+        pass
+
+    return {
+        'success': True,
+        'batch_id': str(batch.id),
+        'job_id': str(job.id),
+        'total_questions': total_detected,
+        'mcq_count': total_mcqs,
+        'scenario_count': scenarios_count,
+        'problem_count': problems_count,
+        'tables_count': total_tables_count,
+        'message': f"Successfully created verification batch '{batch.name}' with {total_detected} questions and {total_tables_count} tables. Ready for verification and publishing."
     }
 
 

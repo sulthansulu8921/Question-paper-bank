@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     X,
     FileSpreadsheet,
@@ -8,7 +9,9 @@ import {
     XCircle,
     AlertCircle,
     Loader2,
-    ArrowRight
+    ArrowRight,
+    Eye,
+    Sparkles
 } from 'lucide-react';
 import api from '@/api/axios';
 
@@ -32,6 +35,11 @@ interface ImportSkippedItem {
 interface ImportSummary {
     success: boolean;
     message: string;
+    batch_id?: string;
+    job_id?: string;
+    total_questions?: number;
+    tables_count?: number;
+    isVerificationBatch?: boolean;
     created_count?: number;
     skipped_count?: number;
     error_count?: number;
@@ -46,10 +54,11 @@ interface ImportSummary {
 }
 
 export default function ExcelImportModal({ isOpen, onClose, onSuccess }: ExcelImportModalProps) {
+    const navigate = useNavigate();
     const [downloadingType, setDownloadingType] = useState<string | null>(null);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [isDragging, setIsDragging] = useState(false);
-    const [importing, setImporting] = useState(false);
+    const [importMode, setImportMode] = useState<'verify' | 'direct' | null>(null);
     const [importResult, setImportResult] = useState<ImportSummary | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -107,10 +116,39 @@ export default function ExcelImportModal({ isOpen, onClose, onSuccess }: ExcelIm
         }
     };
 
-    // Perform Import
-    const handleStartImport = async () => {
+    // Mode A: Import to Verification Workspace (Editable Review)
+    const handleImportToVerification = async () => {
         if (!selectedFile) return;
-        setImporting(true);
+        setImportMode('verify');
+        setImportResult(null);
+
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+
+        try {
+            const resp = await api.post('/materials/questions/import-excel-to-batch/', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            setImportResult({
+                ...resp.data,
+                isVerificationBatch: true
+            });
+        } catch (err: any) {
+            const data = err?.response?.data;
+            setImportResult({
+                success: false,
+                message: data?.error || data?.message || 'Excel import failed. Please check your file format.',
+                error_rows: data?.error_rows || []
+            });
+        } finally {
+            setImportMode(null);
+        }
+    };
+
+    // Mode B: Direct Bulk Publish
+    const handleDirectBulkImport = async () => {
+        if (!selectedFile) return;
+        setImportMode('direct');
         setImportResult(null);
 
         const formData = new FormData();
@@ -120,7 +158,10 @@ export default function ExcelImportModal({ isOpen, onClose, onSuccess }: ExcelIm
             const resp = await api.post('/materials/questions/import-excel/', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
-            setImportResult(resp.data);
+            setImportResult({
+                ...resp.data,
+                isVerificationBatch: false
+            });
             if (resp.data?.success) {
                 onSuccess();
             }
@@ -132,7 +173,7 @@ export default function ExcelImportModal({ isOpen, onClose, onSuccess }: ExcelIm
                 error_rows: data?.error_rows || []
             });
         } finally {
-            setImporting(false);
+            setImportMode(null);
         }
     };
 
@@ -537,8 +578,8 @@ export default function ExcelImportModal({ isOpen, onClose, onSuccess }: ExcelIm
                             )}
                         </div>
 
-                        {/* Import Button */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: '1rem', gap: '0.75rem' }}>
+                        {/* Action Buttons: Verification Model vs Direct Bulk Publish */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: '1rem', gap: '0.75rem', flexWrap: 'wrap' }}>
                             {selectedFile && (
                                 <button
                                     onClick={resetForm}
@@ -548,41 +589,77 @@ export default function ExcelImportModal({ isOpen, onClose, onSuccess }: ExcelIm
                                         fontSize: '0.85rem',
                                         color: '#64748b',
                                         cursor: 'pointer',
-                                        textDecoration: 'underline'
+                                        textDecoration: 'underline',
+                                        marginRight: 'auto'
                                     }}
                                 >
-                                    Clear Selection
+                                    Clear File
                                 </button>
                             )}
 
+                            {/* Secondary: Direct Bulk Publish */}
                             <button
-                                onClick={handleStartImport}
-                                disabled={!selectedFile || importing}
+                                onClick={handleDirectBulkImport}
+                                disabled={!selectedFile || importMode !== null}
+                                title="Instantly insert questions into the live database without editable verification"
                                 style={{
-                                    background: selectedFile ? 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' : '#e2e8f0',
-                                    color: selectedFile ? '#ffffff' : '#94a3b8',
-                                    border: 'none',
+                                    background: '#ffffff',
+                                    color: selectedFile && importMode === null ? '#334155' : '#94a3b8',
+                                    border: `1px solid ${selectedFile && importMode === null ? '#cbd5e1' : '#e2e8f0'}`,
                                     borderRadius: '8px',
-                                    padding: '0.7rem 1.5rem',
-                                    fontSize: '0.9rem',
-                                    fontWeight: 700,
-                                    cursor: selectedFile && !importing ? 'pointer' : 'not-allowed',
+                                    padding: '0.65rem 1rem',
+                                    fontSize: '0.825rem',
+                                    fontWeight: 600,
+                                    cursor: selectedFile && importMode === null ? 'pointer' : 'not-allowed',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: '0.5rem',
-                                    boxShadow: selectedFile ? '0 4px 12px rgba(79, 70, 229, 0.3)' : 'none',
+                                    gap: '0.45rem',
                                     transition: 'all 0.2s'
                                 }}
                             >
-                                {importing ? (
+                                {importMode === 'direct' ? (
                                     <>
-                                        <Loader2 size={18} className="spin" />
-                                        <span>Importing Questions...</span>
+                                        <Loader2 size={15} className="spin" />
+                                        <span>Publishing Directly...</span>
                                     </>
                                 ) : (
                                     <>
-                                        <FileSpreadsheet size={18} />
-                                        <span>Start Import Working Model</span>
+                                        <Upload size={15} color="#475569" />
+                                        <span>Direct Bulk Publish</span>
+                                    </>
+                                )}
+                            </button>
+
+                            {/* Primary: Import to Verification Workspace */}
+                            <button
+                                onClick={handleImportToVerification}
+                                disabled={!selectedFile || importMode !== null}
+                                title="Open in editable review workspace to inspect questions, tables, test solutions, and verify before publishing"
+                                style={{
+                                    background: selectedFile && importMode === null ? 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' : '#e2e8f0',
+                                    color: selectedFile && importMode === null ? '#ffffff' : '#94a3b8',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    padding: '0.65rem 1.35rem',
+                                    fontSize: '0.875rem',
+                                    fontWeight: 700,
+                                    cursor: selectedFile && importMode === null ? 'pointer' : 'not-allowed',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    boxShadow: selectedFile && importMode === null ? '0 4px 12px rgba(79, 70, 229, 0.35)' : 'none',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                {importMode === 'verify' ? (
+                                    <>
+                                        <Loader2 size={16} className="spin" />
+                                        <span>Creating Verification Batch...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Sparkles size={16} />
+                                        <span>Import to Verification Workspace</span>
                                     </>
                                 )}
                             </button>
@@ -597,15 +674,43 @@ export default function ExcelImportModal({ isOpen, onClose, onSuccess }: ExcelIm
                             borderRadius: '1rem',
                             padding: '1.25rem'
                         }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
-                                {importResult.success ? (
-                                    <CheckCircle size={22} color="#16a34a" />
-                                ) : (
-                                    <XCircle size={22} color="#dc2626" />
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.6rem', marginBottom: '0.5rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                    {importResult.success ? (
+                                        <CheckCircle size={22} color="#16a34a" />
+                                    ) : (
+                                        <XCircle size={22} color="#dc2626" />
+                                    )}
+                                    <strong style={{ fontSize: '1rem', color: importResult.success ? '#15803d' : '#b91c1c' }}>
+                                        {importResult.success ? (importResult.isVerificationBatch ? 'Verification Batch Ready for Review!' : 'Questions Published to Live Question Bank!') : 'Import Failed'}
+                                    </strong>
+                                </div>
+
+                                {importResult.success && importResult.isVerificationBatch && importResult.batch_id && (
+                                    <button
+                                        onClick={() => {
+                                            navigate(`/admin/questions/import?batchId=${importResult.batch_id}`);
+                                            onClose();
+                                        }}
+                                        style={{
+                                            background: '#15803d',
+                                            color: '#ffffff',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            padding: '0.55rem 1.15rem',
+                                            fontSize: '0.85rem',
+                                            fontWeight: 700,
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.45rem',
+                                            boxShadow: '0 2px 8px rgba(21, 128, 61, 0.3)'
+                                        }}
+                                    >
+                                        <Eye size={16} />
+                                        <span>Open Verification Workspace &rarr;</span>
+                                    </button>
                                 )}
-                                <strong style={{ fontSize: '1rem', color: importResult.success ? '#15803d' : '#b91c1c' }}>
-                                    {importResult.success ? 'Import Completed Successfully!' : 'Import Failed'}
-                                </strong>
                             </div>
 
                             <p style={{ margin: '0 0 0.85rem', fontSize: '0.85rem', color: '#334155', lineHeight: 1.4 }}>
@@ -614,13 +719,22 @@ export default function ExcelImportModal({ isOpen, onClose, onSuccess }: ExcelIm
 
                             {/* Stat chips for successful import */}
                             {importResult.success && (
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
                                     <div style={{ background: '#ffffff', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '0.6rem', textAlign: 'center' }}>
                                         <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#15803d' }}>
-                                            {importResult.total_created || 0}
+                                            {importResult.total_questions || importResult.total_created || 0}
                                         </div>
                                         <div style={{ fontSize: '0.7rem', fontWeight: 600, color: '#64748b' }}>TOTAL QUESTIONS</div>
                                     </div>
+
+                                    {importResult.tables_count !== undefined && (
+                                        <div style={{ background: '#ffffff', border: '1px solid #93c5fd', borderRadius: '8px', padding: '0.6rem', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#1d4ed8' }}>
+                                                {importResult.tables_count || 0}
+                                            </div>
+                                            <div style={{ fontSize: '0.7rem', fontWeight: 600, color: '#64748b' }}>FINANCIAL TABLES</div>
+                                        </div>
+                                    )}
 
                                     <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.6rem', textAlign: 'center' }}>
                                         <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#1e3a5f' }}>
@@ -634,7 +748,7 @@ export default function ExcelImportModal({ isOpen, onClose, onSuccess }: ExcelIm
                                             {importResult.scenario_count || 0}
                                         </div>
                                         <div style={{ fontSize: '0.7rem', fontWeight: 600, color: '#64748b' }}>
-                                            SCENARIOS ({importResult.scenario_sub_count || 0} SUB)
+                                            SCENARIOS {importResult.scenario_sub_count ? `(${importResult.scenario_sub_count} SUB)` : ''}
                                         </div>
                                     </div>
 
@@ -643,7 +757,7 @@ export default function ExcelImportModal({ isOpen, onClose, onSuccess }: ExcelIm
                                             {importResult.problem_count || 0}
                                         </div>
                                         <div style={{ fontSize: '0.7rem', fontWeight: 600, color: '#64748b' }}>
-                                            PROBLEMS ({importResult.problem_sub_count || 0} SUB)
+                                            PROBLEMS {importResult.problem_sub_count ? `(${importResult.problem_sub_count} SUB)` : ''}
                                         </div>
                                     </div>
                                 </div>

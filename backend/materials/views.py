@@ -631,6 +631,7 @@ from rest_framework.parsers import MultiPartParser
 from materials.excel_service import (
     generate_qbank_template,
     import_questions_from_excel,
+    import_excel_to_verification_batch,
     export_questions_to_excel
 )
 
@@ -674,7 +675,7 @@ class ImportQuestionsExcelView(APIView):
     """
     POST /api/materials/questions/import-excel/
     Conforms to Developer Spec:
-    Bulk question importer reading 'Questions' sheet into Qualification -> Level -> Paper -> Chapter -> Topic hierarchy.
+    Bulk question importer reading 'Questions' sheet directly into Question Bank.
     """
     permission_classes = [permissions.IsAuthenticated, IsQuestionAdmin]
     parser_classes     = [MultiPartParser]
@@ -686,6 +687,26 @@ class ImportQuestionsExcelView(APIView):
 
         result = import_questions_from_excel(file_obj, request.user)
         status_code = 201 if result.get('created_count', 0) > 0 else 400
+        return Response(result, status=status_code)
+
+
+class ImportQuestionsExcelToBatchView(APIView):
+    """
+    POST /api/materials/questions/import-excel-to-batch/
+    Imports Excel questions into an editable ImportBatch for verification & review workspace.
+    Enables the admin to review, edit, test solutions, and click 'Verify & Publish All Questions'.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsQuestionAdmin]
+    parser_classes     = [MultiPartParser]
+
+    def post(self, request):
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({'error': 'No file uploaded. Send the Excel file as form-data field "file".'}, status=400)
+
+        batch_name = request.data.get('name') or request.data.get('batch_name')
+        result = import_excel_to_verification_batch(file_obj, request.user, batch_name=batch_name)
+        status_code = 201 if result.get('success') else 400
         return Response(result, status=status_code)
 
 
@@ -4374,6 +4395,9 @@ class ImportBatchViewSet(viewsets.ModelViewSet):
         
         batch.batch_payload = new_payload
         batch.save()
+        for j in batch.jobs.all():
+            j.extracted_payload = new_payload
+            j.save(update_fields=['extracted_payload'])
         return Response({'message': 'Batch draft payload saved successfully.', 'status': batch.status})
 
     @action(detail=True, methods=['post'])
@@ -4395,6 +4419,16 @@ class ImportBatchViewSet(viewsets.ModelViewSet):
                         modified += 1
             j.extracted_payload = payload
             j.save()
+
+        # Also sync batch_payload if present
+        bp = batch.batch_payload or {}
+        if isinstance(bp, dict) and 'sections' in bp:
+            for sec in bp.get('sections', []):
+                for q in sec.get('questions', []):
+                    if approve_all or (question_id and q.get('question_id') == question_id):
+                        q['is_approved'] = True
+            batch.batch_payload = bp
+            batch.save(update_fields=['batch_payload'])
 
         ImportAuditLog.objects.create(
             batch=batch,

@@ -6,7 +6,7 @@ import {
     FileSpreadsheet, ShieldCheck, Minimize2, Maximize2,
     BookOpen, Bookmark, ListChecks, Plus, Scissors, CheckCheck, AlertCircle,
     ArrowUp, ArrowDown, FolderPlus, History, Files, X, ExternalLink,
-    ChevronUp, ChevronDown, ChevronLeft, ChevronRight
+    ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Download
 } from 'lucide-react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import api from '@/api/axios';
@@ -669,8 +669,11 @@ export default function AdminAIQuestionImport() {
     // View mode: 'upload' | 'processing' | 'workspace' | 'history'
     const [viewMode, setViewMode] = useState<'upload' | 'processing' | 'workspace' | 'history'>('upload');
 
-    // Upload mode: 'batch' (multi-pdf) | 'single' (dual dropzones)
-    const [uploadMode, setUploadMode] = useState<'batch' | 'single'>('batch');
+    // Upload mode: 'batch' (multi-pdf) | 'single' (dual dropzones) | 'excel' (direct excel verification)
+    const [uploadMode, setUploadMode] = useState<'batch' | 'single' | 'excel'>('batch');
+    const [excelFile, setExcelFile] = useState<File | null>(null);
+    const [isDraggingExcel, setIsDraggingExcel] = useState(false);
+    const [isUploadingExcel, setIsUploadingExcel] = useState(false);
     const [batchFiles, setBatchFiles] = useState<{
         file: File;
         id: string;
@@ -1297,6 +1300,120 @@ export default function AdminAIQuestionImport() {
             showToast(errMsg);
         } finally {
             setIsStarting(false);
+        }
+    };
+
+    // Direct Excel (.xlsx) Import to Verification Workspace
+    const handleUploadExcelToVerification = async () => {
+        if (!excelFile) {
+            showToast('Please select or drop an Excel (.xlsx) file first.');
+            return;
+        }
+        setIsUploadingExcel(true);
+        try {
+            const formData = new FormData();
+            formData.append('file', excelFile);
+            formData.append('batch_name', `Excel Import: ${excelFile.name.replace(/\.[^/.]+$/, '')}`);
+            if (icaiFilter.paperId) formData.append('paper_id', icaiFilter.paperId);
+            if (icaiFilter.chapterId) formData.append('chapter_id', icaiFilter.chapterId);
+            if (icaiFilter.topicId) formData.append('topic_id', icaiFilter.topicId);
+            if (caLevel) formData.append('ca_level', caLevel);
+            if (examSession) formData.append('exam_session', examSession);
+            if (examYear) formData.append('exam_year', examYear);
+            if (source) formData.append('source', source);
+
+            const resp = await api.post('/materials/questions/import-excel-to-batch/', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+
+            const resData = resp.data;
+            const batchId = resData.batch_id;
+            showToast(`✓ Excel imported! ${resData.total_questions || 0} questions (${resData.table_count || 0} financial tables) loaded into verification workspace.`);
+
+            if (batchId) {
+                // Fetch full batch details & payload
+                const [detailResp, payloadResp] = await Promise.all([
+                    api.get(`/materials/import-batches/${batchId}/`),
+                    api.get(`/materials/import-batches/${batchId}/payload/`).catch(() => ({ data: {} }))
+                ]);
+                const fullBatch = detailResp.data;
+                let payload = payloadResp.data?.payload || payloadResp.data || {};
+                if (!payload.sections && fullBatch.jobs && fullBatch.jobs.length > 0) {
+                    try {
+                        const jobDetail = (await api.get(`/materials/import-jobs/${fullBatch.jobs[0].id}/`)).data;
+                        if (jobDetail?.extracted_payload?.sections) {
+                            payload = jobDetail.extracted_payload;
+                        }
+                    } catch {}
+                }
+                fullBatch.extracted_payload = payload;
+                setActiveBatch(fullBatch);
+                setActiveJob({
+                    id: fullBatch.id,
+                    status: fullBatch.status,
+                    stage_label: fullBatch.stage_label || 'Verification Batch Ready',
+                    progress_percent: 100,
+                    ca_level: fullBatch.ca_level,
+                    exam_session: fullBatch.exam_session,
+                    exam_year: fullBatch.exam_year,
+                    source: fullBatch.source,
+                    question_pdf_filename: fullBatch.documents?.[0]?.filename || excelFile.name,
+                    question_pdf_url: fullBatch.documents?.[0]?.file_url,
+                    ai_provider: 'Excel Direct Parser (Lossless Tables)',
+                    model_used: 'Excel v3.2 Engine',
+                    total_input_tokens: 0,
+                    total_output_tokens: 0,
+                    estimated_cost_usd: 0,
+                    processing_time_seconds: 0,
+                    extracted_payload: payload,
+                    published_question_count: 0,
+                    created_at: fullBatch.created_at
+                });
+                if (payload.sections?.[0]?.questions?.[0]) {
+                    setSelectedQuestionId(payload.sections[0].questions[0].question_id);
+                }
+                setViewMode('workspace');
+            }
+        } catch (err: any) {
+            console.error('Failed to import Excel to verification workspace', err);
+            const errData = err.response?.data;
+            const errMsg = (errData && typeof errData === 'object'
+                ? (errData.error || errData.detail || errData.message || 'Import error')
+                : (typeof errData === 'string' ? errData : null))
+                || err.message
+                || 'Failed to import Excel file.';
+            showToast(`Import Error: ${errMsg}`);
+        } finally {
+            setIsUploadingExcel(false);
+        }
+    };
+
+    const handleDownloadExcelTemplate = async (templateType: 'master' | 'descriptive' | 'case_scenario' | 'mcq') => {
+        try {
+            const response = await api.get(`/materials/questions/export-excel/?template_type=${templateType}`, {
+                responseType: 'blob'
+            });
+            const blob = new Blob([response.data], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const filenames: Record<string, string> = {
+                master: 'QBank_Import_Format.xlsx',
+                descriptive: 'QBank_Descriptive_Problem_Template.xlsx',
+                case_scenario: 'QBank_Case_Scenario_Template.xlsx',
+                mcq: 'QBank_MCQ_Template.xlsx'
+            };
+            a.download = filenames[templateType] || 'QBank_Template.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            showToast(`✓ Downloaded template "${a.download}"`);
+        } catch (err) {
+            console.error('Failed to download template', err);
+            showToast('Failed to download Excel template. Please try again.');
         }
     };
 
@@ -2453,6 +2570,14 @@ export default function AdminAIQuestionImport() {
                                 </button>
                                 <button
                                     type="button"
+                                    className={`ai-upload-tab-btn ${uploadMode === 'excel' ? 'active' : ''}`}
+                                    onClick={() => setUploadMode('excel')}
+                                >
+                                    <FileSpreadsheet size={14} />
+                                    <span>Excel Import (.xlsx)</span>
+                                </button>
+                                <button
+                                    type="button"
                                     className={`ai-upload-tab-btn ${uploadMode === 'single' ? 'active' : ''}`}
                                     onClick={() => setUploadMode('single')}
                                 >
@@ -2580,8 +2705,183 @@ export default function AdminAIQuestionImport() {
                                     </div>
                                 )}
                             </div>
+                        ) : uploadMode === 'excel' ? (
+                            /* MODE 2: DIRECT EXCEL IMPORT (VERIFICATION WORKSPACE) */
+                            <div>
+                                <div
+                                    className={`ai-dropzone ${isDraggingExcel ? 'dragging' : ''} ${excelFile ? 'has-file' : ''}`}
+                                    onDragOver={(e) => { e.preventDefault(); setIsDraggingExcel(true); }}
+                                    onDragLeave={() => setIsDraggingExcel(false)}
+                                    onDrop={(e) => {
+                                        e.preventDefault();
+                                        setIsDraggingExcel(false);
+                                        const file = e.dataTransfer.files?.[0];
+                                        if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.type.includes('spreadsheet') || file.type.includes('excel'))) {
+                                            setExcelFile(file);
+                                        } else {
+                                            showToast('Please drop a valid Excel (.xlsx) file.');
+                                        }
+                                    }}
+                                    onClick={() => {
+                                        const input = document.createElement('input');
+                                        input.type = 'file';
+                                        input.accept = '.xlsx,.xls';
+                                        input.onchange = (e: any) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) setExcelFile(file);
+                                        };
+                                        input.click();
+                                    }}
+                                >
+                                    <div className="ai-dropzone-icon" style={{ color: '#16a34a', background: '#dcfce7' }}>
+                                        <FileSpreadsheet size={32} />
+                                    </div>
+                                    <div className="ai-dropzone-label">Drop Excel (.xlsx) File Here</div>
+                                    <div className="ai-dropzone-sub">
+                                        Upload master or specialized Excel sheet. Automatically parses MCQs, Case Scenarios, and Multi-part Descriptive problems with financial tables in both question and answer.
+                                    </div>
+                                    {excelFile ? (
+                                        <div className="ai-file-preview-badge" style={{ background: '#ecfdf5', borderColor: '#86efac', color: '#166534', marginTop: '0.75rem' }}>
+                                            <CheckCircle2 size={16} />
+                                            <span>{excelFile.name} ({(excelFile.size / 1024).toFixed(1)} KB)</span>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setExcelFile(null);
+                                                }}
+                                                style={{ background: 'none', border: 'none', color: '#991b1b', cursor: 'pointer', padding: '0 4px', display: 'flex', alignItems: 'center' }}
+                                                title="Remove file"
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <span style={{ fontSize: '0.8rem', color: '#16a34a', fontWeight: 600, marginTop: '0.5rem' }}>
+                                            Click to browse or drag .xlsx file here
+                                        </span>
+                                    )}
+                                </div>
+
+                                {/* 3 Template Types Download Pill Row */}
+                                <div style={{ marginTop: '1.25rem', padding: '1rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.825rem', fontWeight: 700, color: '#1e293b' }}>
+                                            <FileSpreadsheet size={16} color="#16a34a" />
+                                            <span>Official Excel Templates (Download & Fill):</span>
+                                        </div>
+                                        <span style={{ fontSize: '0.72rem', color: '#64748b' }}>With sample data & financial tables</span>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.6rem' }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDownloadExcelTemplate('master')}
+                                            style={{
+                                                background: '#ffffff',
+                                                border: '1px solid #cbd5e1',
+                                                borderRadius: '8px',
+                                                padding: '0.6rem 0.75rem',
+                                                textAlign: 'left',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '0.2rem',
+                                                transition: 'all 0.15s'
+                                            }}
+                                            title="Download Master 3-in-1 Excel template with MCQs, Case Scenarios, and Multi-part Descriptive problems"
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#1e3a5f' }}>Master 3-in-1 Format</span>
+                                                <Download size={14} color="#2563eb" />
+                                            </div>
+                                            <span style={{ fontSize: '0.7rem', color: '#64748b' }}>MCQ + Case Scenario + Descriptive</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDownloadExcelTemplate('descriptive')}
+                                            style={{
+                                                background: '#ffffff',
+                                                border: '1px solid #bbf7d0',
+                                                borderRadius: '8px',
+                                                padding: '0.6rem 0.75rem',
+                                                textAlign: 'left',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '0.2rem',
+                                                transition: 'all 0.15s'
+                                            }}
+                                            title="Download Descriptive Problem Template with financial tables in both question and answer (Balance Sheet, P&L, EPS, etc.)"
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#047857' }}>Descriptive with Tables</span>
+                                                <Download size={14} color="#059669" />
+                                            </div>
+                                            <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Q&A Financial Tables Included</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDownloadExcelTemplate('case_scenario')}
+                                            style={{
+                                                background: '#ffffff',
+                                                border: '1px solid #ddd6fe',
+                                                borderRadius: '8px',
+                                                padding: '0.6rem 0.75rem',
+                                                textAlign: 'left',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '0.2rem',
+                                                transition: 'all 0.15s'
+                                            }}
+                                            title="Download Case Scenario Template with narrative passage and linked MCQs"
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#6d28d9' }}>Case Scenario Template</span>
+                                                <Download size={14} color="#7c3aed" />
+                                            </div>
+                                            <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Passages + Linked MCQs</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDownloadExcelTemplate('mcq')}
+                                            style={{
+                                                background: '#ffffff',
+                                                border: '1px solid #fed7aa',
+                                                borderRadius: '8px',
+                                                padding: '0.6rem 0.75rem',
+                                                textAlign: 'left',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '0.2rem',
+                                                transition: 'all 0.15s'
+                                            }}
+                                            title="Download Standard MCQ Template"
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#c2410c' }}>MCQ Question Template</span>
+                                                <Download size={14} color="#ea580c" />
+                                            </div>
+                                            <span style={{ fontSize: '0.7rem', color: '#64748b' }}>A/B/C/D Options & Explanations</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Verification Workflow Highlight Banner */}
+                                <div style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', display: 'flex', alignItems: 'flex-start', gap: '0.6rem' }}>
+                                    <Sparkles size={18} color="#2563eb" style={{ flexShrink: 0, marginTop: '2px' }} />
+                                    <div style={{ fontSize: '0.775rem', color: '#1e40af', lineHeight: 1.45 }}>
+                                        <strong>Editable Verification Model:</strong> Excel uploads are loaded straight into the interactive verification workspace where you can preview questions, inspect financial tables in both question and answer, test solutions, edit inline, and click <strong>"Verify and Publish All Questions"</strong> when satisfied.
+                                    </div>
+                                </div>
+                            </div>
                         ) : (
-                            /* MODE 2: SINGLE Q&A PAIR DROPZONES */
+                            /* MODE 3: SINGLE Q&A PAIR DROPZONES */
                             <div>
                                 <div className="ai-dropzones-wrapper">
                                     {/* Question Paper Dropzone */}
@@ -2847,7 +3147,30 @@ export default function AdminAIQuestionImport() {
                             </div>
                         </div>
 
-                        {uploadMode === 'batch' ? (
+                        {uploadMode === 'excel' ? (
+                            <button
+                                className="ai-process-btn"
+                                onClick={handleUploadExcelToVerification}
+                                disabled={!excelFile || isUploadingExcel}
+                                style={{
+                                    background: !excelFile || isUploadingExcel ? '#cbd5e1' : 'linear-gradient(135deg, #15803d 0%, #059669 100%)',
+                                    boxShadow: !excelFile || isUploadingExcel ? 'none' : '0 4px 14px rgba(21, 128, 61, 0.35)',
+                                    cursor: !excelFile || isUploadingExcel ? 'not-allowed' : 'pointer'
+                                }}
+                            >
+                                {isUploadingExcel ? (
+                                    <>
+                                        <RefreshCw size={20} className="spin" />
+                                        <span>Parsing Excel & Creating Verification Workspace...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <FileSpreadsheet size={20} />
+                                        <span>Import Excel to Verification Workspace</span>
+                                    </>
+                                )}
+                            </button>
+                        ) : uploadMode === 'batch' ? (
                             <button
                                 className="ai-process-btn"
                                 onClick={handleStartBatchImport}
