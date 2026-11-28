@@ -7,6 +7,25 @@ import { HelmetProvider } from 'react-helmet-async'
 
 const queryClient = new QueryClient()
 
+// Auto update PWA / Service Worker so users don't get stuck on stale cached versions
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) {
+      refreshing = true;
+      window.location.reload();
+    }
+  });
+
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.getRegistration().then(reg => {
+      if (reg) {
+        reg.update();
+      }
+    });
+  });
+}
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <HelmetProvider>
@@ -16,3 +35,4 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     </HelmetProvider>
   </React.StrictMode>
 )
+
