@@ -1,7 +1,8 @@
 import os
 import hashlib
 from django.conf import settings
-from rest_framework import viewsets, permissions
+from rest_framework import viewsets, permissions, status
+from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from materials.models import (
     QuestionPaper, AnswerPaper, Notes, Video, MCQ, Bookmark, SubjectiveQuestion, SubQuestion, QuestionOption, Feedback,
@@ -391,6 +392,29 @@ class SubjectiveQuestionViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
+
+    @action(detail=False, methods=['post'], url_path='bulk-delete')
+    def bulk_delete(self, request):
+        if not (request.user and request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)):
+            return Response({'error': 'You do not have permission to delete questions.'}, status=status.HTTP_403_FORBIDDEN)
+
+        ids = request.data.get('ids', [])
+        if not ids or not isinstance(ids, list):
+            return Response({'error': 'A list of question IDs is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        valid_ids = [int(i) for i in ids if str(i).isdigit()]
+        if not valid_ids:
+            return Response({'error': 'No valid question IDs provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        qs = SubjectiveQuestion.objects.filter(id__in=valid_ids)
+        deleted_count = qs.count()
+        qs.delete()
+
+        return Response({
+            'message': f'Successfully deleted {deleted_count} question(s).',
+            'deleted_count': deleted_count,
+            'deleted_ids': valid_ids
+        }, status=status.HTTP_200_OK)
 
 class QuestionPaperViewSet(viewsets.ModelViewSet):
     queryset = QuestionPaper.objects.all()

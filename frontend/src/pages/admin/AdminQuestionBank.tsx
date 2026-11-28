@@ -1,15 +1,22 @@
-import { useState, useMemo, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/api/axios';
 import {
     Search, Plus, Edit, Trash2,
     SortAsc, SortDesc, Filter, Upload, FileSpreadsheet, Loader2,
-    Sparkles, Download
+    Sparkles, Download, AlertTriangle, AlertCircle, X, CheckCircle2
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ICAICascadeSelector, { type ICAISelection } from '@/components/admin/ICAICascadeSelector';
 import ExcelImportModal from '@/components/admin/ExcelImportModal';
 import '@/styles/admin/QuestionManagement.css';
+
+interface DeleteModalState {
+    isOpen: boolean;
+    mode: 'single' | 'bulk';
+    singleQuestion?: any;
+    ids: number[];
+}
 
 const ITEMS_PER_PAGE = 20;
 
@@ -72,6 +79,15 @@ export default function AdminQuestionBank() {
     const [exporting, setExporting] = useState(false);
     const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
 
+    // Bulk selection state
+    const [selectedQuestionIds, setSelectedQuestionIds] = useState<number[]>([]);
+    const headerCheckboxRef = useRef<HTMLInputElement>(null);
+
+    // Delete confirmation modal & toast state
+    const [deleteModalState, setDeleteModalState] = useState<DeleteModalState | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [feedbackToast, setFeedbackToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
     const { data: questions = [], isLoading } = useQuery({
         queryKey: ['admin-questions', icaiFilter],
         queryFn: async () => {
@@ -91,11 +107,6 @@ export default function AdminQuestionBank() {
         const years = (questions as any[]).map((q: any) => q.year).filter(Boolean);
         return Array.from(new Set(years)).sort((a: any, b: any) => b - a) as any[];
     }, [questions]);
-
-    const deleteMutation = useMutation({
-        mutationFn: (id: number) => api.delete(`/materials/subjective-questions/${id}/`),
-        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-questions'] }); }
-    });
 
     const toggleSort = (key: string) => {
         if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -160,6 +171,106 @@ export default function AdminQuestionBank() {
         const start = (currentPage - 1) * ITEMS_PER_PAGE;
         return filtered.slice(start, start + ITEMS_PER_PAGE);
     }, [filtered, currentPage]);
+
+    const isAllOnPageSelected = useMemo(() => {
+        return paginated.length > 0 && paginated.every((q: any) => selectedQuestionIds.includes(q.id));
+    }, [paginated, selectedQuestionIds]);
+
+    const isSomeOnPageSelected = useMemo(() => {
+        return paginated.some((q: any) => selectedQuestionIds.includes(q.id)) && !isAllOnPageSelected;
+    }, [paginated, selectedQuestionIds, isAllOnPageSelected]);
+
+    useEffect(() => {
+        if (headerCheckboxRef.current) {
+            headerCheckboxRef.current.indeterminate = isSomeOnPageSelected;
+        }
+    }, [isSomeOnPageSelected]);
+
+    const handleToggleSelectAllOnPage = () => {
+        if (isAllOnPageSelected) {
+            const pageIds = new Set(paginated.map((q: any) => q.id));
+            setSelectedQuestionIds(prev => prev.filter(id => !pageIds.has(id)));
+        } else {
+            const pageIds = paginated.map((q: any) => q.id);
+            setSelectedQuestionIds(prev => Array.from(new Set([...prev, ...pageIds])));
+        }
+    };
+
+    const handleSelectAllFiltered = () => {
+        setSelectedQuestionIds(filtered.map((q: any) => q.id));
+    };
+
+    const handleClearSelection = () => {
+        setSelectedQuestionIds([]);
+    };
+
+    const handleToggleSelectRow = (id: number) => {
+        setSelectedQuestionIds(prev =>
+            prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+        );
+    };
+
+    // Open single delete confirmation pop-up
+    const handleOpenSingleDelete = (q: any) => {
+        setDeleteModalState({
+            isOpen: true,
+            mode: 'single',
+            singleQuestion: q,
+            ids: [q.id]
+        });
+    };
+
+    // Open bulk delete confirmation pop-up
+    const handleOpenBulkDelete = () => {
+        if (selectedQuestionIds.length === 0) return;
+        setDeleteModalState({
+            isOpen: true,
+            mode: 'bulk',
+            ids: [...selectedQuestionIds]
+        });
+    };
+
+    const handleCloseDeleteModal = () => {
+        if (isDeleting) return;
+        setDeleteModalState(null);
+    };
+
+    // Execute deletion upon modal confirmation
+    const handleConfirmDelete = async () => {
+        if (!deleteModalState || deleteModalState.ids.length === 0) return;
+        setIsDeleting(true);
+        try {
+            const targetIds = deleteModalState.ids;
+            if (targetIds.length === 1 && deleteModalState.mode === 'single') {
+                await api.delete(`/materials/subjective-questions/${targetIds[0]}/`);
+            } else {
+                await api.post('/materials/subjective-questions/bulk-delete/', { ids: targetIds });
+            }
+
+            // Remove deleted IDs from selection
+            const deletedSet = new Set(targetIds);
+            setSelectedQuestionIds(prev => prev.filter(id => !deletedSet.has(id)));
+
+            setFeedbackToast({
+                type: 'success',
+                message: `✓ Successfully deleted ${targetIds.length} question${targetIds.length > 1 ? 's' : ''}.`
+            });
+            setTimeout(() => setFeedbackToast(null), 4000);
+
+            setDeleteModalState(null);
+            queryClient.invalidateQueries({ queryKey: ['admin-questions'] });
+        } catch (err: any) {
+            console.error('Failed to delete questions', err);
+            const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to delete question(s).';
+            setFeedbackToast({
+                type: 'error',
+                message: errMsg
+            });
+            setTimeout(() => setFeedbackToast(null), 5000);
+        } finally {
+            setIsDeleting(false);
+        }
+    };
 
     const [downloadingTemplate, setDownloadingTemplate] = useState(false);
     const downloadTemplate = async () => {
@@ -319,10 +430,116 @@ export default function AdminQuestionBank() {
                     </div>
                 )}
 
+                {/* Bulk selection action bar */}
+                {selectedQuestionIds.length > 0 && (
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.75rem 1.25rem',
+                        background: '#fef2f2',
+                        borderBottom: '1px solid #fecaca',
+                        flexWrap: 'wrap',
+                        gap: '0.75rem'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                            <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.45rem',
+                                fontSize: '0.875rem',
+                                fontWeight: 700,
+                                color: '#991b1b'
+                            }}>
+                                <span style={{
+                                    background: '#dc2626',
+                                    color: '#ffffff',
+                                    padding: '2px 8px',
+                                    borderRadius: '12px',
+                                    fontSize: '0.75rem'
+                                }}>
+                                    {selectedQuestionIds.length}
+                                </span>
+                                <span>Question{selectedQuestionIds.length > 1 ? 's' : ''} Selected</span>
+                            </span>
+
+                            {filtered.length > paginated.length && selectedQuestionIds.length < filtered.length && (
+                                <button
+                                    type="button"
+                                    onClick={handleSelectAllFiltered}
+                                    style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        color: '#4f46e5',
+                                        fontSize: '0.825rem',
+                                        fontWeight: 600,
+                                        textDecoration: 'underline',
+                                        cursor: 'pointer',
+                                        padding: '0 4px'
+                                    }}
+                                >
+                                    Select all {filtered.length} questions across all pages
+                                </button>
+                            )}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                            <button
+                                type="button"
+                                onClick={handleClearSelection}
+                                style={{
+                                    background: '#ffffff',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: '6px',
+                                    padding: '0.4rem 0.85rem',
+                                    fontSize: '0.825rem',
+                                    fontWeight: 600,
+                                    color: '#475569',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Clear Selection
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={handleOpenBulkDelete}
+                                style={{
+                                    background: '#dc2626',
+                                    color: '#ffffff',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    padding: '0.45rem 1.1rem',
+                                    fontSize: '0.825rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.45rem',
+                                    boxShadow: '0 2px 8px rgba(220, 38, 38, 0.3)'
+                                }}
+                            >
+                                <Trash2 size={15} />
+                                <span>Delete Selected ({selectedQuestionIds.length})</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 <div className="table-wrapper">
                     <table className="data-table">
                         <thead>
                             <tr>
+                                <th style={{ width: '44px', textAlign: 'center', paddingLeft: '1rem', paddingRight: '0.5rem' }}>
+                                    <input
+                                        type="checkbox"
+                                        ref={headerCheckboxRef}
+                                        checked={isAllOnPageSelected}
+                                        onChange={handleToggleSelectAllOnPage}
+                                        style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#4f46e5' }}
+                                        title="Select all on this page"
+                                    />
+                                </th>
                                 <th onClick={() => toggleSort('id')}>ID <SortIcon col="id" /></th>
                                 <th onClick={() => toggleSort('course_name')}>Course <SortIcon col="course_name" /></th>
                                 <th onClick={() => toggleSort('subject_name')}>Subject <SortIcon col="subject_name" /></th>
@@ -340,11 +557,21 @@ export default function AdminQuestionBank() {
                         </thead>
                         <tbody>
                             {isLoading ? (
-                                <tr><td colSpan={13} style={{ textAlign: 'center' }}>Loading...</td></tr>
+                                <tr><td colSpan={14} style={{ textAlign: 'center' }}>Loading...</td></tr>
                             ) : paginated.length === 0 ? (
-                                <tr><td colSpan={13} style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>No questions found matching your filter criteria.</td></tr>
-                            ) : paginated.map((q: any) => (
-                                <tr key={q.id}>
+                                <tr><td colSpan={14} style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>No questions found matching your filter criteria.</td></tr>
+                            ) : paginated.map((q: any) => {
+                                const isSelected = selectedQuestionIds.includes(q.id);
+                                return (
+                                <tr key={q.id} style={{ backgroundColor: isSelected ? '#f5f3ff' : undefined }}>
+                                    <td style={{ textAlign: 'center', paddingLeft: '1rem', paddingRight: '0.5rem' }} onClick={(e) => e.stopPropagation()}>
+                                        <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={() => handleToggleSelectRow(q.id)}
+                                            style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#4f46e5' }}
+                                        />
+                                    </td>
                                     <td>#{q.id}</td>
                                     <td>
                                         <span className="text-xs font-bold text-slate-700">
@@ -387,12 +614,13 @@ export default function AdminQuestionBank() {
                                     </td>
                                     <td>
                                         <div className="action-buttons">
-                                            <Link to={`/admin/questions/${q.id}/edit`} className="action-btn"><Edit size={16} /></Link>
-                                            <button className="action-btn danger" onClick={() => deleteMutation.mutate(q.id)}><Trash2 size={16} /></button>
+                                            <Link to={`/admin/questions/${q.id}/edit`} className="action-btn" title="Edit Question"><Edit size={16} /></Link>
+                                            <button className="action-btn danger" onClick={() => handleOpenSingleDelete(q)} title="Delete Question"><Trash2 size={16} /></button>
                                         </div>
                                     </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -448,7 +676,287 @@ export default function AdminQuestionBank() {
                 )}
             </div>
 
+            {/* Confirm Delete Pop-Up Modal */}
+            {deleteModalState && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        backgroundColor: 'rgba(15, 23, 42, 0.65)',
+                        backdropFilter: 'blur(4px)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 9999,
+                        padding: '1rem'
+                    }}
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget && !isDeleting) {
+                            handleCloseDeleteModal();
+                        }
+                    }}
+                >
+                    <div
+                        style={{
+                            background: '#ffffff',
+                            borderRadius: '1.25rem',
+                            width: '100%',
+                            maxWidth: '520px',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                            overflow: 'hidden'
+                        }}
+                    >
+                        {/* Header */}
+                        <div style={{
+                            padding: '1.5rem 1.75rem 1rem',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            justifyContent: 'space-between'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                                <div style={{
+                                    width: '46px',
+                                    height: '46px',
+                                    borderRadius: '50%',
+                                    background: '#fee2e2',
+                                    border: '4px solid #fef2f2',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: '#dc2626',
+                                    flexShrink: 0
+                                }}>
+                                    <AlertTriangle size={24} />
+                                </div>
+                                <div>
+                                    <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#0f172a' }}>
+                                        {deleteModalState.mode === 'single'
+                                            ? `Delete Question #${deleteModalState.singleQuestion?.id}?`
+                                            : `Delete ${deleteModalState.ids.length} Questions?`}
+                                    </h2>
+                                    <p style={{ margin: '0.2rem 0 0', fontSize: '0.825rem', color: '#64748b' }}>
+                                        {deleteModalState.mode === 'single'
+                                            ? 'Are you sure you want to permanently remove this question?'
+                                            : 'Are you sure you want to permanently remove these selected questions?'}
+                                    </p>
+                                </div>
+                            </div>
 
+                            <button
+                                type="button"
+                                onClick={handleCloseDeleteModal}
+                                disabled={isDeleting}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#94a3b8',
+                                    cursor: isDeleting ? 'not-allowed' : 'pointer',
+                                    padding: '4px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div style={{ padding: '0 1.75rem 1.25rem' }}>
+                            {deleteModalState.mode === 'single' && deleteModalState.singleQuestion && (
+                                <div style={{
+                                    background: '#f8fafc',
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: '10px',
+                                    padding: '0.85rem 1rem',
+                                    marginBottom: '1rem'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem', flexWrap: 'wrap' }}>
+                                        <span style={{ fontWeight: 800, color: '#1e293b', fontSize: '0.85rem' }}>
+                                            #{deleteModalState.singleQuestion.id}
+                                        </span>
+                                        <span style={{ color: '#94a3b8' }}>•</span>
+                                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#2563eb' }}>
+                                            Q.{deleteModalState.singleQuestion.q_no || '—'}
+                                        </span>
+                                        <span style={{ color: '#94a3b8' }}>•</span>
+                                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>
+                                            {deleteModalState.singleQuestion.icai_paper_name || deleteModalState.singleQuestion.subject_name || 'Advanced Accounting'}
+                                        </span>
+                                        <span style={{ color: '#94a3b8' }}>•</span>
+                                        <span style={{ fontSize: '0.75rem', background: '#eff6ff', color: '#1d4ed8', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                            {deleteModalState.singleQuestion.attempt || ''} {deleteModalState.singleQuestion.year || ''}
+                                        </span>
+                                    </div>
+
+                                    {deleteModalState.singleQuestion.question_text && (
+                                        <p style={{
+                                            margin: '0.35rem 0 0',
+                                            fontSize: '0.8rem',
+                                            color: '#475569',
+                                            lineHeight: 1.4,
+                                            fontStyle: 'italic',
+                                            maxHeight: '60px',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis'
+                                        }}>
+                                            "{deleteModalState.singleQuestion.question_text.slice(0, 140)}
+                                            {deleteModalState.singleQuestion.question_text.length > 140 ? '...' : ''}"
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+
+                            {deleteModalState.mode === 'bulk' && (
+                                <div style={{
+                                    background: '#f8fafc',
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: '10px',
+                                    padding: '0.85rem 1rem',
+                                    marginBottom: '1rem'
+                                }}>
+                                    <div style={{ fontSize: '0.825rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.4rem' }}>
+                                        Selected Questions to Delete ({deleteModalState.ids.length}):
+                                    </div>
+                                    <div style={{
+                                        display: 'flex',
+                                        flexWrap: 'wrap',
+                                        gap: '0.35rem',
+                                        maxHeight: '90px',
+                                        overflowY: 'auto'
+                                    }}>
+                                        {deleteModalState.ids.slice(0, 30).map(id => (
+                                            <span
+                                                key={id}
+                                                style={{
+                                                    background: '#ffffff',
+                                                    border: '1px solid #cbd5e1',
+                                                    borderRadius: '6px',
+                                                    padding: '2px 7px',
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 700,
+                                                    color: '#334155'
+                                                }}
+                                            >
+                                                #{id}
+                                            </span>
+                                        ))}
+                                        {deleteModalState.ids.length > 30 && (
+                                            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600, alignSelf: 'center' }}>
+                                                + {deleteModalState.ids.length - 30} more
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Warning note */}
+                            <div style={{
+                                background: '#fff1f2',
+                                border: '1px solid #fecdd3',
+                                borderRadius: '10px',
+                                padding: '0.85rem 1rem',
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: '0.6rem'
+                            }}>
+                                <AlertCircle size={18} color="#e11d48" style={{ flexShrink: 0, marginTop: '2px' }} />
+                                <div style={{ fontSize: '0.8rem', color: '#9f1239', lineHeight: 1.45 }}>
+                                    <strong>Warning:</strong> This deletion is permanent and cannot be undone. All associated sub-questions, MCQ options, and suggested answers will be permanently deleted from the enterprise database.
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer Buttons */}
+                        <div style={{
+                            padding: '1rem 1.75rem',
+                            background: '#f8fafc',
+                            borderTop: '1px solid #f1f5f9',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'flex-end',
+                            gap: '0.75rem'
+                        }}>
+                            <button
+                                type="button"
+                                onClick={handleCloseDeleteModal}
+                                disabled={isDeleting}
+                                style={{
+                                    background: '#ffffff',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: '8px',
+                                    padding: '0.55rem 1.15rem',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    color: '#475569',
+                                    cursor: isDeleting ? 'not-allowed' : 'pointer'
+                                }}
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={handleConfirmDelete}
+                                disabled={isDeleting}
+                                style={{
+                                    background: isDeleting ? '#f87171' : '#dc2626',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    padding: '0.55rem 1.35rem',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 700,
+                                    color: '#ffffff',
+                                    cursor: isDeleting ? 'not-allowed' : 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.45rem',
+                                    boxShadow: '0 4px 12px rgba(220, 38, 38, 0.35)'
+                                }}
+                            >
+                                {isDeleting ? (
+                                    <>
+                                        <Loader2 size={16} className="spin" />
+                                        <span>Deleting...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Trash2 size={16} />
+                                        <span>
+                                            {deleteModalState.mode === 'single'
+                                                ? 'Delete Question'
+                                                : `Delete ${deleteModalState.ids.length} Questions`}
+                                        </span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Feedback Toast */}
+            {feedbackToast && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: '2rem',
+                    right: '2rem',
+                    zIndex: 10000,
+                    background: feedbackToast.type === 'success' ? '#15803d' : '#b91c1c',
+                    color: '#ffffff',
+                    padding: '0.85rem 1.25rem',
+                    borderRadius: '10px',
+                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.6rem',
+                    fontSize: '0.875rem',
+                    fontWeight: 600
+                }}>
+                    {feedbackToast.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+                    <span>{feedbackToast.message}</span>
+                </div>
+            )}
         </div>
     );
 }
